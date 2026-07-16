@@ -308,6 +308,22 @@ try {
       detail.data.tags.includes("urgente"),
     "Inbox and public widget feedback flow failed",
   );
+  const widgetHistory = await request(
+    `/api/embed/${botId}/conversations/${conversationId}?sessionId=smoke_session`,
+  );
+  assert(
+    widgetHistory.data.messages.length === 2 &&
+      widgetHistory.data.messages.at(-1)?.feedback === "positive",
+    "Public widget history was not restored",
+  );
+  const foreignSessionHistory = await fetch(
+    `${baseUrl}/api/embed/${botId}/conversations/${conversationId}?sessionId=wrong-session`,
+    { headers: authCookie ? { Cookie: authCookie } : {} },
+  );
+  assert(
+    foreignSessionHistory.status === 404,
+    "Widget history was exposed to a different visitor session",
+  );
   if (process.env.SMOKE_AI_ASSIST === "true") {
     const assist = await request(
       `/api/conversations/${conversationId}/assist`,
@@ -537,6 +553,8 @@ try {
           "widget-lead-capture",
           "widget-source-citations",
           "conversation-isolation",
+          "widget-history",
+          "widget-session-ownership",
           "embed",
           "inbox-notes-tags",
           ...(process.env.SMOKE_AI_ASSIST === "true"

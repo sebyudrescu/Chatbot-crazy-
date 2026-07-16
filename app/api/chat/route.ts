@@ -69,6 +69,17 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       )
     }
+    if (
+      body.source === 'widget' &&
+      body.userSessionId &&
+      existingConversation &&
+      existingConversation.userSessionId !== body.userSessionId
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Conversation not found' },
+        { status: 404 }
+      )
+    }
 
     if (!await isAllowedWidgetOrigin(botId, request.headers.get('origin'), request.nextUrl.origin)) {
       return NextResponse.json({ success: false, error: 'origin_not_allowed' }, { status: 403 })

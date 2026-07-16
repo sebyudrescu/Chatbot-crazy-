@@ -298,6 +298,102 @@ assert.deepEqual(requests[5]?.body, {
   consent: true,
 });
 
+const restoredDom = new JSDOM(
+  "<!doctype html><html><head></head><body></body></html>",
+  {
+    url: "https://cliente.example/servizi",
+    runScripts: "outside-only",
+    pretendToBeVisual: true,
+  },
+);
+const restoredWindow = restoredDom.window;
+restoredWindow.ChatbotConfig = {
+  botId: "00000000-0000-4000-8000-000000000001",
+  apiUrl: "https://litx.example",
+  title: "Assistente",
+  subtitle: "Cronologia",
+};
+restoredWindow.localStorage.setItem(
+  "litx:00000000-0000-4000-8000-000000000001:conversation",
+  "00000000-0000-4000-8000-000000000002",
+);
+restoredWindow.localStorage.setItem(
+  "litx:00000000-0000-4000-8000-000000000001:session",
+  "widget_persistent_visitor",
+);
+let historyRequest = "";
+restoredWindow.fetch = async (url) => {
+  historyRequest = String(url);
+  return new Response(
+    JSON.stringify({
+      success: true,
+      data: {
+        conversationId: "00000000-0000-4000-8000-000000000002",
+        messages: [
+          {
+            id: "00000000-0000-4000-8000-000000000010",
+            role: "user",
+            content: "Quali servizi offrite?",
+            sources: [],
+            quickReplies: [],
+            ctas: [],
+          },
+          {
+            id: "00000000-0000-4000-8000-000000000011",
+            role: "assistant",
+            content: "Offriamo consulenza e assistenza.",
+            feedback: null,
+            sources: [
+              {
+                id: "source-restored",
+                sourceType: "url",
+                sourceUrl: "https://cliente.example/servizi",
+              },
+            ],
+            quickReplies: [{ id: "restored-reply", text: "Voglio saperne di più" }],
+            ctas: [],
+          },
+        ],
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+};
+restoredWindow.eval(script);
+restoredWindow.document.dispatchEvent(
+  new restoredWindow.Event("DOMContentLoaded"),
+);
+for (
+  let attempt = 0;
+  attempt < 40 &&
+  restoredWindow.document.querySelectorAll(".chatbot-message").length !== 2;
+  attempt += 1
+) {
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}
+assert.match(
+  historyRequest,
+  /sessionId=widget_persistent_visitor/,
+  "Il recupero storico non verifica l'identità della sessione",
+);
+assert.deepEqual(
+  [...restoredWindow.document.querySelectorAll(".chatbot-message-bubble")].map(
+    (element) => element.textContent,
+  ),
+  ["Quali servizi offrite?", "Offriamo consulenza e assistenza."],
+  "La cronologia visibile non viene ripristinata correttamente",
+);
+assert.equal(
+  restoredWindow.document.querySelectorAll(".chatbot-quick-reply").length,
+  1,
+  "Le interazioni dell'ultima risposta non vengono ripristinate",
+);
+assert.equal(
+  restoredWindow.document.querySelectorAll(".chatbot-source").length,
+  1,
+  "Le fonti della cronologia non vengono ripristinate",
+);
+
 console.log(
   JSON.stringify(
     {
@@ -314,6 +410,7 @@ console.log(
         "persistent-session",
         "stale-session-recovery",
         "lead-capture-form",
+        "restored-history",
         "keyboard-accessible-controls",
       ],
     },
@@ -323,3 +420,4 @@ console.log(
 );
 
 dom.window.close();
+restoredDom.window.close();

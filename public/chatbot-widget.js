@@ -54,6 +54,7 @@
   let isOpen = false;
   let isLoaded = false;
   let messages = [];
+  let restorePromise = Promise.resolve();
   const conversationStorageKey = `litx:${config.botId}:conversation`;
   const sessionStorageKey = `litx:${config.botId}:session`;
   let conversationId = readStorage(conversationStorageKey);
@@ -672,9 +673,8 @@
     }
 
     // Initial message
-    if (!config.autoOpen) {
-      addMessage('bot', `Ciao! Sono ${config.title}. ${config.subtitle}`);
-    }
+    addMessage('bot', `Ciao! Sono ${config.title}. ${config.subtitle}`);
+    if (conversationId) restorePromise = restoreConversation();
 
     isLoaded = true;
   }
@@ -955,6 +955,41 @@
     contentElement.appendChild(form);
   }
 
+  async function restoreConversation() {
+    try {
+      const response = await fetch(
+        `${config.apiUrl}/api/embed/${config.botId}/conversations/${conversationId}?sessionId=${encodeURIComponent(userSessionId)}`,
+      );
+      if (response.status === 404) {
+        conversationId = null;
+        writeStorage(conversationStorageKey, null);
+        return;
+      }
+      if (!response.ok) return;
+      const result = await response.json();
+      const history = result && result.data && result.data.messages;
+      if (!Array.isArray(history) || !history.length) return;
+      messagesContainer.replaceChildren();
+      messages = [];
+      let lastAssistantIndex = -1;
+      history.forEach((message, index) => {
+        if (message.role === 'assistant') lastAssistantIndex = index;
+      });
+      history.forEach((message, index) => {
+        const sender = message.role === 'assistant' ? 'bot' : 'user';
+        const contentElement = addMessage(sender, message.content);
+        if (sender !== 'bot') return;
+        addSources(contentElement, message.sources);
+        if (!message.feedback) addFeedbackControls(contentElement, message.id);
+        if (index === lastAssistantIndex) {
+          addResponseExtras(contentElement, message.quickReplies, message.ctas);
+        }
+      });
+    } catch (error) {
+      console.error('Error restoring conversation:', error);
+    }
+  }
+
   function showTyping() {
     const typingElement = document.createElement('div');
     typingElement.className = 'chatbot-message bot';
@@ -981,6 +1016,7 @@
   async function sendMessage(content) {
     const normalizedContent = typeof content === 'string' ? content.trim() : '';
     if (!normalizedContent || normalizedContent.length > 4000) return;
+    await restorePromise;
     disablePendingReplies();
     // Add user message
     addMessage('user', normalizedContent);
@@ -1075,7 +1111,7 @@
 
   // Initialize when DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', createWidget);
+    document.addEventListener('DOMContentLoaded', createWidget, { once: true });
   } else {
     createWidget();
   }
