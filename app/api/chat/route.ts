@@ -51,6 +51,24 @@ export async function POST(request: NextRequest) {
     }
     const body = parsed.data
     const { conversationId, message, botId } = body
+    const existingConversation = conversationId
+      ? await prisma.conversation.findFirst({
+          where: { id: conversationId, botId },
+          include: {
+            messages: {
+              orderBy: { createdAt: 'asc' },
+              take: 20,
+            },
+            chatbot: true,
+          },
+        })
+      : null
+    if (conversationId && !existingConversation) {
+      return NextResponse.json(
+        { success: false, error: 'Conversation not found' },
+        { status: 404 }
+      )
+    }
 
     if (!await isAllowedWidgetOrigin(botId, request.headers.get('origin'), request.nextUrl.origin)) {
       return NextResponse.json({ success: false, error: 'origin_not_allowed' }, { status: 403 })
@@ -106,18 +124,9 @@ export async function POST(request: NextRequest) {
     // STEP 2: GET OR CREATE CONVERSATION
     // ========================================================================
     
-    let conversation
+    let conversation = existingConversation
     if (conversationId) {
-      conversation = await prisma.conversation.findUnique({
-        where: { id: conversationId },
-        include: {
-          messages: {
-            orderBy: { createdAt: 'asc' },
-            take: 20,
-          },
-          chatbot: true,
-        },
-      })
+      conversation = existingConversation
     } else {
       const userSessionId = body.userSessionId || `session_${Date.now()}`
       conversation = await prisma.conversation.create({

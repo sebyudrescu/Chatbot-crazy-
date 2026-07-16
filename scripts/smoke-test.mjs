@@ -8,6 +8,7 @@ let integrationId;
 let actionId;
 let cloneId;
 let restoredId;
+let isolationBotId;
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -226,6 +227,27 @@ try {
     body: JSON.stringify({ botId, userSessionId: "smoke_session" }),
   });
   conversationId = conversation.data.id;
+  const isolationBot = await request("/api/chatbots", {
+    method: "POST",
+    body: JSON.stringify({
+      companyName: "__SMOKE_ISOLATION__",
+      systemPrompt: "Agente usato per verificare isolamento conversazioni.",
+    }),
+  });
+  isolationBotId = isolationBot.data.id;
+  const crossAgentConversation = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      botId: isolationBotId,
+      conversationId,
+      message: "Non deve accedere a questa conversazione",
+    }),
+  });
+  assert(
+    crossAgentConversation.status === 404,
+    "A conversation was accepted by a different agent",
+  );
   await request(`/api/conversations/${conversationId}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -495,6 +517,7 @@ try {
           "widget",
           "widget-feedback",
           "widget-cors",
+          "conversation-isolation",
           "embed",
           "inbox-notes-tags",
           ...(process.env.SMOKE_AI_ASSIST === "true"
@@ -519,6 +542,10 @@ try {
 } finally {
   if (restoredId)
     await request(`/api/chatbots/${restoredId}`, {
+      method: "DELETE",
+    }).catch(() => {});
+  if (isolationBotId)
+    await request(`/api/chatbots/${isolationBotId}`, {
       method: "DELETE",
     }).catch(() => {});
   if (cloneId)

@@ -54,7 +54,16 @@
   let isOpen = false;
   let isLoaded = false;
   let messages = [];
-  let conversationId = null;
+  const conversationStorageKey = `litx:${config.botId}:conversation`;
+  const sessionStorageKey = `litx:${config.botId}:session`;
+  let conversationId = readStorage(conversationStorageKey);
+  let userSessionId = readStorage(sessionStorageKey);
+  if (!userSessionId) {
+    userSessionId = `widget_${typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;
+    writeStorage(sessionStorageKey, userSessionId);
+  }
 
   // Elementi DOM
   let widgetContainer;
@@ -415,6 +424,17 @@
       .replaceAll("'", '&#039;');
   }
 
+  function readStorage(key) {
+    try { return window.localStorage.getItem(key); } catch { return null; }
+  }
+
+  function writeStorage(key, value) {
+    try {
+      if (value) window.localStorage.setItem(key, value);
+      else window.localStorage.removeItem(key);
+    } catch {}
+  }
+
   // DOM Creation
   function createWidget() {
     // Inject CSS
@@ -719,7 +739,7 @@
     sendButton.disabled = true;
 
     try {
-      const response = await fetch(`${config.apiUrl}/api/chat`, {
+      let response = await fetch(`${config.apiUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -728,9 +748,25 @@
           message: normalizedContent,
           botId: config.botId,
           conversationId: conversationId,
+          userSessionId,
           source: 'widget'
         })
       });
+      if (response.status === 404 && conversationId) {
+        conversationId = null;
+        writeStorage(conversationStorageKey, null);
+        response = await fetch(`${config.apiUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: normalizedContent,
+            botId: config.botId,
+            conversationId: null,
+            userSessionId,
+            source: 'widget'
+          })
+        });
+      }
 
       if (response.ok) {
         const data = await response.json();
@@ -746,6 +782,7 @@
         // Update conversation ID if needed
         if (data.data.conversationId && !conversationId) {
           conversationId = data.data.conversationId;
+          writeStorage(conversationStorageKey, conversationId);
         }
       } else {
         let failure = null;

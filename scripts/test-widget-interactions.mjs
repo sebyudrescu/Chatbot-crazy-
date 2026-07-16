@@ -13,6 +13,7 @@ const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", 
 });
 const { window } = dom;
 const requests = [];
+let staleConversationRejected = false;
 
 window.ChatbotConfig = {
   botId: "00000000-0000-4000-8000-000000000001",
@@ -34,6 +35,17 @@ window.fetch = async (url, options = {}) => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
+  }
+  if (
+    requests.at(-1)?.body?.message === "Ripristina sessione" &&
+    requests.at(-1)?.body?.conversationId &&
+    !staleConversationRejected
+  ) {
+    staleConversationRejected = true;
+    return new Response(
+      JSON.stringify({ success: false, error: "Conversation not found" }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
   }
   return new Response(
     JSON.stringify({
@@ -99,6 +111,18 @@ assert.equal(requests.length, 1, "Il widget esegue richieste API superflue");
 assert.equal(requests[0].url, "https://litx.example/api/chat");
 assert.equal(requests[0].body.message, "Vorrei prenotare");
 assert.equal(requests[0].body.source, "widget");
+assert.match(
+  requests[0].body.userSessionId,
+  /^widget_/,
+  "Il widget non crea un'identità di sessione stabile",
+);
+assert.equal(
+  window.localStorage.getItem(
+    "litx:00000000-0000-4000-8000-000000000001:conversation",
+  ),
+  "00000000-0000-4000-8000-000000000002",
+  "La conversazione non viene conservata per i messaggi successivi",
+);
 
 const replies = window.document.querySelectorAll(".chatbot-quick-reply");
 assert.equal(replies.length, 2, "Le domande rapide non vengono renderizzate");
@@ -161,11 +185,33 @@ assert.equal(
   "Mostrami gli orari",
   "Il click sulla domanda rapida non invia il testo",
 );
+assert.equal(
+  requests[2]?.body.conversationId,
+  "00000000-0000-4000-8000-000000000002",
+  "La domanda rapida non continua la conversazione esistente",
+);
 assert.equal(replies[0].disabled, true, "Le vecchie domande rapide restano attive");
 assert.equal(
   window.document.getElementById("typing-indicator"),
   null,
   "L'indicatore di scrittura resta visibile dopo la risposta",
+);
+
+await window.ChatbotWidget.sendMessage("Ripristina sessione");
+assert.equal(
+  requests[3]?.body.conversationId,
+  "00000000-0000-4000-8000-000000000002",
+  "Il widget non prova a continuare la sessione salvata",
+);
+assert.equal(
+  requests[4]?.body.conversationId,
+  null,
+  "Il widget non riparte quando la conversazione salvata è scaduta",
+);
+assert.equal(
+  requests[4]?.body.userSessionId,
+  requests[0]?.body.userSessionId,
+  "Il recupero perde l'identità stabile del visitatore",
 );
 
 console.log(
@@ -180,6 +226,8 @@ console.log(
         "cta-links",
         "unsafe-protocol-rejection",
         "message-feedback",
+        "persistent-session",
+        "stale-session-recovery",
         "keyboard-accessible-controls",
       ],
     },
