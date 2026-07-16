@@ -313,6 +313,93 @@
       opacity: 0.55;
     }
 
+    .chatbot-lead-form {
+      display: grid;
+      gap: 9px;
+      margin-top: 10px;
+      padding: 13px;
+      border: 1px solid ${config.primaryColor}2d;
+      border-radius: 13px;
+      background: ${config.theme === 'dark' ? '#273449' : '#ffffff'};
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    }
+
+    .chatbot-lead-form h4 {
+      margin: 0;
+      color: ${config.theme === 'dark' ? '#ffffff' : '#172033'};
+      font-size: 13px;
+    }
+
+    .chatbot-lead-form p {
+      margin: 0;
+      color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'};
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .chatbot-lead-form input[type="text"],
+    .chatbot-lead-form input[type="email"],
+    .chatbot-lead-form input[type="tel"] {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid ${config.theme === 'dark' ? '#526176' : '#dbe2ea'};
+      border-radius: 9px;
+      background: ${config.theme === 'dark' ? '#1a2434' : '#f8fafc'};
+      color: ${config.theme === 'dark' ? '#ffffff' : '#172033'};
+      font: inherit;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .chatbot-lead-form input:focus {
+      border-color: ${config.primaryColor};
+      box-shadow: 0 0 0 3px ${config.primaryColor}18;
+    }
+
+    .chatbot-lead-consent {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'};
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .chatbot-lead-submit {
+      min-height: 38px;
+      border: 0;
+      border-radius: 9px;
+      background: ${config.primaryColor};
+      color: #ffffff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .chatbot-lead-submit:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+
+    .chatbot-lead-status {
+      min-height: 15px;
+      color: ${config.theme === 'dark' ? '#fca5a5' : '#b91c1c'} !important;
+      font-size: 10px !important;
+    }
+
+    .chatbot-lead-success {
+      margin-top: 10px;
+      padding: 11px 12px;
+      border-radius: 11px;
+      background: ${config.theme === 'dark' ? '#064e3b' : '#ecfdf5'};
+      color: ${config.theme === 'dark' ? '#a7f3d0' : '#047857'};
+      font-size: 11px;
+      font-weight: 600;
+    }
+
     .chatbot-input-container {
       padding: 16px;
       border-top: 1px solid ${config.theme === 'dark' ? '#4a5568' : '#e2e8f0'};
@@ -699,6 +786,95 @@
     contentElement.appendChild(feedback);
   }
 
+  function addLeadForms(contentElement, forms, activeConversationId) {
+    if (!Array.isArray(forms) || !forms.length || !activeConversationId) return;
+    const definition = forms[0];
+    const form = document.createElement('form');
+    form.className = 'chatbot-lead-form';
+    const title = document.createElement('h4');
+    title.textContent = definition.title || 'Lascia i tuoi contatti';
+    const description = document.createElement('p');
+    description.textContent = definition.description || 'Ti ricontatteremo al più presto.';
+    form.appendChild(title);
+    form.appendChild(description);
+
+    const fields = [
+      ['name', 'text', 'Nome e cognome', true],
+      ['email', 'email', 'Email', false],
+      ['phone', 'tel', 'Telefono', false],
+      ['company', 'text', 'Azienda (opzionale)', false],
+    ];
+    fields.forEach(([name, type, placeholder, required]) => {
+      const input = document.createElement('input');
+      input.name = name;
+      input.type = type;
+      input.placeholder = placeholder;
+      input.maxLength = name === 'email' ? 254 : 120;
+      input.required = required;
+      input.setAttribute('aria-label', placeholder);
+      form.appendChild(input);
+    });
+
+    const consentLabel = document.createElement('label');
+    consentLabel.className = 'chatbot-lead-consent';
+    const consent = document.createElement('input');
+    consent.type = 'checkbox';
+    consent.name = 'consent';
+    consent.required = true;
+    const consentText = document.createElement('span');
+    consentText.textContent = 'Acconsento a essere ricontattato per questa richiesta.';
+    consentLabel.appendChild(consent);
+    consentLabel.appendChild(consentText);
+    form.appendChild(consentLabel);
+
+    const status = document.createElement('p');
+    status.className = 'chatbot-lead-status';
+    status.setAttribute('role', 'alert');
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'chatbot-lead-submit';
+    submit.textContent = 'Invia richiesta';
+    form.appendChild(status);
+    form.appendChild(submit);
+
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const values = new FormData(form);
+      const email = String(values.get('email') || '').trim();
+      const phone = String(values.get('phone') || '').trim();
+      if (!email && !phone) {
+        status.textContent = 'Inserisci almeno email o telefono.';
+        return;
+      }
+      submit.disabled = true;
+      status.textContent = '';
+      try {
+        const response = await fetch(`${config.apiUrl}/api/embed/${config.botId}/lead`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId: activeConversationId,
+            name: String(values.get('name') || '').trim(),
+            email,
+            phone,
+            company: String(values.get('company') || '').trim(),
+            consent: values.get('consent') === 'on',
+          }),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(result && result.error || 'Invio non riuscito');
+        const success = document.createElement('div');
+        success.className = 'chatbot-lead-success';
+        success.textContent = 'Richiesta ricevuta. Ti ricontatteremo presto.';
+        form.replaceWith(success);
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'Invio non riuscito';
+        submit.disabled = false;
+      }
+    };
+    contentElement.appendChild(form);
+  }
+
   function showTyping() {
     const typingElement = document.createElement('div');
     typingElement.className = 'chatbot-message bot';
@@ -778,6 +954,7 @@
         const responseContent = addMessage('bot', data.data.assistantMessage.content);
         addFeedbackControls(responseContent, data.data.assistantMessage.id);
         addResponseExtras(responseContent, data.data.quickReplies, data.data.ctas);
+        addLeadForms(responseContent, data.data.actions && data.data.actions.leadForms, data.data.conversationId);
         
         // Update conversation ID if needed
         if (data.data.conversationId && !conversationId) {

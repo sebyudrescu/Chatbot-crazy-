@@ -59,7 +59,7 @@ export function simulateAction(input: SimulationInput): ActionSimulation {
       matched: true,
       effect: Object.keys(extracted).length
         ? "Salverebbe i dati di contatto trovati"
-        : "Trigger trovato, ma il messaggio non contiene email o telefono",
+        : "Mostrerebbe un modulo guidato per nome, email, telefono e azienda",
       extracted,
       safePreview: true,
     };

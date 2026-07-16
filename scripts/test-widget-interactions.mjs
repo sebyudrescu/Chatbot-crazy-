@@ -36,6 +36,15 @@ window.fetch = async (url, options = {}) => {
       headers: { "Content-Type": "application/json" },
     });
   }
+  if (requestUrl.endsWith("/lead")) {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: { contactId: "00000000-0000-4000-8000-000000000004" },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
   if (
     requests.at(-1)?.body?.message === "Ripristina sessione" &&
     requests.at(-1)?.body?.conversationId &&
@@ -79,6 +88,16 @@ window.fetch = async (url, options = {}) => {
             action: "javascript:alert(1)",
           },
         ],
+        actions: {
+          leadForms: [
+            {
+              id: "lead-1",
+              title: "Richiedi un contatto",
+              description: "Lascia i dati e ti ricontatteremo.",
+              fields: ["name", "email", "phone", "company"],
+            },
+          ],
+        },
       },
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
@@ -214,6 +233,37 @@ assert.equal(
   "Il recupero perde l'identità stabile del visitatore",
 );
 
+const leadForm = window.document.querySelector(".chatbot-lead-form");
+assert.ok(leadForm, "Il modulo lead non viene mostrato");
+leadForm.querySelector('input[name="name"]').value = "Mario Rossi";
+leadForm.querySelector('input[name="email"]').value = "mario@example.com";
+leadForm.querySelector('input[name="company"]').value = "Rossi SRL";
+leadForm.querySelector('input[name="consent"]').checked = true;
+leadForm.dispatchEvent(
+  new window.Event("submit", { bubbles: true, cancelable: true }),
+);
+for (
+  let attempt = 0;
+  attempt < 40 &&
+  !window.document.querySelector(".chatbot-lead-success");
+  attempt += 1
+) {
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}
+assert.equal(
+  requests[5]?.url,
+  "https://litx.example/api/embed/00000000-0000-4000-8000-000000000001/lead",
+  "Il modulo lead usa un endpoint inatteso",
+);
+assert.deepEqual(requests[5]?.body, {
+  conversationId: "00000000-0000-4000-8000-000000000002",
+  name: "Mario Rossi",
+  email: "mario@example.com",
+  phone: "",
+  company: "Rossi SRL",
+  consent: true,
+});
+
 console.log(
   JSON.stringify(
     {
@@ -228,6 +278,7 @@ console.log(
         "message-feedback",
         "persistent-session",
         "stale-session-recovery",
+        "lead-capture-form",
         "keyboard-accessible-controls",
       ],
     },

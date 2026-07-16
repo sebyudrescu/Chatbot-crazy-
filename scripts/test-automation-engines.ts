@@ -168,6 +168,34 @@ async function main() {
       "Action status was not finalized",
     );
 
+    const leadAction = await prisma.agentAction.create({
+      data: {
+        botId: bot.id,
+        name: "Lead form test",
+        type: "collect_lead",
+        triggerKeywords: JSON.stringify(["richiamami"]),
+        config: JSON.stringify({ title: "Richiedi un contatto" }),
+      },
+    });
+    const leadMessage = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: "user",
+        content: "Richiamami per maggiori informazioni",
+      },
+    });
+    const leadResult = await runTriggeredActions({
+      botId: bot.id,
+      conversationId: conversation.id,
+      messageId: leadMessage.id,
+      message: leadMessage.content,
+    });
+    assert(
+      leadResult.executed.includes(leadAction.id) &&
+        leadResult.leadForms[0]?.title === "Richiedi un contatto",
+      "Lead action did not return the guided form",
+    );
+
     const updatedConversation = await prisma.conversation.findUnique({
       where: { id: conversation.id },
     });

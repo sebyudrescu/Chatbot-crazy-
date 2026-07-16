@@ -252,7 +252,6 @@ try {
     method: "PATCH",
     body: JSON.stringify({
       userName: "Smoke Client",
-      userEmail: "smoke@example.com",
       needsHumanEscalation: true,
       assignedAgent: "Sebastian",
       internalNotes: "Nota operativa smoke",
@@ -282,11 +281,28 @@ try {
       feedback: "positive",
     }),
   });
+  const capturedLead = await request(`/api/embed/${botId}/lead`, {
+    method: "POST",
+    body: JSON.stringify({
+      conversationId,
+      name: "Smoke Client",
+      email: "smoke@example.com",
+      phone: "+39 333 123 4567",
+      company: "Smoke SRL",
+      consent: true,
+    }),
+  });
+  assert(
+    capturedLead.data.contactId && capturedLead.data.leadScore >= 55,
+    "Public lead capture did not create a CRM contact",
+  );
   const detail = await request(`/api/conversations/${conversationId}`);
   assert(
     detail.data.userName === "Smoke Client" &&
       detail.data.messages.at(-1)?.content === "Risposta smoke" &&
       detail.data.messages.at(-1)?.feedback === "positive" &&
+      detail.data.userEmail === "smoke@example.com" &&
+      detail.data.userCompany === "Smoke SRL" &&
       detail.data.internalNotes === "Nota operativa smoke" &&
       detail.data.tags.includes("urgente"),
     "Inbox and public widget feedback flow failed",
@@ -517,6 +533,7 @@ try {
           "widget",
           "widget-feedback",
           "widget-cors",
+          "widget-lead-capture",
           "conversation-isolation",
           "embed",
           "inbox-notes-tags",

@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./db";
 import { safeHttpsUrl } from "./integration-catalog";
 import type { CTA } from "./cta-generator";
+import { syncCRMContactFromConversation } from "./crm-sync";
 
 interface Context {
   botId: string;
@@ -15,6 +16,12 @@ export interface ActionResult {
   failed: string[];
   skipped: string[];
   ctas: CTA[];
+  leadForms: Array<{
+    id: string;
+    title: string;
+    description: string;
+    fields: string[];
+  }>;
 }
 const parse = <T>(value: string, fallback: T): T => {
   try {
@@ -40,6 +47,7 @@ export async function runTriggeredActions(
       failed: [],
       skipped: [],
       ctas: [],
+      leadForms: [],
     },
     normalized = context.message.toLocaleLowerCase("it");
   for (const action of actions) {
@@ -116,16 +124,27 @@ export async function runTriggeredActions(
             /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/,
           )?.[0],
           phone = context.message.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0];
-        if (!email && !phone)
-          throw new Error("Nessun contatto trovato nel messaggio");
-        await prisma.conversation.update({
-          where: { id: context.conversationId },
-          data: {
-            ...(email ? { userEmail: email } : {}),
-            ...(phone ? { userPhone: phone.trim() } : {}),
-          },
-        });
-        output = email ? "Email raccolta" : "Telefono raccolto";
+        if (!email && !phone) {
+          result.leadForms.push({
+            id: `lead-${action.id}`,
+            title: config.title || "Lascia i tuoi contatti",
+            description:
+              config.description ||
+              "Ti ricontatteremo per aiutarti con la tua richiesta.",
+            fields: ["name", "email", "phone", "company"],
+          });
+          output = "Modulo contatto mostrato";
+        } else {
+          await prisma.conversation.update({
+            where: { id: context.conversationId },
+            data: {
+              ...(email ? { userEmail: email } : {}),
+              ...(phone ? { userPhone: phone.trim() } : {}),
+            },
+          });
+          await syncCRMContactFromConversation(context.conversationId);
+          output = email ? "Email raccolta" : "Telefono raccolto";
+        }
         success = true;
       } else if (action.type === "webhook") {
         const url = safeHttpsUrl(config.url);
