@@ -10,6 +10,7 @@ import * as cheerio from 'cheerio'
 import { Readability } from '@mozilla/readability'
 import { JSDOM } from 'jsdom'
 import crypto from 'crypto'
+import { assertSafeRemoteUrl } from './url-safety'
 
 export interface SimpleCrawlOptions {
   maxPages?: number
@@ -49,7 +50,7 @@ export class SimpleIntelligentCrawler {
     try {
       const parsed = new URL(url)
       // Remove hash and trailing slash
-      let normalized = `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`
+      let normalized = `${parsed.protocol}//${parsed.host}${parsed.pathname}`
       if (normalized.endsWith('/') && parsed.pathname !== '/') {
         normalized = normalized.slice(0, -1)
       }
@@ -204,6 +205,7 @@ export class SimpleIntelligentCrawler {
   }
 
   async crawl(): Promise<CrawledPage[]> {
+    await assertSafeRemoteUrl(this.baseUrl)
     console.log(`[Crawler] Starting crawl from: ${this.baseUrl}`)
     console.log(`[Crawler] Max pages: ${this.options.maxPages}, Max depth: ${this.options.maxDepth}`)
 
@@ -216,7 +218,7 @@ export class SimpleIntelligentCrawler {
     // BFS crawling
     while (this.queue.length > 0 && this.visited.size < this.options.maxPages) {
       // Process in batches
-      const batchSize = 5
+      const batchSize = Math.min(5, this.options.maxPages - this.visited.size)
       const batch = this.queue.splice(0, batchSize)
 
       await Promise.all(
@@ -246,11 +248,22 @@ export class SimpleIntelligentCrawler {
       // Fetch page
       const response = await axios.get(url, {
         timeout: 10000,
+        maxContentLength: 5 * 1024 * 1024,
+        maxBodyLength: 5 * 1024 * 1024,
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; ChatbotCrawler/1.0)'
         }
       })
 
+      const finalUrl = response.request?.res?.responseUrl || url
+      const final = await assertSafeRemoteUrl(finalUrl)
+      if (final.hostname !== this.baseDomain) {
+        throw new Error('Redirect verso un dominio esterno non consentito')
+      }
+      const contentType = String(response.headers['content-type'] || '').toLowerCase()
+      if (contentType && !contentType.includes('text/html')) {
+        throw new Error(`Tipo di contenuto non supportato: ${contentType}`)
+      }
       const html = response.data
 
       // Extract links

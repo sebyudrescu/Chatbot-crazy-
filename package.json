@@ -12,6 +12,7 @@
         "test:smoke": "node scripts/smoke-test.mjs",
         "test:knowledge-formats": "node scripts/test-knowledge-formats.mjs",
         "test:widget": "node scripts/test-widget-interactions.mjs",
+        "test:crawler": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler.ts",
         "test:automations": "node scripts/run-automation-tests.cjs",
         "test:evaluations": "node scripts/evaluate-agents.mjs",
         "postinstall": "prisma generate",

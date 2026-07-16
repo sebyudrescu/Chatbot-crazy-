@@ -283,7 +283,6 @@ async function processCrawlJob(job: any, params: any) {
         totalChunks += result.chunkCount
       }
       
-      sourcesCreated++
       const progress = 40 + Math.floor((sourcesCreated / pages.length) * 50)
       await updateJobProgress(job.id, progress, `Processed ${sourcesCreated}/${pages.length} pages`)
       
@@ -362,7 +361,7 @@ async function processPdfJob(job: any, params: any) {
  * Process single URL job
  */
 async function processUrlJob(job: any, params: any) {
-  const { singleUrl } = params
+  const { singleUrl, replaceSourceId } = params
   const botId = job.botId
   
   await updateJobProgress(job.id, 20, 'Fetching page...')
@@ -414,6 +413,27 @@ async function processUrlJob(job: any, params: any) {
   
   if (!result.success) {
     throw new Error(result.error || 'Failed to process URL')
+  }
+
+  if (replaceSourceId && replaceSourceId !== source.id) {
+    const previous = await prisma.knowledgeSource.findFirst({
+      where: { id: replaceSourceId, botId },
+      select: { id: true },
+    })
+    if (previous) {
+      try {
+        const { deleteSource } = await import('./simple-vector-store')
+        deleteSource(botId, previous.id)
+        const { deleteVectorsForSource, isPineconeConfigured } = await import('./pinecone-vector-store')
+        if (isPineconeConfigured()) {
+          await deleteVectorsForSource(botId, previous.id)
+        }
+        await prisma.knowledgeSource.delete({ where: { id: previous.id } })
+        console.log(`[Worker] Replaced stale source ${previous.id} with ${source.id}`)
+      } catch (error) {
+        console.error(`[Worker] New source is ready but old source cleanup failed:`, error)
+      }
+    }
   }
   
   await completeJob(job.id, 1, result.chunkCount)

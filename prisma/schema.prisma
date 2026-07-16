@@ -336,6 +336,7 @@ model IngestionJob {
   id       String @id @default(uuid())
   botId    String
   jobType  String // "crawl", "pdf", "url", "reindex"
+  dedupeKey String? @unique
   status   String @default("pending") // "pending", "running", "completed", "failed"
   priority Int    @default(5) // 1-10, higher = more urgent
 

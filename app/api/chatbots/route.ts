@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
       temperature: 0.4,
       maxTokens: 700,
       dataRetentionDays: 365,
+      knowledgeSyncDays: 7,
       rules: [
         "Non inventare informazioni",
         "Usa solo fonti autorizzate",

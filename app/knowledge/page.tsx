@@ -112,35 +112,46 @@ export default function KnowledgePage() {
     setCrawlProgress('Inizializzazione crawler...')
 
     try {
-      const response = await fetch('/api/knowledge-sources/crawl-site', {
+      const response = await fetch('/api/knowledge-sources/crawl-with-progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           botId: selectedChatbot,
           url: crawlUrl.trim(),
-          maxPages: 200,  // Automatico: crawla fino a 200 pagine
-          maxDepth: 6,     // Automatico: profondità 6 livelli
+          maxPages: 10,
+          maxDepth: 3,
         }),
       })
 
       if (response.ok) {
         const data = await response.json()
-        setCrawlUrl('')
-        setShowUploadModal(false)
-        fetchKnowledgeSources()
-        
-        alert(`✅ Crawl completato!\n\n` +
-          `📄 Pagine trovate: ${data.data.crawled}\n` +
-          `✅ Pagine elaborate: ${data.data.processed}\n` +
-          `🧩 Chunks creati: ${data.data.totalChunks}\n` +
-          `⭐ Qualità media: ${data.data.stats.averageQuality}/100`)
+        const jobId = data.jobId
+        let completed = false
+        for (let attempt = 0; attempt < 150; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          const statusResponse = await fetch(`/api/ingestion/status?jobId=${jobId}`)
+          const statusData = await statusResponse.json()
+          if (!statusResponse.ok) throw new Error(statusData.error || 'Stato crawl non disponibile')
+          const job = statusData.data
+          setCrawlProgress(`${job.progress || 0}% · ${job.progressMessage || 'Elaborazione in corso...'}`)
+          if (job.status === 'completed') {
+            completed = true
+            setCrawlUrl('')
+            setShowUploadModal(false)
+            await fetchKnowledgeSources()
+            alert(`Crawl completato: ${job.sourcesCreated} pagine e ${job.chunksCreated} blocchi indicizzati.`)
+            break
+          }
+          if (job.status === 'failed') throw new Error(job.error || 'Il crawler non è riuscito a completare il sito')
+        }
+        if (!completed) throw new Error('Il crawl sta impiegando troppo tempo. Puoi seguirlo dalla pagina dei job.')
       } else {
         const data = await response.json()
         alert('❌ Errore durante il crawling: ' + (data.error || 'Unknown error'))
       }
     } catch (error) {
       console.error('Error crawling:', error)
-      alert('❌ Errore durante il crawling')
+      alert(`Errore durante il crawling: ${error instanceof Error ? error.message : 'errore sconosciuto'}`)
     } finally {
       setCrawling(false)
       setCrawlProgress('')

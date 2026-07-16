@@ -6,6 +6,7 @@
 import pdf from 'pdf-parse'
 import * as cheerio from 'cheerio'
 import mammoth from 'mammoth'
+import { assertSafeRemoteUrl } from './url-safety'
 
 /**
  * Extract text from PDF buffer
@@ -46,6 +47,7 @@ export function normalizeDocumentText(text: string): string {
  */
 export async function extractTextFromURL(url: string): Promise<string> {
   try {
+    await assertSafeRemoteUrl(url)
     // Create abort controller for timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 10000)
@@ -128,6 +130,7 @@ export function cleanText(text: string): string {
  */
 export async function validateURL(url: string): Promise<boolean> {
   try {
+    await assertSafeRemoteUrl(url)
     // Create abort controller for timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000)

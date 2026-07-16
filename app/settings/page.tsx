@@ -6,6 +6,7 @@ import { AlertTriangle as TriangleAlert, Bot, CheckCircle2, Database, ExternalLi
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { PrivacyDataManager } from '@/components/settings/PrivacyDataManager'
 import { RetentionPolicyManager } from '@/components/settings/RetentionPolicyManager'
+import { KnowledgeSyncManager } from '@/components/settings/KnowledgeSyncManager'
 
 interface Status {
   database: boolean
@@ -39,6 +40,7 @@ export default function SettingsPage() {
       </div>
       <div className="mt-5"><PrivacyDataManager /></div>
       <div className="mt-5"><RetentionPolicyManager /></div>
+      <div className="mt-5"><KnowledgeSyncManager /></div>
     </>}
   </div></DashboardLayout>
 }

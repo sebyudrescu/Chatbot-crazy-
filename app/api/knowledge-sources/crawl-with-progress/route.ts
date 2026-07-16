@@ -1,65 +1,71 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { createIngestionJob, JobType } from '@/lib/ingestion-queue'
-import { ensureWorkerStarted } from '@/lib/auto-start-worker'
+import { after, NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { createIngestionJob, JobType } from "@/lib/ingestion-queue";
+import { processJobManually } from "@/lib/ingestion-worker";
 
-/**
- * POST /api/knowledge-sources/crawl-with-progress
- * 
- * ASYNC API - Uses background worker for reliable processing
- * Returns job ID immediately, client polls for status
- */
+export const maxDuration = 300;
+
+const CrawlSchema = z.object({
+  botId: z.string().uuid(),
+  url: z.string().url(),
+  maxPages: z.number().int().min(1).max(25).default(10),
+  maxDepth: z.number().int().min(0).max(5).default(3),
+});
+
 export async function POST(request: NextRequest) {
-  const body = await request.json()
-  const { botId, url, maxPages = 10, maxDepth = 3 } = body
-
-  console.log(`[CrawlAPI] Received request: botId=${botId}, url=${url}`)
-
-  // Validation
-  if (!botId || !url) {
-    return NextResponse.json(
-      { success: false, error: 'botId and url are required' },
-      { status: 400 }
-    )
-  }
-
-  // Verify chatbot exists
-  const chatbot = await prisma.chatbot.findUnique({
-    where: { id: botId }
-  })
-
-  if (!chatbot) {
-    return NextResponse.json(
-      { success: false, error: 'Chatbot not found' },
-      { status: 404 }
-    )
-  }
-  
   try {
-    // Ensure worker is running
-    await ensureWorkerStarted()
-    
-    // Create async job
+    const input = CrawlSchema.parse(await request.json());
+    const chatbot = await prisma.chatbot.findUnique({
+      where: { id: input.botId },
+      select: { id: true },
+    });
+    if (!chatbot) {
+      return NextResponse.json(
+        { success: false, error: "Agente non trovato" },
+        { status: 404 },
+      );
+    }
+
     const job = await createIngestionJob(
-      botId,
+      input.botId,
       JobType.CRAWL,
-      { url, maxPages, maxDepth },
-      5 // priority
-    )
-    
-    console.log(`[CrawlAPI] Created job ${job.id}`)
-    
-    return NextResponse.json({
-      success: true,
-      jobId: job.id,
-      message: 'Crawl job created. Poll /api/ingestion/status/{botId} for progress.'
-    })
-    
-  } catch (error: any) {
-    console.error('[CrawlAPI] Error:', error)
+      {
+        url: input.url,
+        maxPages: input.maxPages,
+        maxDepth: input.maxDepth,
+      },
+      5,
+    );
+    after(async () => {
+      try {
+        await processJobManually(job.id);
+      } catch (error) {
+        console.error(`[CrawlAPI] Background job ${job.id} failed:`, error);
+      }
+    });
+
     return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    )
+      {
+        success: true,
+        jobId: job.id,
+        status: job.status,
+        message: "Crawl avviato. Usa l’ID del job per seguire il progresso.",
+      },
+      { status: 202 },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof z.ZodError
+            ? error.errors[0].message
+            : error instanceof Error
+              ? error.message
+              : "Impossibile avviare il crawl",
+      },
+      { status: 400 },
+    );
   }
 }

@@ -111,6 +111,11 @@ jobs:
         continue-on-error: true
         run: npm run test:knowledge-formats
 
+      - name: Website crawler behavior tests
+        id: crawler
+        continue-on-error: true
+        run: npm run test:crawler
+
       - name: Embeddable widget interaction tests
         id: widget
         continue-on-error: true
@@ -153,6 +158,7 @@ jobs:
             echo "| Test server | ${{ steps.server.outcome }} |"
             echo "| API smoke test | ${{ steps.smoke.outcome }} |"
             echo "| Knowledge formats | ${{ steps.knowledge.outcome }} |"
+            echo "| Website crawler | ${{ steps.crawler.outcome }} |"
             echo "| Embeddable widget interactions | ${{ steps.widget.outcome }} |"
             echo "| Automation idempotency | ${{ steps.automations.outcome }} |"
             echo
@@ -178,6 +184,7 @@ jobs:
              [ "${{ steps.server.outcome }}" != "success" ] ||
              [ "${{ steps.smoke.outcome }}" != "success" ] ||
              [ "${{ steps.knowledge.outcome }}" != "success" ] ||
+             [ "${{ steps.crawler.outcome }}" != "success" ] ||
              [ "${{ steps.widget.outcome }}" != "success" ] ||
              [ "${{ steps.automations.outcome }}" != "success" ]; then
             exit 1

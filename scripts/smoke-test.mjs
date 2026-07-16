@@ -113,6 +113,44 @@ try {
     manualPreview.data.type === "manual" && manualPreview.data.characters > 50,
     "Manual knowledge preview failed",
   );
+  const privateUrlImport = await fetch(
+    `${baseUrl}/api/knowledge-sources/add-url`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authCookie ? { Cookie: authCookie } : {}),
+      },
+      body: JSON.stringify({
+        botId,
+        url: "http://127.0.0.1/private-metadata",
+      }),
+    },
+  );
+  assert(
+    privateUrlImport.status === 400,
+    "URL ingestion accepted a private-network address",
+  );
+  const oversizedCrawl = await fetch(
+    `${baseUrl}/api/knowledge-sources/crawl-with-progress`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authCookie ? { Cookie: authCookie } : {}),
+      },
+      body: JSON.stringify({
+        botId,
+        url: "https://example.com",
+        maxPages: 26,
+        maxDepth: 3,
+      }),
+    },
+  );
+  assert(
+    oversizedCrawl.status === 400,
+    "Crawler accepted a request above its production page limit",
+  );
 
   const updated = await request(`/api/chatbots/${botId}`, {
     method: "PATCH",
@@ -783,6 +821,80 @@ try {
     );
   }
 
+  const knowledgeSyncSettings = await request(`/api/chatbots/${botId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ settings: { knowledgeSyncDays: 1 } }),
+  });
+  assert(
+    knowledgeSyncSettings.data.settings.knowledgeSyncDays === 1,
+    "Knowledge sync frequency was not persisted",
+  );
+  const staleKnowledgeSource = await prisma.knowledgeSource.create({
+    data: {
+      botId,
+      sourceType: "url",
+      sourceUrl: "https://example.com/sync-smoke-faq",
+      contentText:
+        "Contenuto di prova abbastanza lungo per rappresentare una fonte web già indicizzata.",
+      status: "completed",
+      processedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      chunkCount: 1,
+    },
+  });
+  const knowledgeSyncPreview = await request(
+    `/api/knowledge-sources/sync?botId=${botId}`,
+  );
+  assert(
+    knowledgeSyncPreview.data[0].syncDays === 1 &&
+      knowledgeSyncPreview.data[0].urlSources === 1 &&
+      knowledgeSyncPreview.data[0].staleSources === 1,
+    "Knowledge sync preview did not detect an obsolete URL source",
+  );
+  const firstKnowledgeSync = await request("/api/knowledge-sources/sync", {
+    method: "POST",
+    body: JSON.stringify({ botId, limit: 3 }),
+  });
+  const secondKnowledgeSync = await request("/api/knowledge-sources/sync", {
+    method: "POST",
+    body: JSON.stringify({ botId, limit: 3 }),
+  });
+  const queuedSyncJobs = await prisma.ingestionJob.findMany({
+    where: {
+      botId,
+      dedupeKey: { startsWith: `knowledge-sync:${staleKnowledgeSource.id}:` },
+    },
+  });
+  const queuedParams = JSON.parse(queuedSyncJobs[0]?.params || "{}");
+  assert(
+    firstKnowledgeSync.data.scheduled === 1 &&
+      secondKnowledgeSync.data.jobs[0].id === firstKnowledgeSync.data.jobs[0].id &&
+      queuedSyncJobs.length === 1 &&
+      queuedParams.replaceSourceId === staleKnowledgeSource.id,
+    "Knowledge sync scheduling created a duplicate or unsafe replacement job",
+  );
+  const unauthorizedKnowledgeCron = await fetch(
+    `${baseUrl}/api/cron/knowledge-sync`,
+  );
+  assert(
+    unauthorizedKnowledgeCron.status === 401,
+    "Knowledge sync cron accepted an unauthenticated request",
+  );
+  if (process.env.SMOKE_CRON_SECRET) {
+    const authorizedKnowledgeCron = await fetch(
+      `${baseUrl}/api/cron/knowledge-sync`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.SMOKE_CRON_SECRET}`,
+        },
+      },
+    );
+    assert(
+      authorizedKnowledgeCron.ok &&
+        (await authorizedKnowledgeCron.json()).success,
+      "Knowledge sync cron rejected its configured secret",
+    );
+  }
+
   console.log(
     JSON.stringify(
       {
@@ -793,6 +905,7 @@ try {
           "settings",
           "prompt-versions",
           "knowledge-preview",
+          "crawler-input-safety",
           "widget",
           "widget-feedback",
           "widget-cors",
@@ -823,6 +936,9 @@ try {
           "retention-policy",
           "retention-cleanup",
           "retention-cron-auth",
+          "knowledge-sync-preview",
+          "knowledge-sync-deduplication",
+          "knowledge-sync-cron-auth",
         ],
       },
       null,

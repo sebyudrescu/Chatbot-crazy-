@@ -14,6 +14,7 @@
 import { prisma } from './db'
 import { eventStore } from './event-store'
 import { withRetry } from './db-retry'
+import { assertSafeRemoteUrl } from './url-safety'
 
 export enum JobType {
   CRAWL = 'crawl',
@@ -41,6 +42,7 @@ export interface JobParams {
   
   // For URL
   singleUrl?: string
+  replaceSourceId?: string
   
   // For REINDEX
   sourceIds?: string[]
@@ -84,12 +86,14 @@ export async function createIngestionJob(
   botId: string,
   jobType: JobType,
   params: JobParams,
-  priority: number = 5
+  priority: number = 5,
+  options: { dedupeKey?: string } = {},
 ) {
   // Normalize URLs if present
   if (params.url) {
     try {
       params.url = normalizeUrl(params.url)
+      await assertSafeRemoteUrl(params.url)
       console.log(`[IngestionQueue] Normalized URL: ${params.url}`)
     } catch (error) {
       console.error(`[IngestionQueue] Invalid URL: ${(error as Error).message}`)
@@ -100,6 +104,7 @@ export async function createIngestionJob(
   if (params.singleUrl) {
     try {
       params.singleUrl = normalizeUrl(params.singleUrl)
+      await assertSafeRemoteUrl(params.singleUrl)
       console.log(`[IngestionQueue] Normalized single URL: ${params.singleUrl}`)
     } catch (error) {
       console.error(`[IngestionQueue] Invalid URL: ${(error as Error).message}`)
@@ -107,17 +112,39 @@ export async function createIngestionJob(
     }
   }
   
-  const job = await prisma.ingestionJob.create({
-    data: {
-      botId,
-      jobType,
-      status: JobStatus.PENDING,
-      priority,
-      params: JSON.stringify(params),
-      attempts: 0,
-      maxAttempts: 5,  // Increased from 3 to 5 for better retry
+  if (options.dedupeKey) {
+    const existing = await prisma.ingestionJob.findUnique({
+      where: { dedupeKey: options.dedupeKey },
+    })
+    if (existing) {
+      console.log(`[IngestionQueue] Reusing deduplicated job ${existing.id}`)
+      return existing
     }
-  })
+  }
+
+  let job
+  try {
+    job = await prisma.ingestionJob.create({
+      data: {
+        botId,
+        jobType,
+        dedupeKey: options.dedupeKey,
+        status: JobStatus.PENDING,
+        priority,
+        params: JSON.stringify(params),
+        attempts: 0,
+        maxAttempts: 5,  // Increased from 3 to 5 for better retry
+      }
+    })
+  } catch (error) {
+    if (options.dedupeKey) {
+      const existing = await prisma.ingestionJob.findUnique({
+        where: { dedupeKey: options.dedupeKey },
+      })
+      if (existing) return existing
+    }
+    throw error
+  }
   
   console.log(`[IngestionQueue] ✅ Created job ${job.id} (${jobType}) for bot ${botId}`)
   
@@ -160,13 +187,44 @@ export async function getNextJob() {
   return job
 }
 
+export async function recoverStaleRunningJobs(maxAgeMinutes: number = 20) {
+  const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000)
+  const [requeued, failed] = await prisma.$transaction([
+    prisma.ingestionJob.updateMany({
+      where: {
+        status: JobStatus.RUNNING,
+        startedAt: { lt: cutoff },
+        attempts: { lt: prisma.ingestionJob.fields.maxAttempts },
+      },
+      data: {
+        status: JobStatus.PENDING,
+        nextRetryAt: new Date(),
+        errorMessage: 'Worker interrotto: job recuperato automaticamente',
+      },
+    }),
+    prisma.ingestionJob.updateMany({
+      where: {
+        status: JobStatus.RUNNING,
+        startedAt: { lt: cutoff },
+        attempts: { gte: prisma.ingestionJob.fields.maxAttempts },
+      },
+      data: {
+        status: JobStatus.FAILED,
+        completedAt: new Date(),
+        errorMessage: 'Job interrotto dopo il numero massimo di tentativi',
+      },
+    }),
+  ])
+  return { count: requeued.count, failed: failed.count }
+}
+
 /**
  * Mark job as started
  */
 export async function startJob(jobId: string) {
-  const job = await withRetry(() =>
-    prisma.ingestionJob.update({
-      where: { id: jobId },
+  const claimed = await withRetry(() =>
+    prisma.ingestionJob.updateMany({
+      where: { id: jobId, status: JobStatus.PENDING },
       data: {
         status: JobStatus.RUNNING,
         startedAt: new Date(),
@@ -174,6 +232,11 @@ export async function startJob(jobId: string) {
       }
     })
   )
+  if (claimed.count !== 1) {
+    throw new Error(`Job ${jobId} is not pending or was claimed by another worker`)
+  }
+  const job = await prisma.ingestionJob.findUnique({ where: { id: jobId } })
+  if (!job) throw new Error(`Job ${jobId} not found after claim`)
   
   // Log event
   await eventStore.logJobStarted(job.botId, jobId, {

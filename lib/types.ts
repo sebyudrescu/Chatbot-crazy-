@@ -37,6 +37,7 @@ export const ChatbotSettingsSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(64).max(4096).optional(),
   dataRetentionDays: z.number().int().min(30).max(3650).optional(),
+  knowledgeSyncDays: z.number().int().min(1).max(365).optional(),
 });
 
 export const CreateChatbotSchema = z.object({
