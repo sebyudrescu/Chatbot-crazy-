@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     animation: settings.animation,
     shadow: settings.shadow,
     gradient: settings.gradient,
+    customCSS: settings.customCSS,
   }
 
   const widgetPath = path.join(process.cwd(), 'public', 'chatbot-widget.js')

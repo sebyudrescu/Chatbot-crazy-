@@ -109,6 +109,11 @@ jobs:
         continue-on-error: true
         run: npm run test:knowledge-formats
 
+      - name: Embeddable widget interaction tests
+        id: widget
+        continue-on-error: true
+        run: npm run test:widget
+
       - name: Automation engine safety tests
         id: automations
         continue-on-error: true
@@ -146,6 +151,7 @@ jobs:
             echo "| Test server | ${{ steps.server.outcome }} |"
             echo "| API smoke test | ${{ steps.smoke.outcome }} |"
             echo "| Knowledge formats | ${{ steps.knowledge.outcome }} |"
+            echo "| Embeddable widget interactions | ${{ steps.widget.outcome }} |"
             echo "| Automation idempotency | ${{ steps.automations.outcome }} |"
             echo
             echo "The audit is read-only: it never edits, commits, pushes or deploys project code."
@@ -170,6 +176,7 @@ jobs:
              [ "${{ steps.server.outcome }}" != "success" ] ||
              [ "${{ steps.smoke.outcome }}" != "success" ] ||
              [ "${{ steps.knowledge.outcome }}" != "success" ] ||
+             [ "${{ steps.widget.outcome }}" != "success" ] ||
              [ "${{ steps.automations.outcome }}" != "success" ]; then
             exit 1
           fi
