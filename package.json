@@ -1,0 +1,74 @@
+{
+    "name": "chatbot-rag-mvp",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "dev": "next dev --webpack",
+        "build": "next build --webpack",
+        "start": "next start",
+        "lint": "eslint .",
+        "typecheck": "tsc --noEmit",
+        "audit:project": "npm run typecheck && npm run lint && npm run build",
+        "test:smoke": "node scripts/smoke-test.mjs",
+        "test:knowledge-formats": "node scripts/test-knowledge-formats.mjs",
+        "test:automations": "node scripts/run-automation-tests.cjs",
+        "test:evaluations": "node scripts/evaluate-agents.mjs",
+        "postinstall": "prisma generate",
+        "db:push": "prisma db push",
+        "db:studio": "prisma studio",
+        "worker": "node -r esbuild-register worker.ts",
+        "worker:simple": "node worker.js"
+    },
+    "dependencies": {
+        "@mendable/firecrawl-js": "^4.10.0",
+        "@mozilla/readability": "^0.6.0",
+        "@pinecone-database/pinecone": "^6.1.3",
+        "@prisma/client": "^5.8.1",
+        "axios": "^1.15.2",
+        "cheerio": "^1.0.0-rc.12",
+        "clsx": "^2.1.0",
+        "crawlee": "^3.15.3",
+        "dotenv": "^17.2.3",
+        "faiss-node": "^0.5.1",
+        "jsdom": "^27.4.0",
+        "lucide-react": "^1.24.0",
+        "mammoth": "^1.12.0",
+        "next": "^16.2.10",
+        "openai": "^4.24.1",
+        "p-queue": "^9.0.1",
+        "pdf-parse": "^1.1.1",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7",
+        "robots-parser": "^3.0.1",
+        "server-only": "^0.0.1",
+        "tailwind-merge": "^2.2.0",
+        "zod": "^3.22.4"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.5",
+        "@types/pdf-parse": "^1.1.5",
+        "@types/react": "^19.2.17",
+        "@types/react-dom": "^19.2.3",
+        "autoprefixer": "^10.4.17",
+        "eslint": "^9.39.5",
+        "eslint-config-next": "^16.2.10",
+        "jszip": "^3.10.1",
+        "postcss": "^8.5.19",
+        "prisma": "^5.8.1",
+        "tailwindcss": "^3.4.1",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.3.3"
+    },
+    "engines": {
+        "node": ">=20.9.0"
+    },
+    "overrides": {
+        "postcss": "$postcss",
+        "@crawlee/browser-pool": {
+            "nanoid": "3.3.16"
+        },
+        "minimatch@3.1.5": {
+            "brace-expansion": "1.1.13"
+        }
+    }
+}

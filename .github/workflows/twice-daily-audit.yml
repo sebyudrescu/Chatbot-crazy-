@@ -1,0 +1,173 @@
+name: LitX twice-daily project audit
+
+on:
+  schedule:
+    # 08:00 and 20:00 Europe/Rome during daylight-saving time.
+    - cron: '0 6,18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: litx-project-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Code, build and product-flow audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: litx
+          POSTGRES_PASSWORD: litx_ci_password
+          POSTGRES_DB: litx_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U litx -d litx_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      CI: true
+      DATABASE_URL: postgresql://litx:litx_ci_password@localhost:5432/litx_ci?schema=public
+      OPENAI_API_KEY: sk-ci-placeholder
+      PINECONE_API_KEY: ci-placeholder
+      PINECONE_INDEX_NAME: litx-ci
+      APP_ACCESS_PASSWORD: ci-private-password
+      APP_AUTH_SALT: ci-static-salt
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Create ephemeral CI database
+        run: npx prisma db push --skip-generate
+
+      - name: Dependency security audit
+        id: dependencies
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      - name: TypeScript validation
+        id: typecheck
+        continue-on-error: true
+        run: npm run typecheck
+
+      - name: ESLint validation
+        id: lint
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Production build
+        id: build
+        continue-on-error: true
+        run: npm run build
+
+      - name: Start private test server
+        id: server
+        continue-on-error: true
+        run: |
+          npm run dev > /tmp/litx-dev.log 2>&1 &
+          echo $! > /tmp/litx-dev.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent http://localhost:3000/api/health > /tmp/litx-health.json; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/litx-dev.log
+          exit 1
+
+      - name: End-to-end API smoke test
+        id: smoke
+        continue-on-error: true
+        run: npm run test:smoke
+
+      - name: Knowledge import format tests
+        id: knowledge
+        continue-on-error: true
+        run: npm run test:knowledge-formats
+
+      - name: Automation engine safety tests
+        id: automations
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgresql://litx:litx_ci_password@localhost:5432/litx_ci?schema=codex_automation_test
+        run: |
+          npx prisma db push --skip-generate
+          npm run test:automations
+
+      - name: Stop private test server
+        if: always()
+        run: |
+          if [ -f /tmp/litx-dev.pid ]; then
+            kill "$(cat /tmp/litx-dev.pid)" 2>/dev/null || true
+          fi
+
+      - name: Build audit report
+        if: always()
+        run: |
+          mkdir -p audit-report
+          {
+            echo "# LitX AI project audit"
+            echo
+            echo "- Run: ${{ github.run_id }}"
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Started by: \`${{ github.event_name }}\`"
+            echo "- UTC time: $(date -u +'%Y-%m-%d %H:%M:%S')"
+            echo
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Dependency audit | ${{ steps.dependencies.outcome }} |"
+            echo "| TypeScript | ${{ steps.typecheck.outcome }} |"
+            echo "| ESLint | ${{ steps.lint.outcome }} |"
+            echo "| Production build | ${{ steps.build.outcome }} |"
+            echo "| Test server | ${{ steps.server.outcome }} |"
+            echo "| API smoke test | ${{ steps.smoke.outcome }} |"
+            echo "| Knowledge formats | ${{ steps.knowledge.outcome }} |"
+            echo "| Automation idempotency | ${{ steps.automations.outcome }} |"
+            echo
+            echo "The audit is read-only: it never edits, commits, pushes or deploys project code."
+          } | tee audit-report/report.md >> "$GITHUB_STEP_SUMMARY"
+          cp /tmp/litx-dev.log audit-report/dev-server.log 2>/dev/null || true
+          cp /tmp/litx-health.json audit-report/health.json 2>/dev/null || true
+
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: litx-project-audit-${{ github.run_number }}
+          path: audit-report/
+          retention-days: 30
+
+      - name: Fail when a core check failed
+        if: always()
+        run: |
+          if [ "${{ steps.typecheck.outcome }}" != "success" ] ||
+             [ "${{ steps.lint.outcome }}" != "success" ] ||
+             [ "${{ steps.build.outcome }}" != "success" ] ||
+             [ "${{ steps.server.outcome }}" != "success" ] ||
+             [ "${{ steps.smoke.outcome }}" != "success" ] ||
+             [ "${{ steps.knowledge.outcome }}" != "success" ] ||
+             [ "${{ steps.automations.outcome }}" != "success" ]; then
+            exit 1
+          fi

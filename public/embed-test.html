@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Widget Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .test-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 30px 0;
+        }
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        .info-box {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            backdrop-filter: blur(5px);
+        }
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            background: rgba(0, 255, 0, 0.2);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Test Widget Chatbot</h1>
+        
+        <div class="info-box">
+            <h3>Stato Widget: <span class="status" id="widget-status">⏳ Caricamento...</span></h3>
+            <p>Questa pagina serve per testare il funzionamento del widget chatbot sui siti web esterni.</p>
+        </div>
+
+        <div class="test-buttons">
+            <button class="btn" onclick="testOpen()">🚀 Apri Chat</button>
+            <button class="btn" onclick="testClose()">❌ Chiudi Chat</button>
+            <button class="btn" onclick="testToggle()">🔄 Toggle Chat</button>
+            <button class="btn" onclick="testMessage()">📝 Messaggio Test</button>
+            <button class="btn" onclick="reloadWidget()">🔄 Ricarica Widget</button>
+        </div>
+
+        <div class="info-box">
+            <h3>🔧 Configurazione Attuale</h3>
+            <div class="code-block" id="config-display">
+                Caricamento configurazione...
+            </div>
+        </div>
+
+        <div class="info-box">
+            <h3>📊 Log Eventi</h3>
+            <div id="event-log" class="code-block" style="max-height: 200px; overflow-y: auto;">
+                <div>🎯 Inizializzazione widget...</div>
+            </div>
+        </div>
+
+        <div class="info-box">
+            <h3>🛠️ Istruzioni per l'Implementazione</h3>
+            <p><strong>Per integrare questo widget nel tuo sito:</strong></p>
+            <ol>
+                <li>Vai alla sezione "Widget" del tuo chatbot nel dashboard</li>
+                <li>Abilita il widget e configura le impostazioni</li>
+                <li>Copia il codice di integrazione fornito</li>
+                <li>Incolla il codice prima del tag <code>&lt;/body&gt;</code> nel tuo sito</li>
+            </ol>
+            
+            <p><strong>Codice di esempio:</strong></p>
+            <div class="code-block">
+&lt;script&gt;
+  window.ChatbotConfig = {
+    botId: 'your-bot-id',
+    apiUrl: 'https://your-domain.com',
+    theme: 'light',
+    position: 'bottom-right',
+    primaryColor: '#007bff'
+  };
+&lt;/script&gt;
+&lt;script src="https://your-domain.com/api/embed/widget.js?botId=your-bot-id"&gt;&lt;/script&gt;
+            </div>
+        </div>
+    </div>
+
+    <!-- Widget Configuration -->
+    <script>
+        // Test configuration (replace with actual bot ID)
+        window.ChatbotConfig = {
+            botId: 'test-bot-id',
+            apiUrl: window.location.origin,
+            theme: 'light',
+            position: 'bottom-right',
+            primaryColor: '#667eea',
+            title: 'Test Assistant',
+            subtitle: 'Ciao! Sono qui per aiutarti',
+            autoOpen: false,
+            showLauncher: true
+        };
+
+        // Log function
+        function log(message) {
+            const logEl = document.getElementById('event-log');
+            const time = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.innerHTML = `[${time}] ${message}`;
+            logEl.appendChild(div);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // Test functions
+        function testOpen() {
+            if (window.ChatbotWidget) {
+                window.ChatbotWidget.open();
+                log('🚀 Widget aperto programmaticamente');
+            } else {
+                log('❌ Widget non disponibile');
+            }
+        }
+
+        function testClose() {
+            if (window.ChatbotWidget) {
+                window.ChatbotWidget.close();
+                log('❌ Widget chiuso programmaticamente');
+            } else {
+                log('❌ Widget non disponibile');
+            }
+        }
+
+        function testToggle() {
+            if (window.ChatbotWidget) {
+                window.ChatbotWidget.toggle();
+                log('🔄 Widget toggle eseguito');
+            } else {
+                log('❌ Widget non disponibile');
+            }
+        }
+
+        function testMessage() {
+            if (window.ChatbotWidget) {
+                window.ChatbotWidget.sendMessage('Messaggio di test dal codice JavaScript');
+                log('📝 Messaggio di test inviato');
+            } else {
+                log('❌ Widget non disponibile');
+            }
+        }
+
+        function reloadWidget() {
+            location.reload();
+        }
+
+        // Update status
+        function updateStatus() {
+            const statusEl = document.getElementById('widget-status');
+            const configEl = document.getElementById('config-display');
+            
+            if (window.ChatbotWidget) {
+                statusEl.textContent = window.ChatbotWidget.isLoaded() ? '✅ Attivo' : '⏳ Caricamento...';
+                statusEl.style.background = window.ChatbotWidget.isLoaded() ? 'rgba(0, 255, 0, 0.2)' : 'rgba(255, 255, 0, 0.2)';
+                
+                configEl.innerHTML = `
+botId: ${window.ChatbotConfig.botId || 'N/A'}
+apiUrl: ${window.ChatbotConfig.apiUrl || 'N/A'}
+theme: ${window.ChatbotConfig.theme || 'N/A'}
+position: ${window.ChatbotConfig.position || 'N/A'}
+primaryColor: ${window.ChatbotConfig.primaryColor || 'N/A'}
+title: ${window.ChatbotConfig.title || 'N/A'}
+isLoaded: ${window.ChatbotWidget ? window.ChatbotWidget.isLoaded() : 'N/A'}
+isOpen: ${window.ChatbotWidget ? window.ChatbotWidget.isOpen() : 'N/A'}
+                `;
+            } else {
+                statusEl.textContent = '❌ Non Caricato';
+                statusEl.style.background = 'rgba(255, 0, 0, 0.2)';
+                
+                configEl.innerHTML = 'Widget non ancora caricato...';
+            }
+        }
+
+        // Monitor widget loading
+        let checkInterval = setInterval(() => {
+            updateStatus();
+            if (window.ChatbotWidget && window.ChatbotWidget.isLoaded()) {
+                log('✅ Widget caricato con successo');
+                clearInterval(checkInterval);
+            }
+        }, 500);
+
+        // Initialize
+        log('🎯 Pagina di test caricata');
+        updateStatus();
+    </script>
+
+    <!-- Load the widget -->
+    <script src="/api/embed/widget.js?botId=test-bot-id"></script>
+</body>
+</html>

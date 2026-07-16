@@ -1,0 +1,27 @@
+5. UX avanzata per l’assistente web
+
+Un chatbot efficace non dipende solo dal modello: interfaccia e interazione sono determinanti. Di seguito le funzionalità UX fondamentali.
+
+Indicatore di scrittura (typing)
+Mostra che il bot sta elaborando la risposta, allineando le aspettative dell’utente. In Next.js può essere gestito con uno stato isTyping e un’animazione (spinner o puntini) durante l’attesa.
+
+Suggerimenti di domande (quick replies)
+Proposte cliccabili con FAQ o temi comuni riducono l’attrito e aiutano a iniziare la conversazione. Esempio su una pagina prodotto: “Disponibilità?”, “Sono previsti sconti?”.
+
+Escalation a operatore umano
+Indispensabile nei casi complessi. Se il bot rileva incertezza o riceve un comando di fallback, la conversazione viene trasferita a un agente umano in modo trasparente.
+
+Valutazione e feedback
+Richiedere un voto  a fine chat o dopo ogni risposta genera dati utili per il miglioramento continuo (feedback loop) e dà voce agli utenti.
+
+Memoria e personalizzazione
+Il bot dovrebbe usare il nome dell’utente e informazioni apprese durante la conversazione (es. preferenze di prodotto), aumentando coinvolgimento e rilevanza delle risposte.
+
+Call-to-action integrate
+Nel dialogo possono essere inserite CTA contestuali: pulsanti “Aggiungi al carrello”, banner promozionali o moduli inline quando l’utente chiede informazioni su un prodotto.
+
+Compatibilità multi-canale
+Anche con focus web, è utile prevedere integrazioni con altri canali (live chat, WhatsApp, CRM) per coerenza cross-channel. Webhook e API verso ticketing e CRM rappresentano un vantaggio competitivo.
+
+In sintesi
+Un’esperienza utente fluida richiede messaggi di benvenuto chiari, indicatori visivi, suggerimenti contestuali e percorsi di escalation ben definiti. Questi elementi riducono la frustrazione e aumentano la soddisfazione complessiva.

@@ -1,0 +1,79 @@
+SEBY - Informazioni Aziendali
+
+CHI SIAMO:
+Seby è un'azienda innovativa che offre soluzioni di intelligenza artificiale per il customer support.
+Fondata nel 2024, aiutiamo le aziende a migliorare l'esperienza cliente attraverso chatbot intelligenti.
+
+SERVIZI OFFERTI:
+- Chatbot AI personalizzati con tecnologia RAG
+- Sistema di Retrieval-Augmented Generation
+- Supporto multi-lingua per clienti internazionali
+- Integrazione semplice con sistemi esistenti
+- Dashboard analytics completa per monitorare performance
+- Widget JavaScript per siti web
+- API REST per integrazioni custom
+
+PIANI E PREZZI:
+Piano Basic: 29 euro al mese
+- Fino a 1000 messaggi mensili
+- 1 chatbot
+- Supporto email
+
+Piano Pro: 99 euro al mese  
+- Fino a 10000 messaggi mensili
+- 5 chatbot
+- Supporto prioritario
+- Analytics avanzate
+
+Piano Enterprise: 299 euro al mese
+- Messaggi illimitati
+- Chatbot illimitati
+- Supporto dedicato 24/7
+- Custom integrations
+- SLA garantito
+
+ORARI DI SUPPORTO:
+Il nostro team di supporto è disponibile:
+- Dal lunedì al venerdì: dalle 9:00 alle 18:00 (ora italiana)
+- Supporto email 24/7 con risposta garantita entro 24 ore
+- Chat live disponibile durante gli orari di ufficio
+- Supporto telefonico per clienti Enterprise
+
+CONTATTI:
+Email: support@seby.ai
+Telefono: +39 02 1234567
+Sito web: www.seby.ai
+Indirizzo: Via Roma 123, 20100 Milano, Italia
+
+GARANZIA E POLITICHE:
+- Garanzia soddisfatti o rimborsati di 30 giorni su tutti i piani
+- Nessun costo nascosto o commissione aggiuntiva
+- Puoi disdire in qualsiasi momento senza penali
+- Privacy e sicurezza dati garantite (GDPR compliant)
+- Backup automatici giornalieri
+
+DOMANDE FREQUENTI:
+
+Q: Come funziona il chatbot?
+A: Il nostro chatbot utilizza intelligenza artificiale avanzata GPT-4 per rispondere alle domande dei clienti basandosi sulla vostra knowledge base aziendale. Non inventa risposte ma risponde solo con informazioni verificate.
+
+Q: Quanto tempo richiede l'implementazione?
+A: L'implementazione base richiede circa 1 ora. Include il caricamento dei documenti aziendali e la configurazione iniziale del chatbot. Forniamo assistenza completa durante tutto il processo.
+
+Q: Posso integrare il chatbot sul mio sito web?
+A: Sì assolutamente! Forniamo un widget JavaScript molto semplice da integrare su qualsiasi sito web. Bastano poche righe di codice HTML.
+
+Q: Il chatbot supporta più lingue?
+A: Sì, il sistema supporta oltre 50 lingue diverse. Puoi caricare documenti in diverse lingue e il chatbot risponderà nella lingua della domanda.
+
+Q: Come viene garantita la sicurezza dei dati?
+A: Tutti i dati sono criptati sia in transito che a riposo. Siamo completamente conformi al GDPR. Non condividiamo mai i tuoi dati con terze parti.
+
+Q: Posso provare prima di acquistare?
+A: Certamente! Offriamo una prova gratuita di 14 giorni su tutti i piani, senza necessità di carta di credito.
+
+CASI D'USO:
+- E-commerce: Assistenza clienti automatizzata per domande su prodotti, ordini, spedizioni
+- SaaS: Supporto tecnico e onboarding automatizzato per nuovi utenti
+- Servizi: Qualificazione lead e prenotazioni appuntamenti
+- Educazione: FAQ automatizzate per studenti e docenti

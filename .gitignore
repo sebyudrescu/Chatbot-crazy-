@@ -1,0 +1,64 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Next.js
+/.next/
+/out/
+
+# Production
+/build
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next-dev-*.log
+.next-dev-*.err.log
+.codex-dev*.log
+.codex-dev*.err.log
+
+# Local env files
+.env
+.env*.local
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Database
+*.db
+*.db-journal
+
+# Local vector data and uploads
+/data/vector-stores/
+/data/uploads/
+/public/widget-logos/
+prisma/*.backup_*
+
+# Python (vecchio progetto)
+__pycache__/
+*.py[cod]
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp_rovodev_*
+/audit-report/

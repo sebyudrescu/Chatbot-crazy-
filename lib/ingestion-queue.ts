@@ -1,0 +1,478 @@
+/**
+ * Async Ingestion Queue System
+ * 
+ * Separates data ingestion from chat runtime
+ * Similar to Chatbase, Stack AI architecture
+ * 
+ * Benefits:
+ * - No timeout issues (jobs run in background)
+ * - Retry logic built-in
+ * - Progress tracking
+ * - Stable KB before chat
+ */
+
+import { prisma } from './db'
+import { eventStore } from './event-store'
+import { withRetry } from './db-retry'
+
+export enum JobType {
+  CRAWL = 'crawl',
+  PDF = 'pdf',
+  URL = 'url',
+  REINDEX = 'reindex'
+}
+
+export enum JobStatus {
+  PENDING = 'pending',
+  RUNNING = 'running',
+  COMPLETED = 'completed',
+  FAILED = 'failed'
+}
+
+export interface JobParams {
+  // For CRAWL
+  url?: string
+  maxPages?: number
+  maxDepth?: number
+  
+  // For PDF
+  fileId?: string
+  fileName?: string
+  
+  // For URL
+  singleUrl?: string
+  
+  // For REINDEX
+  sourceIds?: string[]
+}
+
+/**
+ * Normalize and validate URL
+ */
+function normalizeUrl(url: string): string {
+  if (!url || typeof url !== 'string') {
+    throw new Error('URL is required')
+  }
+  
+  // Remove whitespace
+  url = url.trim()
+  
+  // Add https:// if missing protocol
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url
+  }
+  
+  // Validate URL format
+  try {
+    const urlObj = new URL(url)
+    
+    // Ensure valid protocol
+    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      throw new Error('URL must use http or https protocol')
+    }
+    
+    return urlObj.toString()
+  } catch (error) {
+    throw new Error(`Invalid URL format: ${url}`)
+  }
+}
+
+/**
+ * Create a new ingestion job (adds to queue)
+ */
+export async function createIngestionJob(
+  botId: string,
+  jobType: JobType,
+  params: JobParams,
+  priority: number = 5
+) {
+  // Normalize URLs if present
+  if (params.url) {
+    try {
+      params.url = normalizeUrl(params.url)
+      console.log(`[IngestionQueue] Normalized URL: ${params.url}`)
+    } catch (error) {
+      console.error(`[IngestionQueue] Invalid URL: ${(error as Error).message}`)
+      throw error
+    }
+  }
+  
+  if (params.singleUrl) {
+    try {
+      params.singleUrl = normalizeUrl(params.singleUrl)
+      console.log(`[IngestionQueue] Normalized single URL: ${params.singleUrl}`)
+    } catch (error) {
+      console.error(`[IngestionQueue] Invalid URL: ${(error as Error).message}`)
+      throw error
+    }
+  }
+  
+  const job = await prisma.ingestionJob.create({
+    data: {
+      botId,
+      jobType,
+      status: JobStatus.PENDING,
+      priority,
+      params: JSON.stringify(params),
+      attempts: 0,
+      maxAttempts: 5,  // Increased from 3 to 5 for better retry
+    }
+  })
+  
+  console.log(`[IngestionQueue] ✅ Created job ${job.id} (${jobType}) for bot ${botId}`)
+  
+  // Log event
+  await eventStore.logJobCreated(botId, job.id, {
+    jobType,
+    params,
+  })
+  
+  // Update bot status to indexing
+  await prisma.chatbot.update({
+    where: { id: botId },
+    data: { kbStatus: 'indexing' }
+  })
+  
+  return job
+}
+
+/**
+ * Get next job to process (FIFO with priority)
+ */
+export async function getNextJob() {
+  const now = new Date()
+  
+  const job = await prisma.ingestionJob.findFirst({
+    where: {
+      status: JobStatus.PENDING,
+      attempts: { lt: prisma.ingestionJob.fields.maxAttempts },
+      OR: [
+        { nextRetryAt: null },
+        { nextRetryAt: { lte: now } }
+      ]
+    },
+    orderBy: [
+      { priority: 'desc' },
+      { createdAt: 'asc' }
+    ]
+  })
+  
+  return job
+}
+
+/**
+ * Mark job as started
+ */
+export async function startJob(jobId: string) {
+  const job = await withRetry(() =>
+    prisma.ingestionJob.update({
+      where: { id: jobId },
+      data: {
+        status: JobStatus.RUNNING,
+        startedAt: new Date(),
+        attempts: { increment: 1 }
+      }
+    })
+  )
+  
+  // Log event
+  await eventStore.logJobStarted(job.botId, jobId, {
+    attempt: job.attempts,
+    maxAttempts: job.maxAttempts,
+  })
+  
+  return job
+}
+
+/**
+ * Update job progress
+ */
+export async function updateJobProgress(
+  jobId: string,
+  progress: number,
+  message: string
+) {
+  const job = await withRetry(() =>
+    prisma.ingestionJob.update({
+      where: { id: jobId },
+      data: {
+        progress,
+        progressMessage: message
+      }
+    })
+  )
+  
+  // Log progress (only at milestones to avoid spam)
+  if (progress % 25 === 0 || progress === 100) {
+    await eventStore.logJobProgress(job.botId, jobId, {
+      progress,
+      message,
+    })
+  }
+  
+  return job
+}
+
+/**
+ * Mark job as completed
+ */
+export async function completeJob(
+  jobId: string,
+  sourcesCreated: number,
+  chunksCreated: number
+) {
+  const job = await withRetry(() =>
+    prisma.ingestionJob.update({
+      where: { id: jobId },
+      data: {
+        status: JobStatus.COMPLETED,
+        completedAt: new Date(),
+        progress: 100,
+        sourcesCreated,
+        chunksCreated
+      },
+      include: { chatbot: true }
+    })
+  )
+  
+  console.log(`[IngestionQueue] ✅ Job ${jobId} completed: ${sourcesCreated} sources, ${chunksCreated} chunks`)
+  
+  const startTime = job.startedAt ? job.startedAt.getTime() : Date.now()
+  const durationMs = Date.now() - startTime
+  
+  // Log event
+  await eventStore.logJobCompleted(job.botId, jobId, durationMs, {
+    sourcesCreated,
+    chunksCreated,
+  })
+  
+  // Check if all jobs for this bot are completed
+  const pendingJobs = await prisma.ingestionJob.count({
+    where: {
+      botId: job.botId,
+      status: { in: [JobStatus.PENDING, JobStatus.RUNNING] }
+    }
+  })
+  
+  if (pendingJobs === 0) {
+    // All jobs done! Mark KB as ready
+    const totalChunks = await prisma.knowledgeSource.aggregate({
+      where: { botId: job.botId, status: 'completed' },
+      _sum: { chunkCount: true }
+    })
+    
+    const oldStatus = job.chatbot.kbStatus
+    
+    await prisma.chatbot.update({
+      where: { id: job.botId },
+      data: {
+        kbStatus: 'ready',
+        kbLastIndexed: new Date(),
+        kbTotalChunks: totalChunks._sum.chunkCount || 0,
+        kbIndexingError: null
+      }
+    })
+    
+    console.log(`[IngestionQueue] 🎉 Bot ${job.botId} KB is now READY with ${totalChunks._sum.chunkCount} chunks`)
+    
+    // Log KB status change
+    await eventStore.logKBStatusChanged(job.botId, {
+      from: oldStatus,
+      to: 'ready',
+      totalChunks: totalChunks._sum.chunkCount || 0,
+    })
+  }
+  
+  return job
+}
+
+/**
+ * Mark job as failed (with retry logic)
+ */
+export async function failJob(
+  jobId: string,
+  error: Error
+) {
+  const job = await withRetry(() =>
+    prisma.ingestionJob.findUnique({
+      where: { id: jobId }
+    })
+  )
+  
+  if (!job) return null
+  
+  const shouldRetry = job.attempts < job.maxAttempts
+  
+  if (shouldRetry) {
+    // Schedule retry (exponential backoff)
+    const retryDelay = Math.pow(2, job.attempts) * 60 * 1000 // 1min, 2min, 4min
+    const nextRetryAt = new Date(Date.now() + retryDelay)
+    
+    await withRetry(() =>
+      prisma.ingestionJob.update({
+        where: { id: jobId },
+        data: {
+          status: JobStatus.PENDING,  // Back to pending for retry
+          errorMessage: error.message,
+          errorStack: error.stack,
+          nextRetryAt
+        }
+      })
+    )
+    
+    console.log(`[IngestionQueue] ⚠️  Job ${jobId} failed, will retry at ${nextRetryAt}`)
+    
+    // Log job failed event (will retry)
+    await eventStore.logJobFailed(job.botId, jobId, error, {
+      attempt: job.attempts,
+      maxAttempts: job.maxAttempts,
+      nextRetryAt: nextRetryAt.toISOString(),
+      permanent: false,
+    })
+    
+  } else {
+    // No more retries, mark as permanently failed
+    await prisma.ingestionJob.update({
+      where: { id: jobId },
+      data: {
+        status: JobStatus.FAILED,
+        completedAt: new Date(),
+        errorMessage: error.message,
+        errorStack: error.stack
+      }
+    })
+    
+    // Update bot status to failed
+    await prisma.chatbot.update({
+      where: { id: job.botId },
+      data: {
+        kbStatus: 'failed',
+        kbIndexingError: error.message
+      }
+    })
+    
+    console.log(`[IngestionQueue] ❌ Job ${jobId} permanently failed after ${job.attempts} attempts`)
+    
+    // Log job failed event (permanent)
+    await eventStore.logJobFailed(job.botId, jobId, error, {
+      attempt: job.attempts,
+      maxAttempts: job.maxAttempts,
+      permanent: true,
+    })
+  }
+  
+  return job
+}
+
+/**
+ * Get job status
+ */
+export async function getJobStatus(jobId: string) {
+  return await prisma.ingestionJob.findUnique({
+    where: { id: jobId },
+    include: {
+      chatbot: {
+        select: {
+          companyName: true,
+          kbStatus: true,
+          kbTotalChunks: true
+        }
+      }
+    }
+  })
+}
+
+/**
+ * Get all jobs for a bot
+ */
+export async function getBotJobs(botId: string) {
+  return await prisma.ingestionJob.findMany({
+    where: { botId },
+    orderBy: { createdAt: 'desc' },
+    take: 50
+  })
+}
+
+/**
+ * Check if bot KB is ready for chat
+ */
+export async function isBotReady(botId: string): Promise<{
+  ready: boolean
+  status: string
+  message: string
+  totalChunks: number
+}> {
+  const bot = await prisma.chatbot.findUnique({
+    where: { id: botId },
+    select: {
+      kbStatus: true,
+      kbTotalChunks: true,
+      kbIndexingError: true
+    }
+  })
+  
+  if (!bot) {
+    return {
+      ready: false,
+      status: 'not_found',
+      message: 'Bot not found',
+      totalChunks: 0
+    }
+  }
+  
+  switch (bot.kbStatus) {
+    case 'ready':
+      return {
+        ready: true,
+        status: 'ready',
+        message: `Knowledge base ready with ${bot.kbTotalChunks} chunks`,
+        totalChunks: bot.kbTotalChunks
+      }
+      
+    case 'indexing':
+      return {
+        ready: false,
+        status: 'indexing',
+        message: 'Knowledge base is still being indexed. Please wait...',
+        totalChunks: bot.kbTotalChunks
+      }
+      
+    case 'failed':
+      return {
+        ready: false,
+        status: 'failed',
+        message: `Indexing failed: ${bot.kbIndexingError || 'Unknown error'}`,
+        totalChunks: bot.kbTotalChunks
+      }
+      
+    case 'empty':
+    default:
+      return {
+        ready: false,
+        status: 'empty',
+        message: 'No knowledge base indexed yet. Please add sources.',
+        totalChunks: 0
+      }
+  }
+}
+
+/**
+ * Cancel all pending jobs for a bot (useful before reindex)
+ */
+export async function cancelBotJobs(botId: string) {
+  const result = await prisma.ingestionJob.updateMany({
+    where: {
+      botId,
+      status: { in: [JobStatus.PENDING, JobStatus.RUNNING] }
+    },
+    data: {
+      status: JobStatus.FAILED,
+      errorMessage: 'Cancelled by user',
+      completedAt: new Date()
+    }
+  })
+  
+  console.log(`[IngestionQueue] 🛑 Cancelled ${result.count} jobs for bot ${botId}`)
+  
+  return result
+}

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Crawl API with Progress</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .progress-container {
+      background: #f0f0f0;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 20px 0;
+      display: none;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 40px;
+      background: #e0e0e0;
+      border-radius: 5px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(to right, #4CAF50, #45a049);
+      width: 0%;
+      transition: width 0.5s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+    }
+    .log {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .log-entry {
+      margin: 5px 0;
+      padding: 5px;
+    }
+    .log-entry.error {
+      color: red;
+    }
+    .log-entry.success {
+      color: green;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background: #0b7dda;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      font-size: 14px;
+      margin: 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧪 Test Crawl API with Progress</h1>
+  
+  <div>
+    <label>Bot ID:</label>
+    <input type="text" id="botId" placeholder="Enter your bot ID">
+    
+    <label>URL to Crawl:</label>
+    <input type="text" id="url" value="https://example.com" placeholder="https://example.com">
+    
+    <label>Max Pages:</label>
+    <input type="number" id="maxPages" value="3" min="1" max="50">
+    
+    <button id="startBtn" onclick="startCrawl()">Start Crawl</button>
+  </div>
+  
+  <div class="progress-container" id="progressContainer">
+    <h3 id="statusText">Starting...</h3>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill">0%</div>
+    </div>
+    <p id="detailText">Preparing...</p>
+  </div>
+  
+  <h3>Logs:</h3>
+  <div class="log" id="log"></div>
+
+  <script>
+    function addLog(message, type = 'info') {
+      const log = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry ' + type;
+      entry.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function startCrawl() {
+      const botId = document.getElementById('botId').value;
+      const url = document.getElementById('url').value;
+      const maxPages = parseInt(document.getElementById('maxPages').value);
+      
+      if (!botId || !url) {
+        alert('Please enter both Bot ID and URL');
+        return;
+      }
+      
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('progressContainer').style.display = 'block';
+      document.getElementById('log').innerHTML = '';
+      
+      addLog('Starting crawl for: ' + url);
+      
+      try {
+        const response = await fetch('/api/knowledge-sources/crawl-with-progress', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            botId: botId,
+            url: url,
+            maxPages: maxPages
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to start crawl: ' + response.status);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            addLog('Stream closed', 'info');
+            break;
+          }
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                addLog('Event: ' + data.type + ' - ' + data.message);
+                
+                if (data.progress !== undefined) {
+                  const progressFill = document.getElementById('progressFill');
+                  progressFill.style.width = data.progress + '%';
+                  progressFill.textContent = data.progress + '%';
+                }
+                
+                if (data.message) {
+                  document.getElementById('statusText').textContent = data.message;
+                }
+                
+                if (data.type === 'complete') {
+                  addLog('✅ CRAWL COMPLETED!', 'success');
+                  addLog('Pages: ' + data.pagesProcessed + ', Chunks: ' + data.totalChunks, 'success');
+                  document.getElementById('detailText').textContent = 'Complete!';
+                  document.getElementById('startBtn').disabled = false;
+                } else if (data.type === 'error') {
+                  addLog('❌ ERROR: ' + data.message, 'error');
+                  document.getElementById('startBtn').disabled = false;
+                } else if (data.type === 'processing') {
+                  document.getElementById('detailText').textContent = 
+                    'Processing page ' + data.currentPage + '/' + data.totalPages + ': ' + data.url;
+                } else if (data.type === 'polling') {
+                  document.getElementById('detailText').textContent = data.message;
+                }
+                
+              } catch (e) {
+                addLog('Failed to parse SSE: ' + e.message, 'error');
+              }
+            }
+          }
+        }
+        
+      } catch (error) {
+        addLog('❌ ERROR: ' + error.message, 'error');
+        document.getElementById('startBtn').disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

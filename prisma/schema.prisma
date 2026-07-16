@@ -1,0 +1,697 @@
+// Prisma Schema for Chatbot RAG MVP
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Chatbot {
+  id           String    @id @default(uuid())
+  companyName  String
+  createdAt    DateTime  @default(now())
+  trialEndDate DateTime?
+  isActive     Boolean   @default(true)
+  settings     String? // JSON string for widget settings
+
+  // Prompt Template Configuration
+  promptTemplateId String? // ID of the selected prompt template (e.g., 'customer-support', 'sales', etc.)
+  systemPrompt     String? // Custom system prompt (overrides template if provided)
+  promptVariables  String? // JSON string for template variables (e.g., {"COMPANY_NAME": "Acme Corp"})
+
+  // ASYNC INGESTION: Knowledge Base Status
+  kbStatus        String    @default("empty") // "empty", "indexing", "ready", "failed"
+  kbLastIndexed   DateTime? // When KB was last fully indexed
+  kbTotalChunks   Int       @default(0) // Total chunks in stable KB
+  kbIndexingError String? // Last indexing error if any
+
+  knowledgeSources KnowledgeSource[]
+  conversations    Conversation[]
+  ingestionJobs    IngestionJob[]
+  structuredFacts  StructuredFact[] // Cognitive memory
+  entities         Entity[] // Knowledge Graph entities
+  relations        Relation[] // Knowledge Graph relations
+  events           Event[] // Event Store
+  embedSettings    EmbedSettings? // Widget embed settings
+  workflows        Workflow[]
+  evaluationCases  EvaluationCase[]
+  integrations     IntegrationConnection[]
+  actions          AgentAction[]
+  suggestions      ImprovementSuggestion[]
+  crmContacts      CRMContact[]
+  promptVersions   PromptVersion[]
+  aiUsageEvents    AIUsageEvent[]
+
+  @@index([companyName])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([promptTemplateId])
+  @@index([kbStatus])
+  @@map("chatbots")
+}
+
+model AIUsageEvent {
+  id                String   @id @default(uuid())
+  botId             String?
+  conversationId    String?
+  feature           String
+  provider          String   @default("openai")
+  model             String
+  inputTokens       Int      @default(0)
+  cachedInputTokens Int      @default(0)
+  outputTokens      Int      @default(0)
+  totalTokens       Int      @default(0)
+  estimatedCostUsd  Float    @default(0)
+  durationMs        Int?
+  success           Boolean  @default(true)
+  errorCode         String?
+  createdAt         DateTime @default(now())
+
+  chatbot Chatbot? @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, createdAt])
+  @@index([conversationId])
+  @@index([feature, createdAt])
+  @@index([model, createdAt])
+  @@map("ai_usage_events")
+}
+
+model PromptVersion {
+  id               String   @id @default(uuid())
+  botId            String
+  version          Int
+  systemPrompt     String?
+  promptTemplateId String?
+  settings         String   @default("{}")
+  changeSummary    String?
+  createdBy        String   @default("owner")
+  createdAt        DateTime @default(now())
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, version])
+  @@index([botId, createdAt])
+  @@map("prompt_versions")
+}
+
+model CRMContact {
+  id                 String   @id @default(uuid())
+  botId              String
+  identityKey        String
+  name               String?
+  email              String?
+  phone              String?
+  company            String?
+  source             String   @default("chat")
+  stage              String   @default("new")
+  leadScore          Int      @default(10)
+  potentialValue     Float?
+  tags               String   @default("[]")
+  notes              String   @default("[]")
+  consentStatus      String   @default("unknown")
+  lastConversationId String?
+  lastInteraction    DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, identityKey])
+  @@index([botId, stage])
+  @@index([email])
+  @@index([phone])
+  @@index([leadScore])
+  @@map("crm_contacts")
+}
+
+model NotificationState {
+  id        String    @id @default(uuid())
+  key       String    @unique
+  readAt    DateTime?
+  dismissed Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([readAt])
+  @@index([dismissed])
+  @@map("notification_states")
+}
+
+model ImprovementSuggestion {
+  id            String   @id @default(uuid())
+  key           String   @unique
+  botId         String?
+  category      String
+  title         String
+  description   String
+  impact        String   @default("medium")
+  status        String   @default("pending")
+  actionType    String
+  actionPayload String   @default("{}")
+  evidence      String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  chatbot Chatbot? @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, status])
+  @@index([category, status])
+  @@index([impact])
+  @@map("improvement_suggestions")
+}
+
+model AgentAction {
+  id              String   @id @default(uuid())
+  botId           String
+  name            String
+  type            String
+  description     String?
+  triggerKeywords String   @default("[]")
+  config          String   @default("{}")
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  chatbot    Chatbot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  executions ActionExecution[]
+
+  @@index([botId, enabled])
+  @@index([type])
+  @@map("agent_actions")
+}
+
+model ActionExecution {
+  id             String   @id @default(uuid())
+  actionId       String
+  conversationId String?
+  success        Boolean
+  input          String?
+  output         String?
+  error          String?
+  durationMs     Int?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  action AgentAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+
+  @@index([actionId, createdAt])
+  @@index([success, createdAt])
+  @@map("action_executions")
+}
+
+model IntegrationConnection {
+  id           String    @id @default(uuid())
+  botId        String
+  provider     String
+  category     String
+  displayName  String
+  config       String    @default("{}")
+  status       String    @default("disconnected")
+  enabled      Boolean   @default(false)
+  lastTestedAt DateTime?
+  lastError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, provider])
+  @@index([botId, enabled])
+  @@index([category])
+  @@map("integration_connections")
+}
+
+model EvaluationCase {
+  id                String   @id @default(uuid())
+  botId             String
+  name              String
+  question          String
+  expectedKeywords  String   @default("[]")
+  forbiddenKeywords String   @default("[]")
+  minimumConfidence Float    @default(0.5)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  chatbot Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  runs    EvaluationRun[]
+
+  @@index([botId])
+  @@index([isActive])
+  @@map("evaluation_cases")
+}
+
+model EvaluationRun {
+  id             String   @id @default(uuid())
+  caseId         String
+  passed         Boolean
+  response       String
+  confidence     Float?
+  latencyMs      Int?
+  failureReason  String?
+  conversationId String?
+  createdAt      DateTime @default(now())
+
+  evaluationCase EvaluationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@index([passed])
+  @@map("evaluation_runs")
+}
+
+model Workflow {
+  id          String   @id @default(uuid())
+  botId       String
+  name        String
+  description String?
+  triggerType String   @default("new_message")
+  steps       String   @default("[]")
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  chatbot    Chatbot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  executions WorkflowExecution[]
+
+  @@index([botId])
+  @@index([isActive])
+  @@map("workflows")
+}
+
+model WorkflowExecution {
+  id             String   @id @default(uuid())
+  workflowId     String
+  conversationId String?
+  messageId      String?
+  idempotencyKey String   @unique
+  status         String
+  trigger        String
+  actions        String   @default("[]")
+  error          String?
+  durationMs     Int?
+  createdAt      DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([status, createdAt])
+  @@map("workflow_executions")
+}
+
+model KnowledgeSource {
+  id               String    @id @default(uuid())
+  botId            String
+  sourceType       String // "url" or "pdf"
+  sourceUrl        String?
+  originalFilename String?
+  contentText      String
+  processedAt      DateTime?
+  status           String // "pending", "processing", "completed", "failed"
+  createdAt        DateTime  @default(now())
+  chunkCount       Int       @default(0)
+  errorMessage     String?
+
+  // ASYNC INGESTION: Metadata
+  fileSize       Int? // For PDFs
+  pageCount      Int? // For PDFs or crawled pages
+  ingestionJobId String? // Link to async job
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([status])
+  @@index([sourceType])
+  @@index([ingestionJobId])
+  @@map("knowledge_sources")
+}
+
+// ASYNC INGESTION: Job Queue
+model IngestionJob {
+  id       String @id @default(uuid())
+  botId    String
+  jobType  String // "crawl", "pdf", "url", "reindex"
+  status   String @default("pending") // "pending", "running", "completed", "failed"
+  priority Int    @default(5) // 1-10, higher = more urgent
+
+  // Job payload (JSON)
+  params String // JSON: {url, maxPages, etc} or {fileId, etc}
+
+  // Progress tracking
+  progress        Int     @default(0) // 0-100
+  progressMessage String? // "Processing page 5/50"
+
+  // Timing
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Results
+  sourcesCreated Int     @default(0) // How many KnowledgeSource records created
+  chunksCreated  Int     @default(0) // Total chunks indexed
+  errorMessage   String?
+  errorStack     String? // Full stack trace if failed
+
+  // Retry logic
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  nextRetryAt DateTime?
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  events  Event[] // Event Store
+
+  @@index([botId])
+  @@index([status])
+  @@index([jobType])
+  @@index([priority])
+  @@index([createdAt])
+  @@index([nextRetryAt])
+  @@map("ingestion_jobs")
+}
+
+model Conversation {
+  id            String    @id @default(uuid())
+  botId         String
+  userSessionId String
+  startedAt     DateTime  @default(now())
+  lastMessageAt DateTime?
+
+  // Conversation metadata
+  userIntent    String? // "support", "sales", "info", "complaint"
+  sentiment     String? // "positive", "neutral", "negative"
+  isResolved    Boolean   @default(false)
+  summary       String? // Auto-generated summary for long conversations
+  lastSummaryAt DateTime?
+  internalNotes String?
+  tags          String    @default("[]")
+
+  // Extracted user data
+  userName        String?
+  userEmail       String?
+  userPhone       String?
+  userCompany     String?
+  extractedData   String? // JSON string for additional custom fields
+  topicsDiscussed String? // JSON array of topics
+
+  // UX Enhancement Fields
+  needsHumanEscalation Boolean   @default(false)
+  escalatedAt          DateTime?
+  escalationReason     String?
+  assignedAgent        String?
+
+  chatbot         Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages        Message[]
+  structuredFacts StructuredFact[] // Cognitive memory
+  events          Event[] // Event Store
+
+  @@index([botId])
+  @@index([userSessionId])
+  @@index([startedAt])
+  @@index([userIntent])
+  @@index([sentiment])
+  @@index([isResolved])
+  @@index([needsHumanEscalation])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String // "user" or "assistant"
+  content        String
+  createdAt      DateTime @default(now())
+  sourcesUsed    String? // JSON string for sources array
+
+  // UX Enhancement Fields
+  feedback        String? // "positive", "negative", or null
+  feedbackComment String? // Optional user comment on feedback
+  ctaData         String? // JSON string for contextual CTAs
+  quickReplies    String? // JSON array of suggested questions
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+  @@index([feedback])
+  @@map("messages")
+}
+
+// ============================================================================
+// COGNITIVE MEMORY SYSTEM - Structured Facts
+// ============================================================================
+
+model StructuredFact {
+  id             String @id @default(uuid())
+  conversationId String
+  botId          String
+
+  // Fact Classification
+  factType String // "preference", "profile", "decision", "complaint", "request", "feedback"
+  category String // "product", "service", "technical", "billing", etc.
+
+  // Entity Normalization
+  entityType String? // "person", "product", "company", "feature", "issue"
+  entityName String? // Normalized entity name (e.g., "iPhone 15 Pro" not "iphone", "iPhone", "iphone 15 pro")
+  attribute  String? // "price", "feature", "status", "preference", "problem"
+  value      String // The actual fact content
+
+  // Confidence & Validity
+  confidence Float  @default(1.0) // 0.0 - 1.0
+  source     String // "user_stated", "inferred", "extracted"
+
+  // Temporal Management
+  extractedAt DateTime  @default(now())
+  validFrom   DateTime  @default(now())
+  validUntil  DateTime? // For time-bound facts
+  isActive    Boolean   @default(true)
+
+  // Conflict Resolution
+  supersedes   String? // JSON array of fact IDs this replaces
+  supersededBy String? // ID of fact that replaced this one
+
+  // Semantic Search
+  embedding      String? // JSON array of embedding vector (1536 dimensions)
+  embeddingModel String? // "text-embedding-3-small"
+
+  // Multi-dimensional Indexing
+  intent     String? // User intent when fact was extracted
+  sentiment  String? // "positive", "neutral", "negative"
+  importance Int     @default(5) // 1-10, higher = more important
+
+  // Metadata
+  rawText          String? // Original text from which fact was extracted
+  extractionMethod String? // "llm", "rule", "user_input"
+  metadata         String? // JSON for additional context
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  chatbot      Chatbot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([botId])
+  @@index([factType])
+  @@index([category])
+  @@index([entityType])
+  @@index([entityName])
+  @@index([isActive])
+  @@index([extractedAt])
+  @@index([confidence])
+  @@index([importance])
+  @@index([validFrom])
+  @@index([validUntil])
+  @@map("structured_facts")
+}
+
+// ============================================================================
+// KNOWLEDGE GRAPH - Entities and Relations
+// ============================================================================
+
+model Entity {
+  id    String @id @default(uuid())
+  botId String
+
+  // Entity Classification
+  entityType  String // "product", "service", "person", "company", "feature", "location", "concept"
+  entityName  String // Normalized name (e.g., "iPhone 15 Pro", "Customer Support")
+  displayName String? // User-friendly name
+
+  // Aliases and Variations (for matching)
+  aliases String? // JSON array of alternative names ["iphone 15 pro", "iPhone15Pro"]
+
+  // Entity Attributes
+  attributes  String? // JSON object with key-value pairs {"price": "1199", "color": "titanium"}
+  description String? // Natural language description
+  category    String? // Business category ("hardware", "subscription", "support_topic")
+
+  // Confidence & Source
+  confidence    Float   @default(1.0) // 0.0 - 1.0
+  extractedFrom String? // Source of extraction ("knowledge_base", "conversation", "manual")
+
+  // Temporal Management
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(true)
+
+  // Semantic Search
+  embedding      String? // JSON array of embedding vector
+  embeddingModel String? // "text-embedding-3-small"
+
+  // Metadata
+  metadata String? // JSON for additional domain-specific data
+  tags     String? // JSON array of tags ["premium", "flagship"]
+
+  // Relations
+  chatbot           Chatbot    @relation(fields: [botId], references: [id], onDelete: Cascade)
+  relationsAsSource Relation[] @relation("SourceEntity")
+  relationsAsTarget Relation[] @relation("TargetEntity")
+
+  @@unique([botId, entityType, entityName])
+  @@index([botId])
+  @@index([entityType])
+  @@index([entityName])
+  @@index([category])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("entities")
+}
+
+model Relation {
+  id    String @id @default(uuid())
+  botId String
+
+  // Relation Triple: (Source) --[Type]--> (Target)
+  sourceEntityId String
+  relationType   String // "HAS_FEATURE", "PART_OF", "COMPATIBLE_WITH", "COSTS", "REQUIRES", "REPLACES"
+  targetEntityId String
+
+  // Relation Attributes
+  attributes    String? // JSON object with properties {"since": "2023", "condition": "with_warranty"}
+  strength      Float   @default(1.0) // 0.0 - 1.0 (how strong is this relation)
+  bidirectional Boolean @default(false) // If true, implies reverse relation exists
+
+  // Confidence & Source
+  confidence    Float   @default(1.0)
+  extractedFrom String? // Source of extraction
+
+  // Temporal Management
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  isActive   Boolean   @default(true)
+  validFrom  DateTime  @default(now())
+  validUntil DateTime?
+
+  // Metadata
+  metadata String? // JSON for additional context
+
+  // Navigation
+  sourceEntity Entity  @relation("SourceEntity", fields: [sourceEntityId], references: [id], onDelete: Cascade)
+  targetEntity Entity  @relation("TargetEntity", fields: [targetEntityId], references: [id], onDelete: Cascade)
+  chatbot      Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, sourceEntityId, relationType, targetEntityId])
+  @@index([botId])
+  @@index([sourceEntityId])
+  @@index([targetEntityId])
+  @@index([relationType])
+  @@index([isActive])
+  @@index([validFrom])
+  @@index([validUntil])
+  @@map("relations")
+}
+
+// ============================================================================
+// EVENT STORE - Append-only Event Log
+// ============================================================================
+
+model Event {
+  id String @id @default(uuid())
+
+  // Context (optional - some events are system-wide)
+  botId          String?
+  conversationId String?
+  userId         String? // User session ID from conversation
+  jobId          String? // For ingestion events
+
+  // Event Classification
+  eventType String // "orchestrator.decision_made", "ingestion.job.completed"
+  category  String // "orchestrator", "ingestion", "memory", "retrieval", "validation", "generation", "conversation", "system"
+  severity  String // "info", "warning", "error", "critical"
+
+  // Core Structured Fields (for fast queries)
+  success      Boolean @default(true)
+  durationMs   Int? // Duration of operation in milliseconds
+  errorMessage String? // For failed events
+  errorStack   String? // Full stack trace for debugging
+
+  // Flexible Metadata (JSON for event-specific data)
+  metadata String? // JSON object with event-specific details
+
+  // Temporal
+  timestamp DateTime @default(now())
+
+  // Optional Relations (for easy joins)
+  chatbot      Chatbot?      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  ingestionJob IngestionJob? @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // Indexes for common queries
+  @@index([botId, timestamp])
+  @@index([conversationId, timestamp])
+  @@index([jobId, timestamp])
+  @@index([eventType, timestamp])
+  @@index([category, timestamp])
+  @@index([severity, timestamp])
+  @@index([success, timestamp])
+  @@index([timestamp])
+  @@map("events")
+}
+
+// ============================================================================
+// EMBED SETTINGS - Widget Configuration
+// ============================================================================
+
+model EmbedSettings {
+  id        String @id @default(uuid())
+  chatbotId String @unique
+
+  // Basic Settings
+  enabled  Boolean @default(false)
+  title    String?
+  subtitle String?
+
+  // Appearance
+  theme        String @default("light") // "light" | "dark"
+  position     String @default("bottom-right") // "bottom-right" | "bottom-left" | "top-right" | "top-left"
+  primaryColor String @default("#007bff")
+
+  // Widget Shape & Icon
+  widgetShape String @default("circle") // "circle" | "rounded" | "square"
+  iconType    String @default("emoji") // "emoji" | "logo" | "icon"
+  iconValue   String @default("💬") // emoji, logo URL, or icon name
+  widgetSize  String @default("medium") // "small" | "medium" | "large"
+
+  // Animation & Effects
+  animation Boolean @default(true) // hover animations
+  shadow    Boolean @default(true) // drop shadow
+  gradient  Boolean @default(true) // gradient background
+
+  // Behavior
+  autoOpen     Boolean @default(false)
+  showLauncher Boolean @default(true)
+
+  // Advanced Customization
+  customCSS      String?
+  allowedDomains String? // Comma-separated list of allowed domains
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  chatbot Chatbot @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+
+  @@map("embed_settings")
+}
