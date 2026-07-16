@@ -1,15 +1,76 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { prisma } from '@/lib/db'
-import { safeHttpsUrl } from '@/lib/integration-catalog'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import {
+  ActionFieldsSchema,
+  ActionTypeSchema,
+  validateActionDefinition,
+} from "@/lib/action-schema";
 
-const Schema = z.object({ name: z.string().trim().min(1).max(120).optional(), description: z.string().max(500).nullable().optional(), triggerKeywords: z.array(z.string().trim().min(1).max(80)).min(1).max(20).optional(), config: z.record(z.string()).optional(), enabled: z.boolean().optional() })
-export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  try { const input = Schema.parse(await request.json()), current = await prisma.agentAction.findUnique({ where: { id: params.id } }); if (!current) return NextResponse.json({ success: false, error: 'Azione non trovata' }, { status: 404 }); if (input.config && (current.type === 'webhook' || current.type === 'booking_link') && !safeHttpsUrl(input.config.url || '')) throw new Error('URL HTTPS non valido'); const updated = await prisma.agentAction.update({ where: { id: params.id }, data: { ...input, triggerKeywords: input.triggerKeywords ? JSON.stringify(input.triggerKeywords) : undefined, config: input.config ? JSON.stringify(input.config) : undefined } }); return NextResponse.json({ success: true, data: { ...updated, triggerKeywords: JSON.parse(updated.triggerKeywords), config: JSON.parse(updated.config) } }) }
-  catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Aggiornamento non riuscito' }, { status: 400 }) }
+const UpdateSchema = ActionFieldsSchema.omit({
+  botId: true,
+  type: true,
+}).partial();
+const parse = <T>(value: string, fallback: T): T => {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+export async function PATCH(
+  request: NextRequest,
+  props: { params: Promise<{ id: string }> },
+) {
+  const { id } = await props.params;
+  try {
+    const input = UpdateSchema.parse(await request.json());
+    const current = await prisma.agentAction.findUnique({ where: { id } });
+    if (!current) {
+      return NextResponse.json(
+        { success: false, error: "Azione non trovata" },
+        { status: 404 },
+      );
+    }
+    validateActionDefinition({
+      type: ActionTypeSchema.parse(current.type),
+      config: input.config || parse<Record<string, string>>(current.config, {}),
+    });
+    const updated = await prisma.agentAction.update({
+      where: { id },
+      data: {
+        ...input,
+        triggerKeywords: input.triggerKeywords
+          ? JSON.stringify(input.triggerKeywords)
+          : undefined,
+        config: input.config ? JSON.stringify(input.config) : undefined,
+      },
+    });
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...updated,
+        triggerKeywords: parse(updated.triggerKeywords, []),
+        config: parse(updated.config, {}),
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Aggiornamento non riuscito",
+      },
+      { status: 400 },
+    );
+  }
 }
-export async function DELETE(_: NextRequest, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  await prisma.agentAction.delete({ where: { id: params.id } });return NextResponse.json({ success: true })
+
+export async function DELETE(
+  _: NextRequest,
+  props: { params: Promise<{ id: string }> },
+) {
+  const { id } = await props.params;
+  await prisma.agentAction.delete({ where: { id } });
+  return NextResponse.json({ success: true });
 }

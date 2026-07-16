@@ -9,7 +9,13 @@ const icons: Record<string, typeof Bell> = { handoff: UserRoundCheck, source: Da
 export function NotificationCenter() {
   const router = useRouter(), root = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false), [items, setItems] = useState<Notification[]>([]), [unread, setUnread] = useState(0)
-  const load = useCallback(() => fetch('/api/notifications?limit=12').then(r => r.json()).then(result => { setItems(result.data || []); setUnread(result.unread || 0) }), [])
+  const load = useCallback(() => fetch('/api/notifications?limit=12')
+    .then(response => {
+      if (!response.ok) throw new Error(`Notifications HTTP ${response.status}`)
+      return response.json()
+    })
+    .then(result => { setItems(result.data || []); setUnread(result.unread || 0) })
+    .catch(() => undefined), [])
   useEffect(() => { load(); const timer = setInterval(load, 60000); return () => clearInterval(timer) }, [load])
   useEffect(() => { const close = (event: MouseEvent) => { if (open && !root.current?.contains(event.target as Node)) setOpen(false) }; document.addEventListener('mousedown', close); return () => document.removeEventListener('mousedown', close) }, [open])
   const read = async (item: Notification) => { if (!item.read) await fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: item.key }) }); setOpen(false); router.push(item.href); load() }

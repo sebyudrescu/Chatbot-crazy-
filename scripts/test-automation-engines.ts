@@ -2,6 +2,7 @@ import { prisma } from "../lib/db";
 import { runActiveWorkflows } from "../lib/workflow-engine";
 import { runTriggeredActions } from "../lib/action-engine";
 import { simulateWorkflow } from "../lib/workflow-simulator";
+import { simulateAction } from "../lib/action-simulator";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -40,6 +41,17 @@ async function main() {
   assert(
     simulation.steps.some((step) => step.detail.includes("non inviata")),
     "Workflow simulation did not mark external effects as disabled",
+  );
+  const actionSimulation = simulateAction({
+    type: "collect_lead",
+    triggerKeywords: ["contatto"],
+    config: {},
+    message: "Ecco il mio contatto: luca@example.com",
+  });
+  assert(actionSimulation.matched, "Action simulation did not match");
+  assert(
+    actionSimulation.extracted.email === "luca@example.com",
+    "Action simulation did not extract the email",
   );
 
   const bot = await prisma.chatbot.create({
@@ -151,6 +163,10 @@ async function main() {
       "Action idempotency record is not unique",
     );
     assert(actionExecutions[0].success, "Action success was not logged");
+    assert(
+      actionExecutions[0].status === "success",
+      "Action status was not finalized",
+    );
 
     const updatedConversation = await prisma.conversation.findUnique({
       where: { id: conversation.id },

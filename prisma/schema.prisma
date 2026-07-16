@@ -188,6 +188,7 @@ model ActionExecution {
   actionId       String
   conversationId String?
   success        Boolean
+  status         String   @default("pending")
   input          String?
   output         String?
   error          String?
@@ -199,6 +200,7 @@ model ActionExecution {
 
   @@index([actionId, createdAt])
   @@index([success, createdAt])
+  @@index([status, createdAt])
   @@map("action_executions")
 }
 
