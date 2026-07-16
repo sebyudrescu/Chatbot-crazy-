@@ -3,9 +3,78 @@ import { runActiveWorkflows } from "../lib/workflow-engine";
 import { runTriggeredActions } from "../lib/action-engine";
 import { simulateWorkflow } from "../lib/workflow-simulator";
 import { simulateAction } from "../lib/action-simulator";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import {
+  deliverWebhook,
+  verifyWebhookSignature,
+} from "../lib/webhook-delivery";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+async function testWebhookDelivery() {
+  const secret = "automation-test-secret-123456";
+  let attempts = 0;
+  let deliveredBody = "";
+  let deliveredSignature = "";
+  let deliveredTimestamp = "";
+  let deliveredIdempotencyKey = "";
+  const server = createServer((request, response) => {
+    attempts += 1;
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      deliveredBody = body;
+      deliveredSignature = String(request.headers["x-litx-signature"] || "");
+      deliveredTimestamp = String(request.headers["x-litx-timestamp"] || "");
+      deliveredIdempotencyKey = String(request.headers["idempotency-key"] || "");
+      response.writeHead(attempts === 1 ? 503 : 200, {
+        "Content-Type": "application/json",
+      });
+      response.end(JSON.stringify({ received: true }));
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert(address && typeof address !== "string", "Webhook fixture did not start");
+  process.env.ALLOW_PRIVATE_WEBHOOK_FOR_TESTS = "true";
+  try {
+    const result = await deliverWebhook({
+      url: `http://127.0.0.1:${address.port}/events`,
+      event: "automation.test",
+      payload: { leadId: "lead-test" },
+      secret,
+      idempotencyKey: "automation-delivery-key",
+      timeoutMs: 2000,
+      maxAttempts: 3,
+      retryBaseMs: 5,
+    });
+    assert(result.success, "Webhook did not recover after a temporary error");
+    assert(result.attempts === 2, "Webhook retry count is incorrect");
+    assert(
+      deliveredIdempotencyKey === "automation-delivery-key",
+      "Webhook idempotency header is missing",
+    );
+    assert(
+      verifyWebhookSignature({
+        secret,
+        timestamp: deliveredTimestamp,
+        body: deliveredBody,
+        signature: deliveredSignature,
+      }),
+      "Webhook HMAC signature is invalid",
+    );
+  } finally {
+    delete process.env.ALLOW_PRIVATE_WEBHOOK_FOR_TESTS;
+    server.close();
+    await once(server, "close");
+  }
 }
 
 async function main() {
@@ -14,6 +83,7 @@ async function main() {
     databaseUrl.searchParams.get("schema") === "codex_automation_test",
     "Automation tests refuse to run outside the isolated codex_automation_test schema",
   );
+  await testWebhookDelivery();
 
   const simulation = simulateWorkflow({
     triggerType: "keyword",

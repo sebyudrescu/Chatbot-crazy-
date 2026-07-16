@@ -47,7 +47,10 @@ export async function assertSafeRemoteUrl(value: string) {
   if (url.username || url.password) {
     throw new Error("Gli URL con credenziali incorporate non sono consentiti");
   }
-  if (process.env.ALLOW_PRIVATE_CRAWL_FOR_TESTS === "true") return url;
+  if (
+    process.env.ALLOW_PRIVATE_CRAWL_FOR_TESTS === "true" ||
+    process.env.ALLOW_PRIVATE_WEBHOOK_FOR_TESTS === "true"
+  ) return url;
   const hostname = url.hostname.toLowerCase();
   if (
     hostname === "localhost" ||

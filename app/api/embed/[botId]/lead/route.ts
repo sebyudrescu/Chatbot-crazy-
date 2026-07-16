@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { isAllowedWidgetOrigin } from "@/lib/widget-origin";
 import { checkRateLimit, requestClientIp } from "@/lib/rate-limit";
 import { syncCRMContactFromConversation } from "@/lib/crm-sync";
+import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
 
 const LeadSchema = z
   .object({
@@ -93,6 +94,22 @@ export async function POST(
   const contact = await syncCRMContactFromConversation(
     parsed.data.conversationId,
   );
+  after(async () => {
+    await emitIntegrationWebhook({
+      botId,
+      event: "lead.captured",
+      idempotencyKey: `widget-lead:${contact.id}:${contact.updatedAt.toISOString()}`,
+      payload: {
+        contactId: contact.id,
+        conversationId: parsed.data.conversationId,
+        name: parsed.data.name,
+        email: parsed.data.email || null,
+        phone: parsed.data.phone || null,
+        company: parsed.data.company || null,
+        consent: true,
+      },
+    });
+  });
   return NextResponse.json({
     success: true,
     data: { contactId: contact.id, leadScore: contact.leadScore },

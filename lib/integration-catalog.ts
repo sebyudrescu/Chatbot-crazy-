@@ -6,13 +6,13 @@ export interface IntegrationDefinition {
   color: string
   initials: string
   mode: 'native' | 'configuration' | 'planned'
-  fields?: Array<{ key: string; label: string; placeholder: string; type?: 'url' | 'text' }>
+  fields?: Array<{ key: string; label: string; placeholder: string; type?: 'url' | 'text' | 'secret'; required?: boolean }>
 }
 
 export const INTEGRATION_CATALOG: IntegrationDefinition[] = [
   { provider: 'widget', name: 'Widget sito web', category: 'channels', description: 'Chat integrata nel sito del cliente con domini autorizzati.', color: '#633cff', initials: 'W', mode: 'native' },
   { provider: 'public-page', name: 'Pagina chat', category: 'channels', description: 'Link pubblico completo per parlare con l’agente.', color: '#111827', initials: 'P', mode: 'native' },
-  { provider: 'webhook', name: 'Webhook HTTPS', category: 'automation', description: 'Invia dati delle conversazioni a un endpoint esterno sicuro.', color: '#f97316', initials: 'WH', mode: 'configuration', fields: [{ key: 'endpoint', label: 'Endpoint HTTPS', placeholder: 'https://automazioni.cliente.it/webhook', type: 'url' }] },
+  { provider: 'webhook', name: 'Webhook HTTPS', category: 'automation', description: 'Invia eventi firmati delle conversazioni a un endpoint esterno sicuro.', color: '#f97316', initials: 'WH', mode: 'configuration', fields: [{ key: 'endpoint', label: 'Endpoint HTTPS', placeholder: 'https://automazioni.cliente.it/webhook', type: 'url' }, { key: 'secret', label: 'Segreto firma HMAC', placeholder: 'Almeno 16 caratteri', type: 'secret', required: false }, { key: 'events', label: 'Eventi (opzionale)', placeholder: 'lead.captured, conversation.handoff_requested', type: 'text', required: false }] },
   { provider: 'calendly', name: 'Calendly', category: 'calendar', description: 'Mostra un collegamento reale per prenotare un appuntamento.', color: '#006bff', initials: 'C', mode: 'configuration', fields: [{ key: 'bookingUrl', label: 'Link prenotazione', placeholder: 'https://calendly.com/cliente/consulenza', type: 'url' }] },
   { provider: 'whatsapp', name: 'WhatsApp Business', category: 'channels', description: 'Conversazioni tramite WhatsApp Cloud API.', color: '#25d366', initials: 'WA', mode: 'planned' },
   { provider: 'instagram', name: 'Instagram Direct', category: 'channels', description: 'Messaggi Instagram collegati all’agente.', color: '#e1306c', initials: 'IG', mode: 'planned' },

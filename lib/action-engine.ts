@@ -3,6 +3,8 @@ import { prisma } from "./db";
 import { safeHttpsUrl } from "./integration-catalog";
 import type { CTA } from "./cta-generator";
 import { syncCRMContactFromConversation } from "./crm-sync";
+import { deliverWebhook } from "./webhook-delivery";
+import { emitIntegrationWebhook } from "./integration-webhooks";
 
 interface Context {
   botId: string;
@@ -117,6 +119,17 @@ export async function runTriggeredActions(
             escalationReason: config.reason || "Azione automatica",
           },
         });
+        await emitIntegrationWebhook({
+          botId: context.botId,
+          event: "conversation.handoff_requested",
+          idempotencyKey: `handoff-action:${action.id}:${context.messageId}`,
+          payload: {
+            conversationId: context.conversationId,
+            messageId: context.messageId,
+            reason: config.reason || "Azione automatica",
+            intent: context.intent || null,
+          },
+        });
         output = "Conversazione passata a operatore";
         success = true;
       } else if (action.type === "collect_lead") {
@@ -143,27 +156,39 @@ export async function runTriggeredActions(
             },
           });
           await syncCRMContactFromConversation(context.conversationId);
+          await emitIntegrationWebhook({
+            botId: context.botId,
+            event: "lead.captured",
+            idempotencyKey: `lead-action:${action.id}:${context.messageId}`,
+            payload: {
+              conversationId: context.conversationId,
+              messageId: context.messageId,
+              email: email || null,
+              phone: phone?.trim() || null,
+            },
+          });
           output = email ? "Email raccolta" : "Telefono raccolto";
         }
         success = true;
       } else if (action.type === "webhook") {
         const url = safeHttpsUrl(config.url);
         if (!url) throw new Error("Endpoint webhook non valido");
-        const controller = new AbortController(),
-          timer = setTimeout(() => controller.abort(), 6000);
-        try {
-          const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(context),
-            signal: controller.signal,
-          });
-          if (!response.ok) throw new Error(`Webhook HTTP ${response.status}`);
-          output = `Webhook HTTP ${response.status}`;
-          success = true;
-        } finally {
-          clearTimeout(timer);
-        }
+        const delivery = await deliverWebhook({
+          url: url.toString(),
+          event: config.event || "action.triggered",
+          payload: {
+            botId: context.botId,
+            conversationId: context.conversationId,
+            messageId: context.messageId,
+            message: context.message,
+            intent: context.intent || null,
+          },
+          secret: config.secret || undefined,
+          idempotencyKey,
+        });
+        if (!delivery.success) throw new Error(delivery.error);
+        output = `Webhook HTTP ${delivery.status} · ${delivery.attempts} tentativi`;
+        success = true;
       } else throw new Error("Tipo azione non supportato");
     } catch (caught) {
       error =

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { parseJSON } from '@/lib/utils'
 import { z } from 'zod'
+import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 
 const ConversationUpdateSchema = z.object({
   isResolved: z.boolean().optional(),
@@ -82,6 +83,20 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       ...(data.summary !== undefined ? { lastSummaryAt: new Date() } : {}),
     }
     const conversation = await prisma.conversation.update({ where: { id: params.id }, data: update })
+    if (data.needsHumanEscalation === true) {
+      after(async () => {
+        await emitIntegrationWebhook({
+          botId: conversation.botId,
+          event: 'conversation.handoff_requested',
+          idempotencyKey: `manual-handoff:${conversation.id}:${conversation.escalatedAt?.toISOString() || 'now'}`,
+          payload: {
+            conversationId: conversation.id,
+            reason: conversation.escalationReason || 'Presa in carico manuale',
+            assignedAgent: conversation.assignedAgent || null,
+          },
+        })
+      })
+    }
     return NextResponse.json({ success: true, data: { ...conversation, tags: parseJSON<string[]>(conversation.tags) || [] } })
   } catch (error) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Update failed' }, { status: 400 })

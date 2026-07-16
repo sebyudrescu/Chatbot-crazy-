@@ -41,6 +41,9 @@ export function validateWorkflowDefinition(input: Pick<WorkflowFields, 'triggerT
     if (step.type === 'webhook' && !safeHttpsUrl(String(step.config.url || ''))) {
       throw new Error(`Webhook non valido nel passaggio “${step.title}”`)
     }
+    if (step.type === 'webhook' && step.config.secret && String(step.config.secret).length < 16) {
+      throw new Error(`Il segreto webhook nel passaggio “${step.title}” deve contenere almeno 16 caratteri`)
+    }
     if (step.type === 'message' && !String(step.config.content || '').trim()) {
       throw new Error(`Inserisci il messaggio nel passaggio “${step.title}”`)
     }

@@ -492,6 +492,88 @@ try {
       ?.connection?.enabled === true,
     "Native channel connection failed",
   );
+  const webhookSecret = "smoke-webhook-secret-123456";
+  const webhookIntegration = await request("/api/integrations", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      provider: "webhook",
+      config: {
+        endpoint: "https://example.com/litx-webhook",
+        secret: webhookSecret,
+        events: "lead.captured, conversation.handoff_requested",
+      },
+      enabled: true,
+    }),
+  });
+  assert(
+    webhookIntegration.data.config.secret !== webhookSecret &&
+      webhookIntegration.data.config.secret,
+    "Webhook integration exposed its signing secret",
+  );
+  await request("/api/integrations", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      provider: "webhook",
+      config: {
+        ...webhookIntegration.data.config,
+        events: "lead.captured",
+      },
+      enabled: true,
+    }),
+  });
+  const storedWebhookIntegration =
+    await prisma.integrationConnection.findUnique({
+      where: { botId_provider: { botId, provider: "webhook" } },
+    });
+  assert(
+    JSON.parse(storedWebhookIntegration?.config || "{}").secret ===
+      webhookSecret,
+    "Masked webhook integration update overwrote the stored secret",
+  );
+
+  const webhookActionSecret = "smoke-action-secret-123456";
+  const webhookAction = await request("/api/actions", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      name: "Temporary signed webhook",
+      type: "webhook",
+      triggerKeywords: ["signed smoke"],
+      config: {
+        url: "https://example.com/litx-action",
+        secret: webhookActionSecret,
+        event: "smoke.action",
+      },
+      enabled: false,
+    }),
+  });
+  assert(
+    webhookAction.data.config.secret !== webhookActionSecret &&
+      webhookAction.data.config.secret,
+    "Webhook action exposed its signing secret",
+  );
+  await request(`/api/actions/${webhookAction.data.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      config: {
+        ...webhookAction.data.config,
+        event: "smoke.action.updated",
+      },
+    }),
+  });
+  const storedWebhookAction = await prisma.agentAction.findUnique({
+    where: { id: webhookAction.data.id },
+  });
+  assert(
+    JSON.parse(storedWebhookAction?.config || "{}").secret ===
+      webhookActionSecret,
+    "Masked webhook action update overwrote the stored secret",
+  );
+  await request(`/api/actions/${webhookAction.data.id}`, {
+    method: "DELETE",
+  });
 
   const action = await request("/api/actions", {
     method: "POST",
@@ -522,6 +604,10 @@ try {
       backup.workflows.length === 1 &&
       !("knowledgeSources" in backup),
     "Agent backup export failed",
+  );
+  assert(
+    !JSON.stringify(backup).includes(webhookSecret),
+    "Agent backup exposed a webhook signing secret",
   );
   const cloned = await request(`/api/chatbots/${botId}/clone`, {
     method: "POST",
@@ -924,6 +1010,7 @@ try {
           "workflow",
           "evaluations",
           "integrations",
+          "webhook-secret-redaction",
           "actions",
           "agent-backup",
           "agent-clone",

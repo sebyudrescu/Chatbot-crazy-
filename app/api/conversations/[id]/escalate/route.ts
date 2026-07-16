@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 
 /**
  * POST /api/conversations/[id]/escalate
@@ -20,6 +21,18 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         escalationReason: reason || 'User requested human assistance',
         assignedAgent: assignedAgent || null,
       },
+    })
+    after(async () => {
+      await emitIntegrationWebhook({
+        botId: updatedConversation.botId,
+        event: 'conversation.handoff_requested',
+        idempotencyKey: `escalation:${updatedConversation.id}:${updatedConversation.escalatedAt?.toISOString() || 'now'}`,
+        payload: {
+          conversationId: updatedConversation.id,
+          reason: updatedConversation.escalationReason,
+          assignedAgent: updatedConversation.assignedAgent,
+        },
+      })
     })
 
     return NextResponse.json({

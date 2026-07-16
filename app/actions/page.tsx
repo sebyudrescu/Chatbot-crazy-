@@ -95,6 +95,8 @@ export default function ActionsPage() {
     url: "",
     label: "",
     reason: "",
+    secret: "",
+    event: "action.triggered",
   });
   useEffect(() => {
     fetch("/api/chatbots")
@@ -123,6 +125,8 @@ export default function ActionsPage() {
       url: "",
       label: "",
       reason: "",
+      secret: "",
+      event: "action.triggered",
     });
   const openCreate = () => {
     setEditing(null);
@@ -139,6 +143,8 @@ export default function ActionsPage() {
       url: action.config.url || "",
       label: action.config.label || "",
       reason: action.config.reason || "",
+      secret: action.config.secret || "",
+      event: action.config.event || "action.triggered",
     });
     setError("");
     setOpen(true);
@@ -150,7 +156,7 @@ export default function ActionsPage() {
       form.type === "booking_link"
         ? { url: form.url, label: form.label || "Prenota appuntamento" }
         : form.type === "webhook"
-          ? { url: form.url }
+          ? { url: form.url, secret: form.secret, event: form.event || "action.triggered" }
           : form.type === "handoff"
             ? { reason: form.reason || "Richiesta operatore" }
             : {};
@@ -394,6 +400,34 @@ export default function ActionsPage() {
                       placeholder="https://..."
                     />
                   </label>
+                )}
+                {form.type === "webhook" && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="label">Segreto firma HMAC</span>
+                      <input
+                        className="input"
+                        type="password"
+                        autoComplete="new-password"
+                        value={form.secret}
+                        onChange={(e) =>
+                          setForm({ ...form, secret: e.target.value })
+                        }
+                        placeholder="Almeno 16 caratteri"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="label">Nome evento</span>
+                      <input
+                        className="input"
+                        value={form.event}
+                        onChange={(e) =>
+                          setForm({ ...form, event: e.target.value })
+                        }
+                        placeholder="action.triggered"
+                      />
+                    </label>
+                  </div>
                 )}
                 {form.type === "booking_link" && (
                   <label className="block">

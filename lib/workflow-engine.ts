@@ -1,6 +1,8 @@
 import 'server-only'
 import { prisma } from './db'
 import { safeHttpsUrl } from './integration-catalog'
+import { deliverWebhook } from './webhook-delivery'
+import { emitIntegrationWebhook } from './integration-webhooks'
 
 interface WorkflowStep {
   id: string
@@ -120,6 +122,17 @@ export async function runActiveWorkflows(context: RunContext): Promise<WorkflowR
               escalationReason: String(step.config.reason || 'Workflow handoff'),
             },
           })
+          await emitIntegrationWebhook({
+            botId: context.botId,
+            event: 'conversation.handoff_requested',
+            idempotencyKey: `handoff-workflow:${workflow.id}:${step.id}:${context.messageId}`,
+            payload: {
+              conversationId: context.conversationId,
+              messageId: context.messageId,
+              reason: String(step.config.reason || 'Workflow handoff'),
+              intent: context.intent || null,
+            },
+          })
           workflowActions.push('handoff')
           didRun = true
         }
@@ -164,21 +177,21 @@ export async function runActiveWorkflows(context: RunContext): Promise<WorkflowR
         if (step.type === 'webhook') {
           const url = safeHttpsUrl(String(step.config.url || ''))
           if (!url) throw new Error('Endpoint webhook non valido')
-          const method = String(step.config.method || 'POST').toUpperCase()
-          if (method !== 'GET' && method !== 'POST') throw new Error('Metodo webhook non supportato')
-          const controller = new AbortController()
-          const timer = setTimeout(() => controller.abort(), 5000)
-          try {
-            const response = await fetch(url, {
-              method,
-              headers: { 'Content-Type': 'application/json' },
-              body: method === 'GET' ? undefined : JSON.stringify(context),
-              signal: controller.signal,
-            })
-            if (!response.ok) throw new Error(`Webhook HTTP ${response.status}`)
-          } finally {
-            clearTimeout(timer)
-          }
+          const delivery = await deliverWebhook({
+            url: url.toString(),
+            event: String(step.config.event || 'workflow.step'),
+            payload: {
+              botId: context.botId,
+              conversationId: context.conversationId,
+              messageId: context.messageId,
+              message: context.message,
+              intent: context.intent || null,
+              sentiment: context.sentiment || null,
+            },
+            secret: step.config.secret ? String(step.config.secret) : undefined,
+            idempotencyKey: `${idempotencyKey}:${step.id}`,
+          })
+          if (!delivery.success) throw new Error(delivery.error)
           workflowActions.push('webhook')
           didRun = true
         }

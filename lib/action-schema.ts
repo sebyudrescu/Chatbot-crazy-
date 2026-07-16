@@ -30,4 +30,11 @@ export function validateActionDefinition(
   ) {
     throw new Error("È richiesto un URL HTTPS pubblico valido");
   }
+  if (
+    input.type === "webhook" &&
+    input.config.secret &&
+    input.config.secret.length < 16
+  ) {
+    throw new Error("Il segreto webhook deve contenere almeno 16 caratteri");
+  }
 }
