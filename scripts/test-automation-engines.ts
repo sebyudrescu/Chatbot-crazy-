@@ -9,6 +9,10 @@ import {
   deliverWebhook,
   verifyWebhookSignature,
 } from "../lib/webhook-delivery";
+import {
+  getOperationalHealth,
+  retryFailedIngestionJob,
+} from "../lib/operational-health";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -128,6 +132,31 @@ async function main() {
     data: { companyName: "Automation engine test" },
   });
   try {
+    const failedJob = await prisma.ingestionJob.create({
+      data: {
+        botId: bot.id,
+        jobType: "url",
+        params: JSON.stringify({ singleUrl: "https://example.com/help" }),
+        status: "failed",
+        attempts: 5,
+        maxAttempts: 5,
+        errorMessage: "Controlled operational monitor failure",
+        completedAt: new Date(),
+      },
+    });
+    const unhealthy = await getOperationalHealth();
+    assert(
+      unhealthy.incidents.some((incident) => incident.id === failedJob.id),
+      "Operational monitor omitted a failed ingestion job",
+    );
+    const retriedJob = await retryFailedIngestionJob(failedJob.id);
+    assert(
+      retriedJob.status === "pending" &&
+        retriedJob.attempts === 0 &&
+        retriedJob.errorMessage === null,
+      "Manual ingestion retry did not reset the failed job",
+    );
+
     const conversation = await prisma.conversation.create({
       data: { botId: bot.id, userSessionId: `automation-${Date.now()}` },
     });

@@ -66,6 +66,12 @@ try {
     health.status === "healthy" || health.success !== false,
     "Health check failed",
   );
+  const systemStatus = await request("/api/system/status");
+  assert(
+    systemStatus.data?.operations?.level &&
+      typeof systemStatus.data.operations.ingestion?.pending === "number",
+    "Operational health summary is missing",
+  );
 
   const created = await request("/api/chatbots", {
     method: "POST",
@@ -1026,6 +1032,7 @@ try {
           "knowledge-sync-preview",
           "knowledge-sync-deduplication",
           "knowledge-sync-cron-auth",
+          "operational-health",
         ],
       },
       null,

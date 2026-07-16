@@ -7,6 +7,7 @@ import { DashboardLayout } from '@/components/DashboardLayout'
 import { PrivacyDataManager } from '@/components/settings/PrivacyDataManager'
 import { RetentionPolicyManager } from '@/components/settings/RetentionPolicyManager'
 import { KnowledgeSyncManager } from '@/components/settings/KnowledgeSyncManager'
+import { OperationalMonitor } from '@/components/settings/OperationalMonitor'
 
 interface Status {
   database: boolean
@@ -16,6 +17,7 @@ interface Status {
   accessProtection: boolean
   environment: string
   counts: { agents: number; sources: number; conversations: number }
+  operations: Parameters<typeof OperationalMonitor>[0]['initialHealth'] | null
 }
 
 export default function SettingsPage() {
@@ -39,6 +41,7 @@ export default function SettingsPage() {
           <div className={`rounded-xl border p-4 ${status.environment === 'production' && !status.accessProtection ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200 bg-gray-50 text-gray-600'}`}><p className="text-xs font-semibold">Ambiente: {status.environment}</p><p className="mt-1 text-[11px] leading-5">{status.environment === 'production' && !status.accessProtection ? 'Prima della pubblicazione abilita una protezione di accesso: l’app contiene dati dei clienti.' : 'Configurazione coerente con l’ambiente attuale.'}</p></div></aside>
       </div>
       <div className="mt-5"><PrivacyDataManager /></div>
+      {status.operations ? <div className="mt-5"><OperationalMonitor initialHealth={status.operations} /></div> : null}
       <div className="mt-5"><RetentionPolicyManager /></div>
       <div className="mt-5"><KnowledgeSyncManager /></div>
     </>}
