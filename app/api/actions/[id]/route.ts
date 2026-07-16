@@ -8,7 +8,6 @@ import {
 
 const UpdateSchema = ActionFieldsSchema.omit({
   botId: true,
-  type: true,
 }).partial();
 const parse = <T>(value: string, fallback: T): T => {
   try {
@@ -33,7 +32,7 @@ export async function PATCH(
       );
     }
     validateActionDefinition({
-      type: ActionTypeSchema.parse(current.type),
+      type: input.type || ActionTypeSchema.parse(current.type),
       config: input.config || parse<Record<string, string>>(current.config, {}),
     });
     const updated = await prisma.agentAction.update({

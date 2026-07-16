@@ -8,6 +8,7 @@ import {
   Clock3,
   Code2,
   Loader2,
+  Pencil,
   Play,
   Plus,
   Send,
@@ -81,6 +82,7 @@ export default function ActionsPage() {
     [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [editing, setEditing] = useState<Action | null>(null);
   const [testAction, setTestAction] = useState<Action | null>(null);
   const [testMessage, setTestMessage] = useState("");
   const [testBusy, setTestBusy] = useState(false);
@@ -113,7 +115,35 @@ export default function ActionsPage() {
   useEffect(() => {
     load();
   }, [load]);
-  const create = async () => {
+  const resetForm = () =>
+    setForm({
+      name: "",
+      type: "booking_link",
+      keywords: "",
+      url: "",
+      label: "",
+      reason: "",
+    });
+  const openCreate = () => {
+    setEditing(null);
+    resetForm();
+    setError("");
+    setOpen(true);
+  };
+  const openEdit = (action: Action) => {
+    setEditing(action);
+    setForm({
+      name: action.name,
+      type: action.type,
+      keywords: action.triggerKeywords.join(", "),
+      url: action.config.url || "",
+      label: action.config.label || "",
+      reason: action.config.reason || "",
+    });
+    setError("");
+    setOpen(true);
+  };
+  const saveAction = async () => {
     setBusy(true);
     setError("");
     const config =
@@ -124,35 +154,38 @@ export default function ActionsPage() {
           : form.type === "handoff"
             ? { reason: form.reason || "Richiesta operatore" }
             : {};
-    const response = await fetch("/api/actions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        botId,
-        name: form.name,
-        type: form.type,
-        triggerKeywords: form.keywords
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        config,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) setError(result.error);
-    else {
+    try {
+      const response = await fetch(
+        editing ? `/api/actions/${editing.id}` : "/api/actions",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(!editing ? { botId } : {}),
+            name: form.name,
+            type: form.type,
+            triggerKeywords: form.keywords
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean),
+            config,
+          }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Salvataggio non riuscito");
       setOpen(false);
-      setForm({
-        name: "",
-        type: "booking_link",
-        keywords: "",
-        url: "",
-        label: "",
-        reason: "",
-      });
+      setEditing(null);
+      resetForm();
       await load();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Salvataggio non riuscito",
+      );
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
   const toggle = async (action: Action) => {
     await fetch(`/api/actions/${action.id}`, {
@@ -203,7 +236,7 @@ export default function ActionsPage() {
             </p>
           </div>
           <Button
-            onClick={() => setOpen(true)}
+            onClick={openCreate}
             disabled={!botId}
             icon={<Plus className="h-4 w-4" />}
           >
@@ -262,6 +295,13 @@ export default function ActionsPage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <button
+                        onClick={() => openEdit(action)}
+                        className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                        aria-label={`Modifica ${action.name}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
                         onClick={() => {
                           setTestAction(action);
                           setTestResult(null);
@@ -301,7 +341,9 @@ export default function ActionsPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 p-4 backdrop-blur-sm">
             <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-hard">
               <p className="eyebrow">Nuova automazione</p>
-              <h2 className="mt-1 text-xl font-bold">Configura un’azione</h2>
+              <h2 className="mt-1 text-xl font-bold">
+                {editing ? "Modifica azione" : "Configura un’azione"}
+              </h2>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 {types.map((type) => (
                   <button
@@ -389,7 +431,7 @@ export default function ActionsPage() {
                   Annulla
                 </Button>
                 <Button
-                  onClick={create}
+                  onClick={saveAction}
                   disabled={busy || !form.name.trim() || !form.keywords.trim()}
                   icon={
                     busy ? (
@@ -399,7 +441,7 @@ export default function ActionsPage() {
                     )
                   }
                 >
-                  Crea azione
+                  {editing ? "Salva modifiche" : "Crea azione"}
                 </Button>
               </div>
             </div>
