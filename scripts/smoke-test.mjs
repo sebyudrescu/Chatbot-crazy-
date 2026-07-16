@@ -313,7 +313,9 @@ try {
   );
   assert(
     widgetHistory.data.messages.length === 2 &&
-      widgetHistory.data.messages.at(-1)?.feedback === "positive",
+      widgetHistory.data.messages.at(-1)?.feedback === "positive" &&
+      widgetHistory.data.needsHumanEscalation === true &&
+      widgetHistory.data.assignedAgent === "Sebastian",
     "Public widget history was not restored",
   );
   const foreignSessionHistory = await fetch(
@@ -555,6 +557,7 @@ try {
           "conversation-isolation",
           "widget-history",
           "widget-session-ownership",
+          "widget-human-handoff",
           "embed",
           "inbox-notes-tags",
           ...(process.env.SMOKE_AI_ASSIST === "true"

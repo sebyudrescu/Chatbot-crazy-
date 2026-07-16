@@ -55,6 +55,9 @@
   let isLoaded = false;
   let messages = [];
   let restorePromise = Promise.resolve();
+  let historyPollTimer = null;
+  let handoffStatus = null;
+  const seenMessageIds = new Set();
   const conversationStorageKey = `litx:${config.botId}:conversation`;
   const sessionStorageKey = `litx:${config.botId}:session`;
   let conversationId = readStorage(conversationStorageKey);
@@ -446,6 +449,18 @@
       outline: none;
     }
 
+    .chatbot-handoff-status {
+      margin-bottom: 12px;
+      padding: 9px 11px;
+      border: 1px solid ${config.theme === 'dark' ? '#365314' : '#d9f99d'};
+      border-radius: 10px;
+      background: ${config.theme === 'dark' ? '#1a2e05' : '#f7fee7'};
+      color: ${config.theme === 'dark' ? '#d9f99d' : '#3f6212'};
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
     .chatbot-input-container {
       padding: 16px;
       border-top: 1px solid ${config.theme === 'dark' ? '#4a5568' : '#e2e8f0'};
@@ -702,6 +717,7 @@
     // Focus input
     const input = inputContainer.querySelector('.chatbot-input');
     setTimeout(() => input.focus(), 300);
+    restorePromise.then(startHistoryPolling);
 
   }
 
@@ -715,6 +731,7 @@
       launcher.style.display = 'flex';
       launcher.setAttribute('aria-expanded', 'false');
     }
+    stopHistoryPolling();
   }
 
   function addMessage(sender, content, options) {
@@ -729,6 +746,10 @@
     contentElement.appendChild(bubble);
     messageElement.appendChild(contentElement);
     messagesContainer.appendChild(messageElement);
+    if (options && options.id) {
+      messageElement.dataset.messageId = options.id;
+      seenMessageIds.add(options.id);
+    }
     
     // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -956,6 +977,28 @@
   }
 
   async function restoreConversation() {
+    return syncConversationHistory(true);
+  }
+
+  function updateHandoffStatus(data) {
+    const active = data && data.needsHumanEscalation && !data.isResolved;
+    if (!active) {
+      if (handoffStatus) handoffStatus.remove();
+      handoffStatus = null;
+      return;
+    }
+    if (!handoffStatus) {
+      handoffStatus = document.createElement('div');
+      handoffStatus.className = 'chatbot-handoff-status';
+    }
+    handoffStatus.textContent = data.assignedAgent
+      ? `${data.assignedAgent} sta seguendo la conversazione.`
+      : 'La conversazione è stata passata a un operatore.';
+    messagesContainer.prepend(handoffStatus);
+  }
+
+  async function syncConversationHistory(replaceHistory) {
+    if (!conversationId) return;
     try {
       const response = await fetch(
         `${config.apiUrl}/api/embed/${config.botId}/conversations/${conversationId}?sessionId=${encodeURIComponent(userSessionId)}`,
@@ -969,15 +1012,20 @@
       const result = await response.json();
       const history = result && result.data && result.data.messages;
       if (!Array.isArray(history) || !history.length) return;
-      messagesContainer.replaceChildren();
-      messages = [];
+      if (replaceHistory) {
+        messagesContainer.replaceChildren();
+        messages = [];
+        seenMessageIds.clear();
+        handoffStatus = null;
+      }
       let lastAssistantIndex = -1;
       history.forEach((message, index) => {
         if (message.role === 'assistant') lastAssistantIndex = index;
       });
       history.forEach((message, index) => {
+        if (seenMessageIds.has(message.id)) return;
         const sender = message.role === 'assistant' ? 'bot' : 'user';
-        const contentElement = addMessage(sender, message.content);
+        const contentElement = addMessage(sender, message.content, { id: message.id });
         if (sender !== 'bot') return;
         addSources(contentElement, message.sources);
         if (!message.feedback) addFeedbackControls(contentElement, message.id);
@@ -985,9 +1033,24 @@
           addResponseExtras(contentElement, message.quickReplies, message.ctas);
         }
       });
+      updateHandoffStatus(result.data);
     } catch (error) {
       console.error('Error restoring conversation:', error);
     }
+  }
+
+  function startHistoryPolling() {
+    stopHistoryPolling();
+    if (!isOpen || !conversationId) return;
+    historyPollTimer = window.setInterval(
+      () => syncConversationHistory(false),
+      5000,
+    );
+  }
+
+  function stopHistoryPolling() {
+    if (historyPollTimer) window.clearInterval(historyPollTimer);
+    historyPollTimer = null;
   }
 
   function showTyping() {
@@ -1067,7 +1130,12 @@
         hideTyping();
         
         // Add bot response
-        const responseContent = addMessage('bot', data.data.assistantMessage.content);
+        if (data.data.userMessage && data.data.userMessage.id) {
+          seenMessageIds.add(data.data.userMessage.id);
+        }
+        const responseContent = addMessage('bot', data.data.assistantMessage.content, {
+          id: data.data.assistantMessage.id,
+        });
         addSources(responseContent, data.data.sources);
         addFeedbackControls(responseContent, data.data.assistantMessage.id);
         addResponseExtras(responseContent, data.data.quickReplies, data.data.ctas);
@@ -1077,6 +1145,7 @@
         if (data.data.conversationId && !conversationId) {
           conversationId = data.data.conversationId;
           writeStorage(conversationStorageKey, conversationId);
+          startHistoryPolling();
         }
       } else {
         let failure = null;
@@ -1105,6 +1174,7 @@
     toggle: toggleChat,
     sendMessage: sendMessage,
     addMessage: addMessage,
+    refresh: () => syncConversationHistory(false),
     isOpen: () => isOpen,
     isLoaded: () => isLoaded
   };

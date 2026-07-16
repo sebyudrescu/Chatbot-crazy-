@@ -56,7 +56,7 @@ export async function GET(
     where: { id: conversationId, botId, userSessionId: sessionId },
     include: {
       chatbot: { select: { isActive: true } },
-      messages: { orderBy: { createdAt: "asc" }, take: 30 },
+      messages: { orderBy: { createdAt: "desc" }, take: 30 },
     },
   });
   if (!conversation) {
@@ -76,7 +76,8 @@ export async function GET(
   }
 
   const sourceIds = new Set<string>();
-  const parsedMessages = conversation.messages.map((message) => {
+  const chronologicalMessages = [...conversation.messages].reverse();
+  const parsedMessages = chronologicalMessages.map((message) => {
     const sourceData = parseJSON<{
       sources?: Array<{ sourceId?: string }>;
     }>(message.sourcesUsed);
@@ -103,6 +104,9 @@ export async function GET(
     success: true,
     data: {
       conversationId,
+      needsHumanEscalation: conversation.needsHumanEscalation,
+      isResolved: conversation.isResolved,
+      assignedAgent: conversation.assignedAgent,
       messages: parsedMessages.map(({ message, ids }) => ({
         id: message.id,
         role: message.role,
