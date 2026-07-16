@@ -1,9 +1,16 @@
 import JSZip from 'jszip'
 
 const baseUrl = process.env.SMOKE_BASE_URL || 'http://localhost:3000'
+let authCookie = ''
 
 async function request(path, options) {
-  const response = await fetch(`${baseUrl}${path}`, options)
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: {
+      ...(authCookie ? { Cookie: authCookie } : {}),
+      ...(options?.headers || {}),
+    },
+  })
   let body
   try {
     body = await response.json()
@@ -11,6 +18,19 @@ async function request(path, options) {
     body = null
   }
   return { response, body }
+}
+
+async function authenticate() {
+  const password = process.env.SMOKE_ACCESS_PASSWORD || process.env.APP_ACCESS_PASSWORD
+  if (!password) return
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  if (!response.ok) throw new Error(`Autenticazione test formati non riuscita: ${response.status}`)
+  authCookie = (response.headers.get('set-cookie') || '').split(';')[0]
+  if (!authCookie) throw new Error('Cookie autenticazione test formati mancante')
 }
 
 async function preview(botId, filename, content, type) {
@@ -44,6 +64,7 @@ async function createDocx() {
   return zip.generateAsync({ type: 'uint8array' })
 }
 
+await authenticate()
 const bots = await request('/api/chatbots')
 if (!bots.response.ok) throw new Error('Impossibile caricare gli agenti per il test formati')
 let botId = bots.body?.data?.[0]?.id
@@ -94,5 +115,5 @@ Audit,250 euro,Analisi completa e piano di miglioramento`, 'text/csv')],
     rejected: ['binary-as-txt', 'text-as-pdf'],
   }, null, 2))
 } finally {
-  if (temporaryBotId) await fetch(`${baseUrl}/api/chatbots/${temporaryBotId}`, { method: 'DELETE' }).catch(() => {})
+  if (temporaryBotId) await request(`/api/chatbots/${temporaryBotId}`, { method: 'DELETE' }).catch(() => {})
 }
