@@ -190,15 +190,34 @@ try {
     body: JSON.stringify({ botId, message: "Test widget", source: "widget" }),
   });
   assert(
-    draftChat.status === 403,
+    draftChat.status === 403 &&
+      draftChat.headers.get("access-control-allow-origin") ===
+        "https://smoke.example",
     "Draft agent accepted a public widget message",
+  );
+  const chatPreflight = await fetch(`${baseUrl}/api/chat`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://smoke.example",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type",
+    },
+  });
+  assert(
+    chatPreflight.status === 204 &&
+      chatPreflight.headers.get("access-control-allow-origin") ===
+        "https://smoke.example" &&
+      chatPreflight.headers.get("access-control-allow-methods")?.includes("POST"),
+    "Widget CORS preflight failed",
   );
   const staticWidget = await fetch(`${baseUrl}/chatbot-widget.js`);
   const widgetSource = await staticWidget.text();
   assert(
     staticWidget.ok &&
       widgetSource.includes("data.data.assistantMessage.content") &&
-      widgetSource.includes("source: 'widget'"),
+      widgetSource.includes("source: 'widget'") &&
+      widgetSource.includes("chatbot-quick-reply") &&
+      widgetSource.includes("chatbot-feedback"),
     "Widget script is incompatible",
   );
 
@@ -226,7 +245,7 @@ try {
       content: "Vorrei informazioni sul servizio e sui prossimi passi.",
     }),
   });
-  await request("/api/messages", {
+  const assistantMessage = await request("/api/messages", {
     method: "POST",
     body: JSON.stringify({
       conversationId,
@@ -234,13 +253,21 @@ try {
       content: "Risposta smoke",
     }),
   });
+  await request(`/api/embed/${botId}/feedback`, {
+    method: "POST",
+    body: JSON.stringify({
+      messageId: assistantMessage.data.id,
+      feedback: "positive",
+    }),
+  });
   const detail = await request(`/api/conversations/${conversationId}`);
   assert(
     detail.data.userName === "Smoke Client" &&
       detail.data.messages.at(-1)?.content === "Risposta smoke" &&
+      detail.data.messages.at(-1)?.feedback === "positive" &&
       detail.data.internalNotes === "Nota operativa smoke" &&
       detail.data.tags.includes("urgente"),
-    "Inbox flow failed",
+    "Inbox and public widget feedback flow failed",
   );
   if (process.env.SMOKE_AI_ASSIST === "true") {
     const assist = await request(
@@ -466,6 +493,8 @@ try {
           "prompt-versions",
           "knowledge-preview",
           "widget",
+          "widget-feedback",
+          "widget-cors",
           "embed",
           "inbox-notes-tags",
           ...(process.env.SMOKE_AI_ASSIST === "true"

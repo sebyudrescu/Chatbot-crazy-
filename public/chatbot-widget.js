@@ -270,6 +270,40 @@
       background: ${config.theme === 'dark' ? '#450a0a' : '#fff1f2'} !important;
     }
 
+    .chatbot-feedback {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 28px;
+      margin-top: 5px;
+      color: ${config.theme === 'dark' ? '#94a3b8' : '#94a3b8'};
+      font-size: 11px;
+    }
+
+    .chatbot-feedback button {
+      width: 28px;
+      height: 28px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .chatbot-feedback button:hover,
+    .chatbot-feedback button:focus-visible,
+    .chatbot-feedback button[aria-pressed="true"] {
+      background: ${config.primaryColor}14;
+      color: ${config.theme === 'dark' ? '#ffffff' : config.primaryColor};
+      outline: none;
+    }
+
+    .chatbot-feedback button:disabled {
+      cursor: default;
+      opacity: 0.55;
+    }
+
     .chatbot-input-container {
       padding: 16px;
       border-top: 1px solid ${config.theme === 'dark' ? '#4a5568' : '#e2e8f0'};
@@ -607,6 +641,44 @@
     if (extras.childElementCount) contentElement.appendChild(extras);
   }
 
+  function addFeedbackControls(contentElement, messageId) {
+    if (!messageId) return;
+    const feedback = document.createElement('div');
+    feedback.className = 'chatbot-feedback';
+    feedback.setAttribute('aria-label', 'Valuta questa risposta');
+    const label = document.createElement('span');
+    label.textContent = 'Utile?';
+    feedback.appendChild(label);
+
+    ['positive', 'negative'].forEach((value) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = value === 'positive' ? '👍' : '👎';
+      button.setAttribute('aria-label', value === 'positive' ? 'Risposta utile' : 'Risposta non utile');
+      button.setAttribute('aria-pressed', 'false');
+      button.onclick = async () => {
+        const buttons = feedback.querySelectorAll('button');
+        buttons.forEach((item) => { item.disabled = true; });
+        try {
+          const response = await fetch(`${config.apiUrl}/api/embed/${config.botId}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messageId, feedback: value }),
+          });
+          if (!response.ok) throw new Error('Feedback non salvato');
+          button.setAttribute('aria-pressed', 'true');
+          label.textContent = 'Grazie!';
+        } catch (error) {
+          console.error('Error saving feedback:', error);
+          label.textContent = 'Riprova';
+          buttons.forEach((item) => { item.disabled = false; });
+        }
+      };
+      feedback.appendChild(button);
+    });
+    contentElement.appendChild(feedback);
+  }
+
   function showTyping() {
     const typingElement = document.createElement('div');
     typingElement.className = 'chatbot-message bot';
@@ -668,6 +740,7 @@
         
         // Add bot response
         const responseContent = addMessage('bot', data.data.assistantMessage.content);
+        addFeedbackControls(responseContent, data.data.assistantMessage.id);
         addResponseExtras(responseContent, data.data.quickReplies, data.data.ctas);
         
         // Update conversation ID if needed
