@@ -1,4 +1,7 @@
+import { PrismaClient } from "@prisma/client";
+
 const baseUrl = process.env.SMOKE_BASE_URL || "http://localhost:3000";
+const prisma = new PrismaClient();
 let authCookie = "";
 let botId;
 let conversationId;
@@ -671,6 +674,115 @@ try {
     "Visitor personal data remained after deletion",
   );
 
+  const retentionSettings = await request(`/api/chatbots/${botId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ settings: { dataRetentionDays: 30 } }),
+  });
+  assert(
+    retentionSettings.data.settings.dataRetentionDays === 30,
+    "Agent retention policy was not persisted",
+  );
+  const retentionConversation = await request("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      userSessionId: "retention_smoke_session",
+    }),
+  });
+  await request(`/api/conversations/${retentionConversation.data.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      userName: "Retention Smoke",
+      userEmail: "retention-smoke@example.com",
+    }),
+  });
+  await request("/api/messages", {
+    method: "POST",
+    body: JSON.stringify({
+      conversationId: retentionConversation.data.id,
+      role: "user",
+      content: "Dato scaduto da eliminare con la policy.",
+    }),
+  });
+  await request(`/api/contacts?botId=${botId}`);
+  const expiredAt = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+  await prisma.conversation.update({
+    where: { id: retentionConversation.data.id },
+    data: { startedAt: expiredAt, lastMessageAt: expiredAt },
+  });
+  await prisma.cRMContact.updateMany({
+    where: { botId, email: "retention-smoke@example.com" },
+    data: { lastInteraction: expiredAt },
+  });
+  const retentionPreview = await request(
+    `/api/privacy/retention?botId=${botId}`,
+  );
+  assert(
+    retentionPreview.data[0].retentionDays === 30 &&
+      retentionPreview.data[0].expiredConversations === 1 &&
+      retentionPreview.data[0].expiredContacts === 1,
+    "Retention preview did not identify expired personal data",
+  );
+  const invalidRetentionCleanup = await fetch(
+    `${baseUrl}/api/privacy/retention`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authCookie ? { Cookie: authCookie } : {}),
+      },
+      body: JSON.stringify({
+        botId,
+        confirmation: "NO",
+      }),
+    },
+  );
+  assert(
+    invalidRetentionCleanup.status === 400,
+    "Retention cleanup accepted an invalid confirmation",
+  );
+  const retentionCleanup = await request("/api/privacy/retention", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      confirmation: "PULISCI DATI SCADUTI",
+    }),
+  });
+  assert(
+    retentionCleanup.data.totals.conversations === 1 &&
+      retentionCleanup.data.totals.crmContacts === 1,
+    "Retention cleanup returned incorrect deletion counts",
+  );
+  const retentionAfterCleanup = await request(
+    `/api/privacy/retention?botId=${botId}`,
+  );
+  assert(
+    retentionAfterCleanup.data[0].expiredConversations === 0 &&
+      retentionAfterCleanup.data[0].expiredContacts === 0,
+    "Expired personal data remained after retention cleanup",
+  );
+  const unauthorizedCron = await fetch(
+    `${baseUrl}/api/cron/data-retention`,
+  );
+  assert(
+    unauthorizedCron.status === 401,
+    "Scheduled retention endpoint accepted an unauthenticated request",
+  );
+  if (process.env.SMOKE_CRON_SECRET) {
+    const authorizedCron = await fetch(
+      `${baseUrl}/api/cron/data-retention`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.SMOKE_CRON_SECRET}`,
+        },
+      },
+    );
+    assert(
+      authorizedCron.ok && (await authorizedCron.json()).success,
+      "Scheduled retention endpoint rejected its configured secret",
+    );
+  }
+
   console.log(
     JSON.stringify(
       {
@@ -708,6 +820,9 @@ try {
           "visitor-privacy-export",
           "visitor-privacy-delete",
           ...(authCookie ? ["visitor-privacy-auth"] : []),
+          "retention-policy",
+          "retention-cleanup",
+          "retention-cron-auth",
         ],
       },
       null,
@@ -751,4 +866,5 @@ try {
     await request(`/api/chatbots/${botId}`, { method: "DELETE" }).catch(
       () => {},
     );
+  await prisma.$disconnect();
 }

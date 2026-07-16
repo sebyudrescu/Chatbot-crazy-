@@ -43,6 +43,8 @@ jobs:
       PINECONE_INDEX_NAME: litx-ci
       APP_ACCESS_PASSWORD: ci-private-password
       APP_AUTH_SALT: ci-static-salt
+      CRON_SECRET: ci-retention-secret
+      SMOKE_CRON_SECRET: ci-retention-secret
       NEXT_PUBLIC_APP_URL: http://localhost:3000
 
     steps:

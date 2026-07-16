@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { AlertTriangle as TriangleAlert, Bot, CheckCircle2, Database, ExternalLink, KeyRound, Loader2, Server, ShieldCheck } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { PrivacyDataManager } from '@/components/settings/PrivacyDataManager'
+import { RetentionPolicyManager } from '@/components/settings/RetentionPolicyManager'
 
 interface Status {
   database: boolean
@@ -37,6 +38,7 @@ export default function SettingsPage() {
           <div className={`rounded-xl border p-4 ${status.environment === 'production' && !status.accessProtection ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200 bg-gray-50 text-gray-600'}`}><p className="text-xs font-semibold">Ambiente: {status.environment}</p><p className="mt-1 text-[11px] leading-5">{status.environment === 'production' && !status.accessProtection ? 'Prima della pubblicazione abilita una protezione di accesso: l’app contiene dati dei clienti.' : 'Configurazione coerente con l’ambiente attuale.'}</p></div></aside>
       </div>
       <div className="mt-5"><PrivacyDataManager /></div>
+      <div className="mt-5"><RetentionPolicyManager /></div>
     </>}
   </div></DashboardLayout>
 }

@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
       aiModel: DEFAULT_CHAT_MODEL,
       temperature: 0.4,
       maxTokens: 700,
+      dataRetentionDays: 365,
       rules: [
         "Non inventare informazioni",
         "Usa solo fonti autorizzate",
