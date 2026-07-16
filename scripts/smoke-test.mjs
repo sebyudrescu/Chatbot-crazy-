@@ -100,6 +100,32 @@ try {
     created.data.settings.aiModel === "gpt-4o-mini",
     "Legacy AI model was not normalized",
   );
+  const notificationJob = await prisma.ingestionJob.create({
+    data: {
+      botId,
+      jobType: "url",
+      params: JSON.stringify({ singleUrl: "https://example.com/smoke" }),
+      status: "failed",
+      attempts: 5,
+      maxAttempts: 5,
+      errorMessage: "Controlled crawler notification failure",
+      completedAt: new Date(),
+    },
+  });
+  const operationalNotifications = await request("/api/notifications?limit=100");
+  const crawlerNotification = operationalNotifications.data.find(
+    (item) => item.key === `ingestion:${notificationJob.id}`,
+  );
+  assert(
+    crawlerNotification?.type === "ingestion" &&
+      crawlerNotification.href === `/chatbot/${botId}/jobs`,
+    "Crawler failure notification is missing",
+  );
+  assert(
+    new Set(operationalNotifications.data.map((item) => item.key)).size ===
+      operationalNotifications.data.length,
+    "Operational notifications are not deduplicated",
+  );
   const initialReadiness = await request(`/api/chatbots/${botId}/readiness`);
   assert(
     initialReadiness.data.ready === false && initialReadiness.data.total === 5,
@@ -1033,6 +1059,7 @@ try {
           "knowledge-sync-deduplication",
           "knowledge-sync-cron-auth",
           "operational-health",
+          "crawler-notifications",
         ],
       },
       null,
