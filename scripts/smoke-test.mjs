@@ -539,6 +539,138 @@ try {
     "Suggestion engine failed",
   );
 
+  const privacyConversation = await request("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      userSessionId: "privacy_smoke_session",
+    }),
+  });
+  await request(`/api/conversations/${privacyConversation.data.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      userName: "Privacy Smoke",
+      userEmail: "privacy-smoke@example.com",
+      userPhone: "+39 320 555 0188",
+    }),
+  });
+  await request("/api/messages", {
+    method: "POST",
+    body: JSON.stringify({
+      conversationId: privacyConversation.data.id,
+      role: "user",
+      content: "Messaggio personale da esportare e cancellare.",
+    }),
+  });
+  await request(`/api/contacts?botId=${botId}`);
+  const privacyParams = new URLSearchParams({
+    botId,
+    matchBy: "email",
+    query: "privacy-smoke@example.com",
+  });
+  if (authCookie) {
+    const unauthenticatedPrivacy = await fetch(
+      `${baseUrl}/api/privacy/visitor-data?${privacyParams}`,
+    );
+    assert(
+      unauthenticatedPrivacy.status === 401,
+      "Visitor privacy data was exposed without owner authentication",
+    );
+  }
+  const privacyExport = await request(
+    `/api/privacy/visitor-data?${privacyParams}`,
+  );
+  assert(
+    privacyExport.data.counts.conversations === 1 &&
+      privacyExport.data.counts.messages === 1 &&
+      privacyExport.data.counts.crmContacts === 1 &&
+      privacyExport.data.conversations[0].messages[0].content.includes(
+        "personale",
+    ),
+    "Visitor privacy export did not include all personal data",
+  );
+  const privacyDownload = await fetch(
+    `${baseUrl}/api/privacy/visitor-data?${privacyParams}&download=1`,
+    { headers: authCookie ? { Cookie: authCookie } : {} },
+  );
+  assert(
+    privacyDownload.ok &&
+      privacyDownload.headers
+        .get("content-disposition")
+        ?.includes("dati-visitatore-") &&
+      (await privacyDownload.text()).includes("privacy-smoke@example.com"),
+    "Visitor privacy download was not generated correctly",
+  );
+  const phonePrivacyParams = new URLSearchParams({
+    botId,
+    matchBy: "phone",
+    query: "393205550188",
+  });
+  const privacyByPhone = await request(
+    `/api/privacy/visitor-data?${phonePrivacyParams}`,
+  );
+  assert(
+    privacyByPhone.data.counts.conversations === 1 &&
+      privacyByPhone.data.counts.crmContacts === 1,
+    "Visitor privacy phone normalization failed",
+  );
+  const sessionPrivacyParams = new URLSearchParams({
+    botId,
+    matchBy: "session",
+    query: "privacy_smoke_session",
+  });
+  const privacyBySession = await request(
+    `/api/privacy/visitor-data?${sessionPrivacyParams}`,
+  );
+  assert(
+    privacyBySession.data.counts.conversations === 1 &&
+      privacyBySession.data.counts.crmContacts === 1,
+    "Visitor privacy session lookup left linked CRM data behind",
+  );
+  const invalidPrivacyDelete = await fetch(
+    `${baseUrl}/api/privacy/visitor-data`,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authCookie ? { Cookie: authCookie } : {}),
+      },
+      body: JSON.stringify({
+        botId,
+        matchBy: "email",
+        query: "privacy-smoke@example.com",
+        confirmation: "NO",
+      }),
+    },
+  );
+  assert(
+    invalidPrivacyDelete.status === 400,
+    "Privacy deletion accepted an invalid confirmation",
+  );
+  const privacyDelete = await request("/api/privacy/visitor-data", {
+    method: "DELETE",
+    body: JSON.stringify({
+      botId,
+      matchBy: "email",
+      query: "privacy-smoke@example.com",
+      confirmation: "ELIMINA",
+    }),
+  });
+  assert(
+    privacyDelete.data.deletedConversations === 1 &&
+      privacyDelete.data.deletedContacts === 1 &&
+      privacyDelete.data.deletedMessages === 1,
+    "Visitor privacy deletion returned incorrect counts",
+  );
+  const privacyAfterDelete = await request(
+    `/api/privacy/visitor-data?${privacyParams}`,
+  );
+  assert(
+    privacyAfterDelete.data.counts.conversations === 0 &&
+      privacyAfterDelete.data.counts.crmContacts === 0,
+    "Visitor personal data remained after deletion",
+  );
+
   console.log(
     JSON.stringify(
       {
@@ -573,6 +705,9 @@ try {
           "agent-restore",
           "search",
           "suggestions",
+          "visitor-privacy-export",
+          "visitor-privacy-delete",
+          ...(authCookie ? ["visitor-privacy-auth"] : []),
         ],
       },
       null,

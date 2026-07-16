@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle as TriangleAlert, Bot, CheckCircle2, Database, ExternalLink, KeyRound, Loader2, Server, ShieldCheck } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
+import { PrivacyDataManager } from '@/components/settings/PrivacyDataManager'
 
 interface Status {
   database: boolean
@@ -35,6 +36,7 @@ export default function SettingsPage() {
           <div className="card p-5"><h2 className="text-sm font-semibold">Configurazione agenti</h2><p className="mt-2 text-xs leading-5 text-gray-500">Modello, tono, lingua, regole, system prompt e fallback si configurano separatamente per ciascun cliente.</p><Link href="/chatbots" className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700">Apri gli agenti <ExternalLink className="h-3 w-3" /></Link></div>
           <div className={`rounded-xl border p-4 ${status.environment === 'production' && !status.accessProtection ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200 bg-gray-50 text-gray-600'}`}><p className="text-xs font-semibold">Ambiente: {status.environment}</p><p className="mt-1 text-[11px] leading-5">{status.environment === 'production' && !status.accessProtection ? 'Prima della pubblicazione abilita una protezione di accesso: l’app contiene dati dei clienti.' : 'Configurazione coerente con l’ambiente attuale.'}</p></div></aside>
       </div>
+      <div className="mt-5"><PrivacyDataManager /></div>
     </>}
   </div></DashboardLayout>
 }
