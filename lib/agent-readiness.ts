@@ -17,13 +17,30 @@ export async function getAgentReadiness(botId: string) {
     where: { id: botId },
     include: {
       embedSettings: { select: { enabled: true } },
-      knowledgeSources: { select: { id: true }, take: 1 },
-      conversations: { select: { id: true }, take: 1 },
+      knowledgeSources: {
+        where: { status: 'completed', chunkCount: { gt: 0 } },
+        select: { id: true },
+        take: 1,
+      },
+      conversations: {
+        where: { messages: { some: { role: 'assistant' } } },
+        select: { id: true },
+        take: 1,
+      },
+      promptVersions: {
+        select: { createdAt: true },
+        orderBy: { version: 'desc' },
+        take: 1,
+      },
       evaluationCases: {
         where: { isActive: true },
         select: {
           id: true,
-          runs: { select: { passed: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+          runs: {
+            select: { passed: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
         },
       },
     },
@@ -36,8 +53,13 @@ export async function getAgentReadiness(botId: string) {
     typeof settings.objective === 'string' && settings.objective.trim() &&
     (agent.systemPrompt?.trim() || agent.promptTemplateId)
   )
+  const configurationChangedAt = agent.promptVersions[0]?.createdAt || null
   const evaluationsPassed = agent.evaluationCases.length > 0 &&
-    agent.evaluationCases.every(test => test.runs[0]?.passed === true)
+    agent.evaluationCases.every(test => {
+      const latestRun = test.runs[0]
+      return latestRun?.passed === true &&
+        (!configurationChangedAt || latestRun.createdAt >= configurationChangedAt)
+    })
 
   const checks: AgentReadinessCheck[] = [
     {
@@ -57,14 +79,14 @@ export async function getAgentReadiness(botId: string) {
     {
       key: 'conversation',
       label: 'Prova conversazione',
-      description: 'È stata completata almeno una conversazione privata di prova.',
+      description: 'È stata ottenuta almeno una risposta completa in una conversazione di prova.',
       done: agent.conversations.length > 0,
       href: `/chat/${botId}`,
     },
     {
       key: 'evaluations',
       label: 'Valutazioni automatiche',
-      description: 'Tutti i controlli attivi hanno un ultimo risultato positivo.',
+      description: 'Tutti i controlli attivi sono stati superati dopo l’ultima modifica alle istruzioni.',
       done: evaluationsPassed,
       href: `/evaluations?botId=${botId}`,
     },
@@ -85,6 +107,7 @@ export async function getAgentReadiness(botId: string) {
     ready: completed === checks.length,
     completed,
     total: checks.length,
+    configurationChangedAt,
     checks,
   }
 }

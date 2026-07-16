@@ -15,6 +15,7 @@ interface Readiness {
   ready: boolean
   completed: number
   total: number
+  configurationChangedAt: string | null
   checks: AgentReadinessCheck[]
 }
 

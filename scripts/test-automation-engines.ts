@@ -13,6 +13,7 @@ import {
   getOperationalHealth,
   retryFailedIngestionJob,
 } from "../lib/operational-health";
+import { getAgentReadiness } from "../lib/agent-readiness";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -81,6 +82,106 @@ async function testWebhookDelivery() {
   }
 }
 
+async function testAgentPublicationReadiness() {
+  const bot = await prisma.chatbot.create({
+    data: {
+      companyName: "Readiness test",
+      systemPrompt: "Rispondi solo usando le fonti approvate.",
+      settings: JSON.stringify({
+        role: "Assistente clienti",
+        objective: "Rispondere alle richieste verificate",
+      }),
+      kbStatus: "ready",
+      kbTotalChunks: 1,
+    },
+  });
+  try {
+    await prisma.embedSettings.create({
+      data: { chatbotId: bot.id, enabled: true },
+    });
+    await prisma.knowledgeSource.create({
+      data: {
+        botId: bot.id,
+        sourceType: "url",
+        sourceUrl: "https://example.com/help",
+        contentText: "Contenuto verificato per la prova di pubblicazione.",
+        status: "completed",
+        chunkCount: 1,
+      },
+    });
+    const conversation = await prisma.conversation.create({
+      data: { botId: bot.id, userSessionId: "readiness-test" },
+    });
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: "user",
+        content: "Come funziona il servizio?",
+      },
+    });
+    const evaluationCase = await prisma.evaluationCase.create({
+      data: {
+        botId: bot.id,
+        name: "Risposta verificata",
+        question: "Come funziona il servizio?",
+        expectedKeywords: "[]",
+        forbiddenKeywords: "[]",
+      },
+    });
+    await prisma.evaluationRun.create({
+      data: {
+        caseId: evaluationCase.id,
+        passed: true,
+        response: "Risposta precedente",
+        createdAt: new Date(Date.now() - 60_000),
+      },
+    });
+    const configurationChangedAt = new Date();
+    await prisma.promptVersion.create({
+      data: {
+        botId: bot.id,
+        version: 1,
+        systemPrompt: bot.systemPrompt,
+        settings: bot.settings || "{}",
+        changeSummary: "Configurazione aggiornata",
+        createdAt: configurationChangedAt,
+      },
+    });
+
+    const stale = await getAgentReadiness(bot.id);
+    assert(
+      stale?.checks.find((check) => check.key === "conversation")?.done ===
+        false,
+      "Readiness accepted a conversation without an assistant response",
+    );
+    assert(
+      stale?.checks.find((check) => check.key === "evaluations")?.done ===
+        false,
+      "Readiness accepted evaluations older than the prompt configuration",
+    );
+
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: "assistant",
+        content: "Il servizio usa informazioni verificate.",
+      },
+    });
+    await prisma.evaluationRun.create({
+      data: {
+        caseId: evaluationCase.id,
+        passed: true,
+        response: "Risposta aggiornata",
+        createdAt: new Date(configurationChangedAt.getTime() + 1_000),
+      },
+    });
+    const ready = await getAgentReadiness(bot.id);
+    assert(ready?.ready === true, "Valid agent was not publication-ready");
+  } finally {
+    await prisma.chatbot.delete({ where: { id: bot.id } });
+  }
+}
+
 async function main() {
   const databaseUrl = new URL(process.env.DATABASE_URL || "");
   assert(
@@ -88,6 +189,7 @@ async function main() {
     "Automation tests refuse to run outside the isolated codex_automation_test schema",
   );
   await testWebhookDelivery();
+  await testAgentPublicationReadiness();
 
   const simulation = simulateWorkflow({
     triggerType: "keyword",
