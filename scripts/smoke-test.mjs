@@ -218,7 +218,8 @@ try {
       widgetSource.includes("data.data.assistantMessage.content") &&
       widgetSource.includes("source: 'widget'") &&
       widgetSource.includes("chatbot-quick-reply") &&
-      widgetSource.includes("chatbot-feedback"),
+      widgetSource.includes("chatbot-feedback") &&
+      widgetSource.includes("chatbot-sources"),
     "Widget script is incompatible",
   );
 
@@ -534,6 +535,7 @@ try {
           "widget-feedback",
           "widget-cors",
           "widget-lead-capture",
+          "widget-source-citations",
           "conversation-isolation",
           "embed",
           "inbox-notes-tags",

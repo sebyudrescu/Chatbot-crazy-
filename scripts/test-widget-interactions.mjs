@@ -65,6 +65,23 @@ window.fetch = async (url, options = {}) => {
           id: "00000000-0000-4000-8000-000000000003",
           content: "Posso aiutarti a prenotare.",
         },
+        sources: [
+          {
+            id: "source-1",
+            sourceType: "url",
+            sourceUrl: "https://cliente.example/servizi",
+          },
+          {
+            id: "source-2",
+            sourceType: "pdf",
+            originalFilename: "Listino servizi.pdf",
+          },
+          {
+            id: "source-unsafe",
+            sourceType: "url",
+            sourceUrl: "javascript:alert(1)",
+          },
+        ],
         quickReplies: [
           { id: "reply-1", text: "Mostrami gli orari" },
           { id: "reply-2", text: "Parla con un operatore" },
@@ -163,6 +180,23 @@ assert.equal(
   "Il widget accetta protocolli CTA non sicuri",
 );
 assert.equal(actions[0].getAttribute("rel"), "noopener noreferrer");
+const sources = window.document.querySelectorAll(".chatbot-source");
+assert.equal(sources.length, 3, "Le fonti della risposta non vengono mostrate");
+assert.equal(
+  sources[0].getAttribute("href"),
+  "https://cliente.example/servizi",
+  "Il collegamento alla fonte non è corretto",
+);
+assert.match(
+  sources[1].textContent || "",
+  /Listino servizi\.pdf/,
+  "La fonte documento non mostra il nome file",
+);
+assert.equal(
+  sources[2].tagName,
+  "DIV",
+  "Una fonte con protocollo pericoloso è stata resa cliccabile",
+);
 
 const feedbackButtons = window.document.querySelectorAll(
   ".chatbot-feedback button",
@@ -274,6 +308,7 @@ console.log(
         "single-chat-request",
         "quick-replies",
         "cta-links",
+        "source-citations",
         "unsafe-protocol-rejection",
         "message-feedback",
         "persistent-session",

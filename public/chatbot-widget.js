@@ -400,6 +400,51 @@
       font-weight: 600;
     }
 
+    .chatbot-sources {
+      margin-top: 7px;
+      color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'};
+      font-size: 10px;
+    }
+
+    .chatbot-sources summary {
+      width: fit-content;
+      cursor: pointer;
+      font-weight: 600;
+      list-style-position: inside;
+    }
+
+    .chatbot-source-list {
+      display: grid;
+      gap: 5px;
+      margin-top: 6px;
+    }
+
+    .chatbot-source {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      padding: 6px 8px;
+      border: 1px solid ${config.theme === 'dark' ? '#475569' : '#e2e8f0'};
+      border-radius: 8px;
+      background: ${config.theme === 'dark' ? '#273449' : '#f8fafc'};
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .chatbot-source span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chatbot-source:hover,
+    .chatbot-source:focus-visible {
+      border-color: ${config.primaryColor}70;
+      color: ${config.theme === 'dark' ? '#ffffff' : config.primaryColor};
+      outline: none;
+    }
+
     .chatbot-input-container {
       padding: 16px;
       border-top: 1px solid ${config.theme === 'dark' ? '#4a5568' : '#e2e8f0'};
@@ -748,6 +793,41 @@
     if (extras.childElementCount) contentElement.appendChild(extras);
   }
 
+  function addSources(contentElement, sources) {
+    if (!Array.isArray(sources) || !sources.length) return;
+    const details = document.createElement('details');
+    details.className = 'chatbot-sources';
+    const summary = document.createElement('summary');
+    summary.textContent = `Fonti utilizzate (${Math.min(sources.length, 4)})`;
+    details.appendChild(summary);
+    const list = document.createElement('div');
+    list.className = 'chatbot-source-list';
+
+    sources.slice(0, 4).forEach((source, index) => {
+      const rawUrl = source && typeof source.sourceUrl === 'string' ? source.sourceUrl : '';
+      const url = safeActionUrl(rawUrl);
+      const item = document.createElement(url ? 'a' : 'div');
+      item.className = 'chatbot-source';
+      if (url && item instanceof HTMLAnchorElement) {
+        item.href = url;
+        item.target = '_blank';
+        item.rel = 'noopener noreferrer';
+      }
+      const icon = document.createElement('span');
+      icon.textContent = rawUrl ? '↗' : '📄';
+      const label = document.createElement('span');
+      label.textContent =
+        source && (source.originalFilename || source.sourceUrl)
+          ? source.originalFilename || source.sourceUrl
+          : `Fonte ${index + 1}`;
+      item.appendChild(icon);
+      item.appendChild(label);
+      list.appendChild(item);
+    });
+    details.appendChild(list);
+    contentElement.appendChild(details);
+  }
+
   function addFeedbackControls(contentElement, messageId) {
     if (!messageId) return;
     const feedback = document.createElement('div');
@@ -952,6 +1032,7 @@
         
         // Add bot response
         const responseContent = addMessage('bot', data.data.assistantMessage.content);
+        addSources(responseContent, data.data.sources);
         addFeedbackControls(responseContent, data.data.assistantMessage.id);
         addResponseExtras(responseContent, data.data.quickReplies, data.data.ctas);
         addLeadForms(responseContent, data.data.actions && data.data.actions.leadForms, data.data.conversationId);
