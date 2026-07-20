@@ -14,7 +14,14 @@ export async function GET(request: NextRequest) {
   const connections = await prisma.integrationConnection.findMany({ where: { botId } })
   return NextResponse.json({ success: true, data: INTEGRATION_CATALOG.map(definition => {
     const connection = connections.find(item => item.provider === definition.provider)
-    return { ...definition, connection: connection ? { ...connection, config: redactSecrets(parse(connection.config)) } : null }
+    if (!connection) return { ...definition, connection: null }
+    const config = parse(connection.config)
+    const validMetaConnection = definition.provider === 'whatsapp'
+      ? Boolean(config.accessTokenEncrypted && config.phoneNumberId)
+      : definition.provider === 'instagram'
+        ? Boolean(config.accessTokenEncrypted && config.instagramAccountId)
+        : true
+    return { ...definition, connection: { ...connection, enabled: connection.enabled && validMetaConnection, status: validMetaConnection ? connection.status : 'disconnected', config: redactSecrets(config) } }
   }) })
 }
 
@@ -22,6 +29,7 @@ export async function POST(request: NextRequest) {
   try {
     const input = Schema.parse(await request.json()), definition = findIntegration(input.provider)
     if (!definition || definition.mode === 'planned') return NextResponse.json({ success: false, error: 'Questa integrazione richiede ancora il connettore ufficiale.' }, { status: 409 })
+    if (input.provider === 'whatsapp' || input.provider === 'instagram') return NextResponse.json({ success: false, error: 'Usa il collegamento ufficiale Meta dalla schermata Canali.' }, { status: 409 })
     const allowed = new Set((definition.fields || []).map(field => field.key))
     const existing = await prisma.integrationConnection.findUnique({ where: { botId_provider: { botId: input.botId, provider: input.provider } } })
     const submitted = Object.fromEntries(Object.entries(input.config).filter(([key]) => allowed.has(key)))

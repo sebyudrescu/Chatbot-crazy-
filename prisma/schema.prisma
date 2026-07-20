@@ -391,6 +391,8 @@ model Conversation {
   userSessionId String
   startedAt     DateTime  @default(now())
   lastMessageAt DateTime?
+  channel       String    @default("widget")
+  externalThreadId String?
 
   // Conversation metadata
   userIntent    String? // "support", "sales", "info", "complaint"
@@ -427,6 +429,7 @@ model Conversation {
   @@index([sentiment])
   @@index([isResolved])
   @@index([needsHumanEscalation])
+  @@unique([botId, channel, externalThreadId])
   @@map("conversations")
 }
 
@@ -436,6 +439,9 @@ model Message {
   role           String // "user" or "assistant"
   content        String
   createdAt      DateTime @default(now())
+  channel        String   @default("widget")
+  externalMessageId String? @unique
+  deliveryStatus String?
   sourcesUsed    String? // JSON string for sources array
 
   // UX Enhancement Fields
@@ -449,6 +455,7 @@ model Message {
   @@index([conversationId])
   @@index([createdAt])
   @@index([feedback])
+  @@index([channel, createdAt])
   @@map("messages")
 }
 

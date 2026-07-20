@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { accessToken } from '@/lib/auth-token'
 
 const publicPaths = ['/', '/login', '/api/chat', '/api/health', '/chatbot-widget.js']
-const publicPrefixes = ['/api/auth/', '/api/embed/', '/api/cron/']
+const publicPrefixes = ['/api/auth/', '/api/embed/', '/api/cron/', '/api/meta/webhook/', '/api/meta/instagram/callback']
 
 export async function proxy(request: NextRequest) {
   const password = process.env.APP_ACCESS_PASSWORD

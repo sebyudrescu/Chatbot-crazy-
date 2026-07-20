@@ -38,6 +38,10 @@ export function getDeploymentReadiness(env: Environment = process.env) {
     { key: "NEXT_PUBLIC_APP_URL", label: "URL pubblico HTTPS", ready: publicHttpsUrl(env.NEXT_PUBLIC_APP_URL), required: true },
     { key: "PINECONE_API_KEY", label: "Pinecone persistente", ready: strongSecret(env.PINECONE_API_KEY, 16), required: false },
     { key: "FIRECRAWL_API_KEY", label: "Crawler avanzato Firecrawl", ready: strongSecret(env.FIRECRAWL_API_KEY, 16), required: false },
+    { key: "META_APP_ID", label: "Meta App per WhatsApp e Instagram", ready: strongSecret(env.META_APP_ID, 5), required: false },
+    { key: "META_APP_SECRET", label: "Segreto Meta server-side", ready: strongSecret(env.META_APP_SECRET, 16), required: false },
+    { key: "META_VERIFY_TOKEN", label: "Verifica webhook Meta", ready: strongSecret(env.META_VERIFY_TOKEN, 32), required: false },
+    { key: "META_TOKEN_ENCRYPTION_KEY", label: "Cifratura token Meta", ready: Boolean(env.META_TOKEN_ENCRYPTION_KEY && Buffer.from(env.META_TOKEN_ENCRYPTION_KEY, "base64").length === 32), required: false },
   ];
   const required = checks.filter((check) => check.required);
   return {
