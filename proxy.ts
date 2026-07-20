@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { accessToken } from '@/lib/auth-token'
+import { verifyOwnerSessionToken } from '@/lib/auth-token'
 
 const publicPaths = ['/', '/login', '/api/chat', '/api/health', '/chatbot-widget.js']
 const publicPrefixes = ['/api/auth/', '/api/embed/', '/api/cron/', '/api/meta/webhook/', '/api/meta/instagram/callback']
@@ -15,8 +15,12 @@ export async function proxy(request: NextRequest) {
     }
     return withSecurityHeaders(NextResponse.redirect(new URL('/login?configuration=missing', request.url)), request)
   }
-  const expected = await accessToken(password, process.env.APP_AUTH_SALT || 'litx-private-owner')
-  if (request.cookies.get('litx_owner')?.value === expected) return withSecurityHeaders(NextResponse.next(), request)
+  const authenticated = await verifyOwnerSessionToken(
+    request.cookies.get('litx_owner')?.value,
+    password,
+    process.env.APP_AUTH_SALT || 'litx-private-owner',
+  )
+  if (authenticated) return withSecurityHeaders(NextResponse.next(), request)
   if (request.nextUrl.pathname.startsWith('/api/')) return withSecurityHeaders(NextResponse.json({ success: false, error: 'Accesso non autorizzato' }, { status: 401 }), request)
   const login = new URL('/login', request.url)
   login.searchParams.set('next', `${request.nextUrl.pathname}${request.nextUrl.search}`)

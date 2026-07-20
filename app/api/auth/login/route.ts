@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { accessToken } from '@/lib/auth-token'
+import { accessToken, constantTimeEqual, createOwnerSessionToken, OWNER_SESSION_MAX_AGE_SECONDS } from '@/lib/auth-token'
 import { checkRateLimit, requestClientIp } from '@/lib/rate-limit'
 
 const Schema = z.object({ password: z.string().min(1).max(500) })
@@ -26,15 +26,9 @@ export async function POST(request: NextRequest) {
       await new Promise(resolve => setTimeout(resolve, 350))
       return NextResponse.json({ success: false, error: 'Password non corretta' }, { status: 401 })
     }
+    const sessionToken = await createOwnerSessionToken(configured, salt)
     const response = NextResponse.json({ success: true })
-    response.cookies.set('litx_owner', expected, { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 14, priority: 'high' })
+    response.cookies.set('litx_owner', sessionToken, { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: OWNER_SESSION_MAX_AGE_SECONDS, priority: 'high' })
     return response
   } catch { return NextResponse.json({ success: false, error: 'Richiesta non valida' }, { status: 400 }) }
-}
-
-function constantTimeEqual(received: string, expected: string) {
-  if (received.length !== expected.length) return false
-  let different = 0
-  for (let index = 0; index < received.length; index += 1) different |= received.charCodeAt(index) ^ expected.charCodeAt(index)
-  return different === 0
 }
