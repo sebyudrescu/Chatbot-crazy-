@@ -14,7 +14,7 @@
 import { prisma } from './db'
 import { eventStore } from './event-store'
 import { withRetry } from './db-retry'
-import { assertSafeRemoteUrl } from './url-safety'
+import { assertSafeRemoteUrl, normalizeRemoteUrl } from './url-safety'
 
 export enum JobType {
   CRAWL = 'crawl',
@@ -55,28 +55,7 @@ function normalizeUrl(url: string): string {
   if (!url || typeof url !== 'string') {
     throw new Error('URL is required')
   }
-  
-  // Remove whitespace
-  url = url.trim()
-  
-  // Add https:// if missing protocol
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'https://' + url
-  }
-  
-  // Validate URL format
-  try {
-    const urlObj = new URL(url)
-    
-    // Ensure valid protocol
-    if (!['http:', 'https:'].includes(urlObj.protocol)) {
-      throw new Error('URL must use http or https protocol')
-    }
-    
-    return urlObj.toString()
-  } catch (error) {
-    throw new Error(`Invalid URL format: ${url}`)
-  }
+  return normalizeRemoteUrl(url).toString()
 }
 
 /**

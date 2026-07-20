@@ -9,14 +9,13 @@ export const maxDuration = 300;
 
 const AddURLSchema = z.object({
   botId: z.string().uuid(),
-  url: z.string().url(),
+  url: z.string().trim().min(1).max(2048),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const input = AddURLSchema.parse(await request.json());
     const safeUrl = await assertSafeRemoteUrl(input.url);
-    safeUrl.hash = "";
     const url = safeUrl.toString();
     const bot = await prisma.chatbot.findUnique({
       where: { id: input.botId },

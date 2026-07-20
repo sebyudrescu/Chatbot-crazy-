@@ -39,11 +39,30 @@ export function isPrivateNetworkAddress(address: string) {
   return true;
 }
 
-export async function assertSafeRemoteUrl(value: string) {
-  const url = new URL(value);
+export function normalizeRemoteUrl(value: string) {
+  const input = value.trim();
+  if (!input) throw new Error("Inserisci un URL valido");
+  if (input.length > 2048) throw new Error("L’URL è troppo lungo");
+
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(input)
+    ? input
+    : `https://${input}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new Error("Inserisci un URL valido");
+  }
   if (!["http:", "https:"].includes(url.protocol)) {
     throw new Error("Sono consentiti soltanto URL HTTP o HTTPS");
   }
+  if (!url.hostname) throw new Error("Inserisci un URL valido");
+  url.hash = "";
+  return url;
+}
+
+export async function assertSafeRemoteUrl(value: string) {
+  const url = normalizeRemoteUrl(value);
   if (url.username || url.password) {
     throw new Error("Gli URL con credenziali incorporate non sono consentiti");
   }

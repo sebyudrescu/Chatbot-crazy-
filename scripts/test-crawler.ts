@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { SimpleIntelligentCrawler } from "../lib/simple-intelligent-crawler";
+import { normalizeRemoteUrl } from "../lib/url-safety";
 import { isPrivateNetworkAddress } from "../lib/url-safety";
 
 const paragraph = (label: string) =>
@@ -11,6 +12,7 @@ const paragraph = (label: string) =>
   ).join(" ");
 
 const serviceContent = paragraph("Servizi");
+let redirectTrapHits = 0;
 const pages = new Map<string, string>([
   [
     "/",
@@ -32,6 +34,18 @@ const pages = new Map<string, string>([
 
 const server = createServer((request, response) => {
   const pathname = new URL(request.url || "/", "http://crawler.test").pathname;
+  if (pathname === "/redirect-external") {
+    const port = request.headers.host?.split(":").pop();
+    response.writeHead(302, { Location: `http://localhost:${port}/redirect-trap` });
+    response.end();
+    return;
+  }
+  if (pathname === "/redirect-trap") {
+    redirectTrapHits += 1;
+    response.writeHead(200, { "Content-Type": "text/html" });
+    response.end(`<html><body><p>${paragraph("Trap")}</p></body></html>`);
+    return;
+  }
   if (pathname === "/asset.json") {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ ignored: true }));
@@ -48,6 +62,19 @@ const server = createServer((request, response) => {
 });
 
 async function main() {
+  const normalizedDomain = normalizeRemoteUrl("  example.com/docs#section  ");
+  if (normalizedDomain.toString() !== "https://example.com/docs") {
+    throw new Error("Crawler did not normalize a domain without protocol");
+  }
+  let unsafeProtocolRejected = false;
+  try {
+    normalizeRemoteUrl("file:///etc/passwd");
+  } catch {
+    unsafeProtocolRejected = true;
+  }
+  if (!unsafeProtocolRejected) {
+    throw new Error("Crawler URL normalization accepted an unsafe protocol");
+  }
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
@@ -78,6 +105,24 @@ async function main() {
       throw new Error("Crawler followed an external-domain link");
     }
 
+    const redirectCrawler = new SimpleIntelligentCrawler(`${baseUrl}/redirect-external`, {
+      maxPages: 1,
+      maxDepth: 0,
+    });
+    await redirectCrawler.crawl();
+    if (redirectTrapHits !== 0) {
+      throw new Error("Crawler contacted a redirect destination before validating it");
+    }
+
+    const rootOnly = new SimpleIntelligentCrawler(baseUrl, {
+      maxPages: 4,
+      maxDepth: 0,
+    });
+    await rootOnly.crawl();
+    if (rootOnly.getStats().crawledPages !== 1) {
+      throw new Error("Crawler ignored maxDepth=0");
+    }
+
     const limited = new SimpleIntelligentCrawler(baseUrl, {
       maxPages: 2,
       maxDepth: 2,
@@ -106,6 +151,10 @@ async function main() {
             "duplicate-content-filter",
             "max-pages-hard-limit",
             "private-network-classification",
+            "missing-protocol-normalization",
+            "unsafe-protocol-rejection",
+            "redirect-preflight-validation",
+            "zero-depth-limit",
           ],
           stats,
         },

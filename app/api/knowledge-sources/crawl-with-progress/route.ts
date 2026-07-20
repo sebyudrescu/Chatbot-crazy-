@@ -8,7 +8,7 @@ export const maxDuration = 300;
 
 const CrawlSchema = z.object({
   botId: z.string().uuid(),
-  url: z.string().url(),
+  url: z.string().trim().min(1).max(2048),
   maxPages: z.number().int().min(1).max(25).default(10),
   maxDepth: z.number().int().min(0).max(5).default(3),
 });

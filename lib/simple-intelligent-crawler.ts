@@ -40,9 +40,9 @@ export class SimpleIntelligentCrawler {
     this.baseUrl = this.normalizeUrl(startUrl)
     this.baseDomain = new URL(this.baseUrl).hostname
     this.options = {
-      maxPages: options.maxPages || 200,
-      maxDepth: options.maxDepth || 6,
-      onProgress: options.onProgress || (() => {})
+      maxPages: options.maxPages ?? 200,
+      maxDepth: options.maxDepth ?? 6,
+      onProgress: options.onProgress ?? (() => {})
     }
   }
 
@@ -245,21 +245,39 @@ export class SimpleIntelligentCrawler {
     try {
       console.log(`[Crawler] Fetching [${depth}]: ${url}`)
 
-      // Fetch page
-      const response = await axios.get(url, {
-        timeout: 10000,
-        maxContentLength: 5 * 1024 * 1024,
-        maxBodyLength: 5 * 1024 * 1024,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; ChatbotCrawler/1.0)'
+      // Follow redirects manually so every destination is validated before
+      // making the next request. Automatic redirects could otherwise reach a
+      // private address before the SSRF guard sees the final URL.
+      let currentUrl = url
+      let response
+      for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+        const safeUrl = await assertSafeRemoteUrl(currentUrl)
+        if (safeUrl.hostname !== this.baseDomain) {
+          throw new Error('Redirect verso un dominio esterno non consentito')
         }
-      })
-
-      const finalUrl = response.request?.res?.responseUrl || url
-      const final = await assertSafeRemoteUrl(finalUrl)
-      if (final.hostname !== this.baseDomain) {
-        throw new Error('Redirect verso un dominio esterno non consentito')
+        response = await axios.get(safeUrl.toString(), {
+          timeout: 10000,
+          maxRedirects: 0,
+          maxContentLength: 5 * 1024 * 1024,
+          maxBodyLength: 5 * 1024 * 1024,
+          validateStatus: status => status >= 200 && status < 400,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; ChatbotCrawler/1.0)'
+          }
+        })
+        if (response.status < 300) {
+          currentUrl = safeUrl.toString()
+          break
+        }
+        const location = response.headers.location
+        if (!location) throw new Error('Redirect senza destinazione')
+        if (redirectCount === 5) throw new Error('Troppi redirect')
+        currentUrl = new URL(location, safeUrl).toString()
+        response = undefined
       }
+      if (!response) throw new Error('Impossibile completare il redirect')
+
+      const finalUrl = currentUrl
       const contentType = String(response.headers['content-type'] || '').toLowerCase()
       if (contentType && !contentType.includes('text/html')) {
         throw new Error(`Tipo di contenuto non supportato: ${contentType}`)
@@ -267,8 +285,8 @@ export class SimpleIntelligentCrawler {
       const html = response.data
 
       // Extract links
-      const links = this.extractLinks(html, url)
-      console.log(`[Crawler] Found ${links.length} links on ${url}`)
+      const links = this.extractLinks(html, finalUrl)
+      console.log(`[Crawler] Found ${links.length} links on ${finalUrl}`)
 
       // Add valid links to queue
       for (const link of links) {
@@ -278,7 +296,7 @@ export class SimpleIntelligentCrawler {
       }
 
       // Extract content
-      const extracted = await this.extractContent(html, url)
+      const extracted = await this.extractContent(html, finalUrl)
       if (!extracted || !extracted.textContent) {
         console.log(`[Crawler] No content extracted from ${url}`)
         return
@@ -299,7 +317,7 @@ export class SimpleIntelligentCrawler {
 
       // Save result
       const page: CrawledPage = {
-        url,
+        url: finalUrl,
         title: extracted.title,
         textContent: extracted.textContent,
         wordCount: extracted.textContent.split(/\s+/).length,
