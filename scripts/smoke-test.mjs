@@ -212,6 +212,12 @@ try {
     pdfUploadResponse.status === 201 && pdfUpload.data?.status === "completed" && pdfUpload.data?.chunks > 0,
     `Serverless PDF upload failed: ${pdfUpload.error || pdfUploadResponse.status}`,
   );
+  const afterPdfImport = await request(`/api/chatbots/${botId}`);
+  assert(
+    afterPdfImport.data.kbStatus === "ready" &&
+      afterPdfImport.data.kbTotalChunks >= pdfUpload.data.chunks,
+    "Direct PDF import did not make the agent knowledge base ready",
+  );
   const manualPreview = await request("/api/knowledge-sources/manual", {
     method: "POST",
     body: JSON.stringify({
@@ -1122,6 +1128,7 @@ try {
           "prompt-versions",
           "knowledge-preview",
           "pdf-upload-serverless",
+          "direct-import-readiness",
           "crawler-input-safety",
           "crawler-live-ingestion",
           "widget",

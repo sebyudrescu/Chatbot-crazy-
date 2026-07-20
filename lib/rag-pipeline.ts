@@ -151,14 +151,37 @@ export async function processAndStoreDocument(
       console.log(`✅ Vectors stored in file system`)
     }
     
-    // 4. Update database
-    await prisma.knowledgeSource.update({
-      where: { id: sourceId },
-      data: {
-        status: SourceStatus.COMPLETED,
-        processedAt: new Date(),
-        chunkCount: chunks.length,
-      },
+    // 4. Update both the source and the agent-level KB state. Direct PDF,
+    // DOCX and manual imports do not pass through completeJob(), so this
+    // central update keeps readiness accurate for every ingestion path.
+    await prisma.$transaction(async (tx) => {
+      await tx.knowledgeSource.update({
+        where: { id: sourceId },
+        data: {
+          status: SourceStatus.COMPLETED,
+          processedAt: new Date(),
+          chunkCount: chunks.length,
+          errorMessage: null,
+        },
+      })
+      const [knowledge, pendingJobs] = await Promise.all([
+        tx.knowledgeSource.aggregate({
+          where: { botId, status: SourceStatus.COMPLETED },
+          _sum: { chunkCount: true },
+        }),
+        tx.ingestionJob.count({
+          where: { botId, status: { in: ['pending', 'running'] } },
+        }),
+      ])
+      await tx.chatbot.update({
+        where: { id: botId },
+        data: {
+          kbStatus: pendingJobs > 0 ? 'indexing' : 'ready',
+          kbLastIndexed: new Date(),
+          kbTotalChunks: knowledge._sum.chunkCount || 0,
+          kbIndexingError: null,
+        },
+      })
     })
     
     console.log(`✅ Successfully processed document ${sourceId}`)
@@ -170,19 +193,32 @@ export async function processAndStoreDocument(
   } catch (error) {
     console.error(`❌ Error processing document ${sourceId}:`, error)
     
-    // Update database with error
-    await prisma.knowledgeSource.update({
-      where: { id: sourceId },
-      data: {
-        status: SourceStatus.FAILED,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      },
+    // Update source and preserve any already usable knowledge for the agent.
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    await prisma.$transaction(async (tx) => {
+      await tx.knowledgeSource.update({
+        where: { id: sourceId },
+        data: { status: SourceStatus.FAILED, errorMessage },
+      })
+      const knowledge = await tx.knowledgeSource.aggregate({
+        where: { botId, status: SourceStatus.COMPLETED },
+        _sum: { chunkCount: true },
+      })
+      const availableChunks = knowledge._sum.chunkCount || 0
+      await tx.chatbot.update({
+        where: { id: botId },
+        data: {
+          kbStatus: availableChunks > 0 ? 'ready' : 'failed',
+          kbTotalChunks: availableChunks,
+          kbIndexingError: errorMessage,
+        },
+      })
     })
     
     return {
       success: false,
       chunkCount: 0,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMessage,
     }
   }
 }
