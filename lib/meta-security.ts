@@ -26,10 +26,17 @@ export function decryptMetaToken(value: string, env: NodeJS.ProcessEnv = process
   return Buffer.concat([decipher.update(Buffer.from(encrypted, "base64url")), decipher.final()]).toString("utf8");
 }
 
-export function verifyMetaSignature(rawBody: string, signature: string | null, secret = process.env.META_APP_SECRET) {
-  if (!secret || !signature?.startsWith("sha256=")) return false;
+function signatureMatches(rawBody: string, signature: string, secret: string) {
   const expected = `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
   const actualBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+export function verifyMetaSignature(rawBody: string, signature: string | null, secret?: string) {
+  if (!signature?.startsWith("sha256=")) return false;
+  const secrets = secret
+    ? [secret]
+    : [...new Set([process.env.META_APP_SECRET, process.env.META_INSTAGRAM_APP_SECRET].filter((value): value is string => Boolean(value)))];
+  return secrets.some((candidate) => signatureMatches(rawBody, signature, candidate));
 }

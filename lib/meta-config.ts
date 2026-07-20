@@ -24,8 +24,8 @@ export function metaConfiguration() {
 
 export function metaReadiness(provider: MetaProvider) {
   const config = metaConfiguration();
-  const common = Boolean(config.appUrl.startsWith("https://") && config.graphVersion && config.appSecret && config.verifyToken && config.encryptionKey);
+  const common = Boolean(config.appUrl.startsWith("https://") && config.graphVersion && config.verifyToken && config.encryptionKey);
   return provider === "whatsapp"
-    ? common && Boolean(config.appId && config.whatsappConfigId)
+    ? common && Boolean(config.appId && config.appSecret && config.whatsappConfigId)
     : common && Boolean(config.instagramAppId && config.instagramAppSecret);
 }

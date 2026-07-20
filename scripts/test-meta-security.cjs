@@ -11,6 +11,7 @@ require('ts-node/register/transpile-only')
 
 process.env.META_TOKEN_ENCRYPTION_KEY = randomBytes(32).toString('base64')
 process.env.META_APP_SECRET = 'meta-test-secret-that-is-long-enough'
+process.env.META_INSTAGRAM_APP_SECRET = 'instagram-test-secret-that-is-long-enough'
 
 const { encryptMetaToken, decryptMetaToken, verifyMetaSignature } = require('../lib/meta-security.ts')
 const { createMetaOAuthState, readMetaOAuthState } = require('../lib/meta-oauth-state.ts')
@@ -28,9 +29,17 @@ const raw = JSON.stringify({ object: 'whatsapp_business_account' })
 const signature = `sha256=${createHmac('sha256', process.env.META_APP_SECRET).update(raw).digest('hex')}`
 assert(verifyMetaSignature(raw, signature), 'Firma webhook valida rifiutata')
 assert(!verifyMetaSignature(`${raw}x`, signature), 'Payload alterato accettato')
+const instagramSignature = `sha256=${createHmac('sha256', process.env.META_INSTAGRAM_APP_SECRET).update(raw).digest('hex')}`
+assert(verifyMetaSignature(raw, instagramSignature), 'Firma webhook Instagram valida rifiutata')
 
 const state = createMetaOAuthState('3f47da9f-b8c8-4b35-b25b-bd6425af18fb', 'instagram', 1_000)
 assert(readMetaOAuthState(state, 2_000).provider === 'instagram', 'Stato OAuth valido rifiutato')
+const previousInstagramSecret = process.env.META_INSTAGRAM_APP_SECRET
+process.env.META_INSTAGRAM_APP_SECRET = 'instagram-secret-changed-after-state-creation'
+let wrongProviderSecretRejected = false
+try { readMetaOAuthState(state, 2_000) } catch { wrongProviderSecretRejected = true }
+assert(wrongProviderSecretRejected, 'Stato OAuth Instagram firmato con un segreto diverso accettato')
+process.env.META_INSTAGRAM_APP_SECRET = previousInstagramSecret
 let expiredRejected = false
 try { readMetaOAuthState(state, 700_000) } catch { expiredRejected = true }
 assert(expiredRejected, 'Stato OAuth scaduto accettato')
