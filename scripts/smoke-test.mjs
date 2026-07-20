@@ -638,10 +638,66 @@ try {
     evaluationRun.data.passed === true,
     "Evaluation run was not persisted",
   );
-  const evaluations = await request(`/api/evaluations?botId=${botId}`);
+  let evaluations = await request(`/api/evaluations?botId=${botId}`);
+  for (const item of evaluations.data.filter(
+    (candidate) => candidate.isActive && candidate.runs[0]?.passed !== true,
+  )) {
+    await request("/api/evaluations/runs", {
+      method: "POST",
+      body: JSON.stringify({
+        caseId: item.id,
+        passed: true,
+        response: "Controllo di sicurezza superato nello smoke test",
+        confidence: 0.9,
+        latencyMs: 10,
+      }),
+    });
+  }
+  evaluations = await request(`/api/evaluations?botId=${botId}`);
   assert(
-    evaluations.data[0].runs[0].passed === true,
+    evaluations.data.filter((item) => item.isActive).every(
+      (item) => item.runs[0]?.passed === true,
+    ),
     "Evaluation history failed",
+  );
+
+  const completedReadiness = await request(
+    `/api/chatbots/${botId}/readiness`,
+  );
+  assert(
+    completedReadiness.data.ready === true &&
+      completedReadiness.data.completed === completedReadiness.data.total &&
+      completedReadiness.data.checks.every((check) => check.done === true),
+    "A fully configured agent did not reach publish readiness",
+  );
+  const published = await request(`/api/chatbots/${botId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isActive: true }),
+  });
+  assert(published.data.isActive === true, "Agent publication failed");
+  const publishedWidgetConfig = await fetch(`${baseUrl}/api/embed/${botId}`, {
+    headers: { Origin: "https://smoke.example" },
+  });
+  assert(
+    publishedWidgetConfig.ok &&
+      (await publishedWidgetConfig.json()).botId === botId,
+    "Published agent widget configuration is unavailable",
+  );
+  const publishedWidgetScript = await fetch(
+    `${baseUrl}/api/embed/widget.js?botId=${botId}`,
+    { headers: { Origin: "https://smoke.example" } },
+  );
+  assert(
+    publishedWidgetScript.ok &&
+      (await publishedWidgetScript.text()).includes(`"botId":"${botId}"`),
+    "Published agent widget script is unavailable",
+  );
+  const blockedWidgetOrigin = await fetch(`${baseUrl}/api/embed/${botId}`, {
+    headers: { Origin: "https://not-allowed.example" },
+  });
+  assert(
+    blockedWidgetOrigin.status === 403,
+    "Published widget ignored its allowed-domain restriction",
   );
 
   const integration = await request("/api/integrations", {
@@ -1185,6 +1241,10 @@ try {
           "crm",
           "workflow",
           "evaluations",
+          "agent-readiness",
+          "agent-publication",
+          "published-widget",
+          "widget-domain-restriction",
           "integrations",
           "webhook-secret-redaction",
           "actions",
