@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { CreateKnowledgeSourceSchema, SourceStatus } from '@/lib/types'
-// import { processKnowledgeSource } from '@/lib/rag-pipeline' // Not exported
+import { processAndStoreDocument } from '@/lib/rag-pipeline'
 
 // GET /api/knowledge-sources - List knowledge sources
 export async function GET(request: NextRequest) {
@@ -92,6 +92,22 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const validatedData = CreateKnowledgeSourceSchema.parse(body)
+    const bot = await prisma.chatbot.findUnique({
+      where: { id: validatedData.botId },
+      select: { id: true },
+    })
+    if (!bot) {
+      return NextResponse.json(
+        { success: false, error: 'Agente non trovato' },
+        { status: 404 },
+      )
+    }
+    if (validatedData.contentText.trim().length < 50) {
+      return NextResponse.json(
+        { success: false, error: 'La fonte deve contenere almeno 50 caratteri' },
+        { status: 400 },
+      )
+    }
     
     const source = await prisma.knowledgeSource.create({
       data: {
@@ -104,25 +120,27 @@ export async function POST(request: NextRequest) {
       },
     })
     
-    // Process embeddings asynchronously (non-blocking)
-    // TODO: Re-enable when processKnowledgeSource is exported
-    // processKnowledgeSource(source.id, validatedData.botId, validatedData.contentText)
-    //   .catch((error) => {
-    //     console.error('Error processing knowledge source:', error)
-    //     // Update status to failed
-    //     prisma.knowledgeSource.update({
-    //       where: { id: source.id },
-    //       data: { 
-    //         status: SourceStatus.FAILED,
-    //         errorMessage: error.message 
-    //       }
-    //     }).catch(console.error)
-    //   })
+    const processed = await processAndStoreDocument(
+      validatedData.botId,
+      source.id,
+      validatedData.sourceType,
+      validatedData.contentText,
+    )
+    if (!processed.success) {
+      return NextResponse.json(
+        { success: false, error: processed.error, sourceId: source.id },
+        { status: 500 },
+      )
+    }
     
     return NextResponse.json(
       {
         success: true,
-        data: source,
+        data: {
+          ...source,
+          status: SourceStatus.COMPLETED,
+          chunkCount: processed.chunkCount,
+        },
       },
       { status: 201 }
     )

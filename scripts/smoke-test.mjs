@@ -252,6 +252,21 @@ try {
     manualPreview.data.type === "manual" && manualPreview.data.characters > 50,
     "Manual knowledge preview failed",
   );
+  const genericKnowledge = await request("/api/knowledge-sources", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      sourceType: "manual",
+      originalFilename: "Smoke generic source",
+      contentText:
+        "Questa fonte verifica che anche l’endpoint generale della knowledge base indicizzi davvero il contenuto, generi gli embedding e aggiorni lo stato dell’agente senza lasciare fonti bloccate in elaborazione.",
+    }),
+  });
+  assert(
+    genericKnowledge.data.status === "completed" &&
+      genericKnowledge.data.chunkCount > 0,
+    "Generic knowledge endpoint did not index the source",
+  );
   const privateUrlImport = await fetch(
     `${baseUrl}/api/knowledge-sources/add-url`,
     {
@@ -1148,6 +1163,7 @@ try {
           "settings",
           "prompt-versions",
           "knowledge-preview",
+          "generic-knowledge-indexing",
           "pdf-upload-serverless",
           "direct-import-readiness",
           "crawler-input-safety",
