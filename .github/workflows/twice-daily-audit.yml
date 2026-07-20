@@ -3,9 +3,6 @@ name: LitX twice-daily project audit
 on:
   push:
   pull_request:
-  schedule:
-    # 08:00 and 20:00 Europe/Rome during daylight-saving time.
-    - cron: '0 6,18 * * *'
   workflow_dispatch:
 
 permissions:

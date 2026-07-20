@@ -1215,6 +1215,14 @@ try {
     "Knowledge sync cron accepted an unauthenticated request",
   );
   if (process.env.SMOKE_CRON_SECRET) {
+    // The cron route must be authenticated in CI without making this smoke test
+    // depend on the availability of an external website. The scheduling and
+    // deduplication behaviour was verified above; disabling this ephemeral agent
+    // leaves the authenticated cron with no external crawl to execute.
+    await prisma.chatbot.update({
+      where: { id: botId },
+      data: { isActive: false },
+    });
     const authorizedKnowledgeCron = await fetch(
       `${baseUrl}/api/cron/knowledge-sync`,
       {
