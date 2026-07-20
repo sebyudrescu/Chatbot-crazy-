@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       ? new URL(requestOrigin).hostname !== request.nextUrl.hostname
       : false
     if (body.source === 'widget' || externalRequest) {
-      const rate = checkRateLimit(`widget-chat:${botId}:${requestClientIp(request.headers)}`, 30, 60 * 1000)
+      const rate = await checkRateLimit(`widget-chat:${botId}:${requestClientIp(request.headers)}`, 30, 60 * 1000)
       if (!rate.allowed) {
         return NextResponse.json(
           { success: false, error: 'rate_limit_exceeded' },

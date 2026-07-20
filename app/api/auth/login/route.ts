@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     if (process.env.NODE_ENV === 'production') return NextResponse.json({ success: false, error: 'Accesso proprietario non configurato' }, { status: 503 })
     return NextResponse.json({ success: true, protectionDisabled: true })
   }
-  const attempt = checkRateLimit(`owner-login:${requestClientIp(request.headers)}`, 8, 15 * 60 * 1000)
+  const attempt = await checkRateLimit(`owner-login:${requestClientIp(request.headers)}`, 8, 15 * 60 * 1000)
   if (!attempt.allowed) {
     return NextResponse.json(
       { success: false, error: 'Troppi tentativi. Riprova più tardi.' },

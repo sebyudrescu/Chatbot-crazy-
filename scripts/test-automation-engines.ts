@@ -15,6 +15,7 @@ import {
 } from "../lib/operational-health";
 import { getAgentReadiness } from "../lib/agent-readiness";
 import { getDeploymentReadiness } from "../lib/deployment-readiness";
+import { checkPersistentRateLimit } from "../lib/rate-limit";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -183,6 +184,29 @@ async function testAgentPublicationReadiness() {
   }
 }
 
+async function testPersistentRateLimit() {
+  const key = `automation-rate-limit-${Date.now()}`;
+  try {
+    const attempts = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        checkPersistentRateLimit(key, 5, 100),
+      ),
+    );
+    assert(
+      attempts.filter((attempt) => attempt.allowed).length === 5,
+      "Persistent rate limit was not atomic across concurrent requests",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const reset = await checkPersistentRateLimit(key, 5, 100);
+    assert(
+      reset.allowed && reset.remaining === 4,
+      "Persistent rate limit window did not reset",
+    );
+  } finally {
+    await prisma.rateLimitBucket.deleteMany({ where: { key } });
+  }
+}
+
 async function main() {
   const databaseUrl = new URL(process.env.DATABASE_URL || "");
   assert(
@@ -212,6 +236,7 @@ async function main() {
   );
   await testWebhookDelivery();
   await testAgentPublicationReadiness();
+  await testPersistentRateLimit();
 
   const simulation = simulateWorkflow({
     triggerType: "keyword",

@@ -140,6 +140,16 @@ model NotificationState {
   @@map("notification_states")
 }
 
+model RateLimitBucket {
+  key       String   @id
+  count     Int
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
+}
+
 model ImprovementSuggestion {
   id            String   @id @default(uuid())
   key           String   @unique

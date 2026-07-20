@@ -56,7 +56,7 @@ export async function POST(
       { status: 403 },
     );
   }
-  const rate = checkRateLimit(
+  const rate = await checkRateLimit(
     `widget-lead:${botId}:${requestClientIp(request.headers)}`,
     10,
     60 * 1000,

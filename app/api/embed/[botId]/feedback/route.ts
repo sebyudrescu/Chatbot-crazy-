@@ -37,7 +37,7 @@ export async function POST(
     );
   }
 
-  const rate = checkRateLimit(
+  const rate = await checkRateLimit(
     `widget-feedback:${botId}:${requestClientIp(request.headers)}`,
     30,
     60 * 1000,

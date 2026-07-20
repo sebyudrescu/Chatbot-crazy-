@@ -33,7 +33,7 @@ export async function GET(
       { status: 403 },
     );
   }
-  const rate = checkRateLimit(
+  const rate = await checkRateLimit(
     `widget-history:${botId}:${requestClientIp(request.headers)}`,
     30,
     60 * 1000,
