@@ -11,6 +11,7 @@ export interface SidebarLinkProps {
   label: string
   badge?: string | number
   exact?: boolean
+  onClick?: () => void
 }
 
 export function SidebarLink({
@@ -19,6 +20,7 @@ export function SidebarLink({
   label,
   badge,
   exact = false,
+  onClick,
 }: SidebarLinkProps) {
   const pathname = usePathname()
   const isActive = exact ? pathname === href : pathname.startsWith(href)
@@ -26,6 +28,7 @@ export function SidebarLink({
   return (
     <Link
       href={href}
+      onClick={onClick}
       className={clsx(
         'sidebar-link',
         isActive && 'sidebar-link-active'
