@@ -6,8 +6,6 @@
  */
 
 import * as cheerio from 'cheerio'
-import { JSDOM } from 'jsdom'
-import { Readability } from '@mozilla/readability'
 
 export interface ExtractedContent {
   title: string
@@ -236,30 +234,6 @@ function extractProductInfo($: cheerio.CheerioAPI): ProductInfo[] {
 }
 
 /**
- * Extract with Readability (for articles)
- */
-function extractWithReadability(html: string, url: string): { title: string; content: string } | null {
-  try {
-    const dom = new JSDOM(html, { url })
-    const reader = new Readability(dom.window.document, {
-      charThreshold: 200 // Minimum chars to consider
-    })
-    const article = reader.parse()
-
-    if (article && article.textContent && article.textContent.length > 300) {
-      return {
-        title: article.title || '',
-        content: article.textContent.trim()
-      }
-    }
-  } catch (e) {
-    console.error('[Extractor] Readability error:', e)
-  }
-
-  return null
-}
-
-/**
  * Extract with Cheerio (for product/general pages)
  */
 function extractWithCheerio(html: string, $: cheerio.CheerioAPI): { title: string; content: string } | null {
@@ -349,18 +323,9 @@ export async function extractAdvancedContent(
     // Choose extraction strategy based on content type
     let extracted: { title: string; content: string } | null = null
 
-    if (contentType === 'article') {
-      // Try Readability first for articles
-      extracted = extractWithReadability(html, url)
-      
-      // Fallback to Cheerio if Readability fails
-      if (!extracted || extracted.content.length < 300) {
-        extracted = extractWithCheerio(html, $)
-      }
-    } else {
-      // For products/docs/general, use Cheerio directly
-      extracted = extractWithCheerio(html, $)
-    }
+    // Cheerio is deterministic in Node/serverless runtimes and covers the
+    // article/main selectors above without requiring a browser DOM polyfill.
+    extracted = extractWithCheerio(html, $)
 
     if (!extracted) {
       console.log('[Extractor] No content extracted')

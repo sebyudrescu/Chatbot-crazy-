@@ -7,8 +7,6 @@
 
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { Readability } from '@mozilla/readability'
-import { JSDOM } from 'jsdom'
 import crypto from 'crypto'
 import { assertSafeRemoteUrl } from './url-safety'
 

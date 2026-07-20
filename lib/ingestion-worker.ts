@@ -155,12 +155,15 @@ async function processCrawlJob(job: any, params: any) {
   let usedCrawler = 'unknown'
   
   if (useFirecrawl) {
-    console.log(`[Worker] Attempting Firecrawl (external script)`)
+    console.log(`[Worker] Attempting Firecrawl (HTTP API)`)
     await updateJobProgress(job.id, 15, 'Using Firecrawl crawler...')
     
     try {
-      // Try Firecrawl first
-      pages = await callFirecrawlScript(url, maxPages, job.id)
+      // Child processes do not reliably receive traced dependencies inside
+      // Vercel functions, so call Firecrawl through its HTTP API directly.
+      const { FirecrawlHttpProvider } = await import('./firecrawl-http-provider')
+      const provider = new FirecrawlHttpProvider()
+      pages = await provider.crawl(url, { maxPages, maxDepth })
       usedCrawler = 'firecrawl'
       console.log(`[Worker] ✅ Firecrawl succeeded`)
       

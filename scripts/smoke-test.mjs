@@ -58,6 +58,22 @@ function assert(value, message) {
   if (!value) throw new Error(message);
 }
 
+async function waitForIngestionJob(jobId, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await request(
+      `/api/ingestion/status?jobId=${encodeURIComponent(jobId)}`,
+    );
+    const job = result.data;
+    if (job.status === "completed") return job;
+    if (job.status === "failed") {
+      throw new Error(`Crawler job failed: ${job.error || "unknown error"}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 2_000));
+  }
+  throw new Error(`Crawler job ${jobId} did not finish within ${timeoutMs}ms`);
+}
+
 function smokePdf() {
   const text = "Documento PDF di prova per LitX AI. Questa fonte verifica che il caricamento funzioni in ambiente serverless senza creare cartelle locali. Contiene informazioni sufficienti per essere indicizzata correttamente nella knowledge base del chatbot.";
   const escaped = text.replace(/([\\()])/g, "\\$1");
@@ -247,6 +263,20 @@ try {
   assert(
     oversizedCrawl.status === 400,
     "Crawler accepted a request above its production page limit",
+  );
+  const liveCrawl = await request("/api/knowledge-sources/crawl-with-progress", {
+    method: "POST",
+    body: JSON.stringify({
+      botId,
+      url: "https://www.iana.org/domains/reserved",
+      maxPages: 1,
+      maxDepth: 0,
+    }),
+  });
+  const crawledJob = await waitForIngestionJob(liveCrawl.jobId);
+  assert(
+    crawledJob.sourcesCreated === 1 && crawledJob.chunksCreated > 0,
+    "Live crawler completed without creating searchable knowledge",
   );
 
   const updated = await request(`/api/chatbots/${botId}`, {
@@ -1091,6 +1121,7 @@ try {
           "knowledge-preview",
           "pdf-upload-serverless",
           "crawler-input-safety",
+          "crawler-live-ingestion",
           "widget",
           "widget-feedback",
           "widget-cors",
