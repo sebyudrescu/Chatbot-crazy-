@@ -63,9 +63,10 @@ export default function KnowledgePage() {
         const data = await response.json()
         const bots = data.success ? (data.data || []) : []
         setChatbots(bots)
-        // Auto-select first chatbot
         if (bots.length > 0) {
-          setSelectedChatbot(bots[0].id)
+          const requestedBotId = new URLSearchParams(window.location.search).get('botId')
+          const requestedBotExists = requestedBotId && bots.some((bot: Chatbot) => bot.id === requestedBotId)
+          setSelectedChatbot(requestedBotExists ? requestedBotId : bots[0].id)
         }
       }
     } catch (error) {
