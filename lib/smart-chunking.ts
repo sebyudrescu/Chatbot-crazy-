@@ -260,6 +260,19 @@ export function chunkTextSmart(
     const lastChunk = chunks[chunks.length - 1]
     lastChunk.text += '\n\n' + currentChunk.trim()
     lastChunk.metadata.endChar = text.length
+  } else if (currentChunk.trim().length > 0) {
+    // Short but valid documents still need one searchable chunk. The
+    // content-validation stage applies the definitive length/word checks.
+    chunks.push({
+      text: currentChunk.trim(),
+      metadata: {
+        sourceId,
+        sourceType,
+        chunkIndex,
+        startChar: currentStart,
+        endChar: text.length,
+      },
+    })
   }
 
   console.log(`[SmartChunk] Created ${chunks.length} chunks (avg: ${Math.round(text.length / chunks.length)} chars)`)
