@@ -692,6 +692,29 @@ try {
       (await publishedWidgetScript.text()).includes(`"botId":"${botId}"`),
     "Published agent widget script is unavailable",
   );
+  if (process.env.SMOKE_AI_ASSIST === "true") {
+    const publicChatResponse = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://smoke.example",
+      },
+      body: JSON.stringify({
+        botId,
+        message: "Cosa verifica il documento PDF presente nelle fonti?",
+        source: "widget",
+        userSessionId: `published_smoke_${Date.now()}`,
+      }),
+    });
+    const publicChat = await publicChatResponse.json();
+    assert(
+      publicChatResponse.ok &&
+        publicChat.success === true &&
+        publicChat.data?.assistantMessage?.content?.length > 10 &&
+        publicChat.data?.sources?.length > 0,
+      `Published agent did not answer from its knowledge base: ${publicChat.error || publicChatResponse.status}`,
+    );
+  }
   const blockedWidgetOrigin = await fetch(`${baseUrl}/api/embed/${botId}`, {
     headers: { Origin: "https://not-allowed.example" },
   });
@@ -1244,6 +1267,9 @@ try {
           "agent-readiness",
           "agent-publication",
           "published-widget",
+          ...(process.env.SMOKE_AI_ASSIST === "true"
+            ? ["published-agent-chat"]
+            : []),
           "widget-domain-restriction",
           "integrations",
           "webhook-secret-redaction",
