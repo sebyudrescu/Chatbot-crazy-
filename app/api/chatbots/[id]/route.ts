@@ -4,6 +4,7 @@ import { parseJSON, stringifyJSON } from "@/lib/utils";
 import { UpdateChatbotSchema } from "@/lib/types";
 import { normalizeAgentSettings } from "@/lib/ai-models";
 import { getAgentReadiness } from "@/lib/agent-readiness";
+import { deleteKnowledgeBase } from "@/lib/rag-pipeline";
 
 // GET /api/chatbots/[id] - Get a specific chatbot
 export async function GET(
@@ -172,6 +173,41 @@ export async function DELETE(
 ) {
   const params = await props.params;
   try {
+    const chatbot = await prisma.chatbot.findUnique({
+      where: { id: params.id },
+      select: { id: true },
+    });
+    if (!chatbot) {
+      return NextResponse.json(
+        { success: false, error: "Agente non trovato" },
+        { status: 404 },
+      );
+    }
+    const runningJobs = await prisma.ingestionJob.count({
+      where: { botId: params.id, status: "running" },
+    });
+    if (runningJobs > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Attendi la fine dell’indicizzazione prima di eliminare l’agente.",
+        },
+        { status: 409 },
+      );
+    }
+    // Pending jobs are safe to cancel before removing external vectors. A
+    // running job is rejected above because it could upload new vectors after
+    // the purge and leave customer data orphaned.
+    await prisma.ingestionJob.updateMany({
+      where: { botId: params.id, status: "pending" },
+      data: {
+        status: "failed",
+        errorMessage: "Agente eliminato prima dell’avvio del job",
+        completedAt: new Date(),
+      },
+    });
+    await deleteKnowledgeBase(params.id);
     await prisma.chatbot.delete({
       where: { id: params.id },
     });

@@ -155,6 +155,26 @@ try {
     botId && created.data.systemPrompt === "System prompt smoke test",
     "Chatbot creation failed",
   );
+  const blockingJob = await prisma.ingestionJob.create({
+    data: {
+      botId,
+      jobType: "url",
+      params: JSON.stringify({ singleUrl: "https://example.com/pending" }),
+      status: "running",
+      attempts: 1,
+      maxAttempts: 5,
+      startedAt: new Date(),
+    },
+  });
+  const deleteWhileIndexing = await fetch(`${baseUrl}/api/chatbots/${botId}`, {
+    method: "DELETE",
+    headers: authCookie ? { Cookie: authCookie } : {},
+  });
+  assert(
+    deleteWhileIndexing.status === 409,
+    "Agent deletion did not guard against an active ingestion race",
+  );
+  await prisma.ingestionJob.delete({ where: { id: blockingJob.id } });
   assert(created.data.isActive === false, "New agents must start as drafts");
   assert(
     created.data.settings.aiModel === "gpt-4o-mini",
@@ -1124,6 +1144,7 @@ try {
           "health",
           "owner-proxy-bypass-rejection",
           "agent",
+          "agent-deletion-ingestion-guard",
           "settings",
           "prompt-versions",
           "knowledge-preview",
