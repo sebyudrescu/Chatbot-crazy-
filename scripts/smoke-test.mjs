@@ -101,6 +101,11 @@ try {
         temperature: 0.2,
         maxTokens: 256,
         rules: ["Non inventare"],
+        personality: "Calmo e trasparente",
+        forbiddenTopics: ["Diagnosi mediche"],
+        forbiddenResponses: ["Promesse garantite"],
+        handoffTriggers: ["Richiesta esplicita di un operatore"],
+        leadCollectionFields: ["Nome", "Email", "Consenso privacy"],
       },
     }),
   });
@@ -113,6 +118,14 @@ try {
   assert(
     created.data.settings.aiModel === "gpt-4o-mini",
     "Legacy AI model was not normalized",
+  );
+  assert(
+    created.data.settings.personality === "Calmo e trasparente" &&
+      created.data.settings.forbiddenTopics?.[0] === "Diagnosi mediche" &&
+      created.data.settings.handoffTriggers?.[0] ===
+        "Richiesta esplicita di un operatore" &&
+      created.data.settings.leadCollectionFields?.includes("Consenso privacy"),
+    "Advanced agent instructions were not persisted",
   );
   const notificationJob = await prisma.ingestionJob.create({
     data: {

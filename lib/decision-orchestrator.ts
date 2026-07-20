@@ -82,7 +82,12 @@ export interface OrchestratorContext {
     promptVariables?: Record<string, string> | null
     role?: string
     objective?: string
+    personality?: string
     rules?: string[]
+    forbiddenTopics?: string[]
+    forbiddenResponses?: string[]
+    handoffTriggers?: string[]
+    leadCollectionFields?: string[]
     language?: string
     tone?: string
     responseLength?: 'short' | 'balanced' | 'detailed'

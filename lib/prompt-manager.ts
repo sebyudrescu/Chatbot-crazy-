@@ -4,42 +4,13 @@
  */
 
 import { getTemplateById, fillTemplatePlaceholders } from './prompt-templates'
+import { appendAgentInstructions, type AgentInstructionConfig } from './agent-instructions'
 
-export interface ChatbotPromptConfig {
+export interface ChatbotPromptConfig extends AgentInstructionConfig {
   promptTemplateId?: string | null
   systemPrompt?: string | null
   promptVariables?: Record<string, string> | null
   companyName: string
-  role?: string
-  objective?: string
-  rules?: string[]
-  language?: string
-  tone?: string
-  responseLength?: 'short' | 'balanced' | 'detailed'
-  fallbackMessage?: string
-}
-
-function appendAgentInstructions(basePrompt: string, config: ChatbotPromptConfig): string {
-  const rules = (config.rules || []).filter(Boolean)
-  const lengthLabels = {
-    short: 'Risposte brevi e dirette, normalmente entro 2-3 frasi.',
-    balanced: 'Risposte equilibrate: complete ma senza dettagli non necessari.',
-    detailed: 'Risposte approfondite e ben strutturate quando il contesto lo richiede.',
-  }
-
-  const lines = [
-    config.role && `Ruolo: ${config.role}`,
-    config.objective && `Obiettivo: ${config.objective}`,
-    config.language && `Lingua: rispondi in ${config.language}, salvo richiesta esplicita dell'utente.`,
-    config.tone && `Tono di voce: ${config.tone}.`,
-    config.responseLength && lengthLabels[config.responseLength],
-    config.fallbackMessage && `Quando le informazioni non sono sufficienti usa questo fallback, adattandolo al contesto senza inventare: "${config.fallbackMessage}"`,
-    rules.length > 0 && `Regole aggiuntive:\n${rules.map((rule, index) => `${index + 1}. ${rule}`).join('\n')}`,
-  ].filter(Boolean)
-
-  return lines.length > 0
-    ? `${basePrompt}\n\n---\n\n# CONFIGURAZIONE SPECIFICA DELL'AGENTE\n\n${lines.join('\n')}`
-    : basePrompt
 }
 
 /**

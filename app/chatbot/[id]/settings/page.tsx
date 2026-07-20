@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { Bot, Check, ChevronLeft, FlaskConical, GitCompare, History, Loader2, MessageSquare, RotateCcw, Save, SlidersHorizontal, Sparkles, Wand2, X } from 'lucide-react'
+import { Bot, Check, ChevronLeft, FlaskConical, GitCompare, History, Loader2, MessageSquare, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, UserRoundCheck, Wand2, X } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/ui/Button'
 import { AI_MODEL_CATALOG, DEFAULT_CHAT_MODEL, normalizeAIModel } from '@/lib/ai-models'
+import { appendAgentInstructions } from '@/lib/agent-instructions'
 
 interface Template { id: string; name: string; description: string; category: string; systemPrompt: string }
 interface AgentSettings {
-  role?: string; objective?: string; rules?: string[]; language?: string; tone?: string
+  role?: string; objective?: string; personality?: string; rules?: string[]; language?: string; tone?: string
+  forbiddenTopics?: string[]; forbiddenResponses?: string[]; handoffTriggers?: string[]; leadCollectionFields?: string[]
   responseLength?: 'short' | 'balanced' | 'detailed'; fallbackMessage?: string
   aiModel?: string; temperature?: number; maxTokens?: number
   primaryColor?: string; botName?: string; welcomeMessage?: string
@@ -22,8 +24,8 @@ interface Chatbot {
 interface PromptVersion { id: string; version: number; systemPrompt: string | null; promptTemplateId: string | null; settings: AgentSettings; changeSummary: string | null; createdAt: string }
 interface Improvement { improvedPrompt: string; summary: string; changes: string[]; warnings: string[] }
 
-const defaults: Required<Pick<AgentSettings, 'role' | 'objective' | 'rules' | 'language' | 'tone' | 'responseLength' | 'fallbackMessage' | 'aiModel' | 'temperature' | 'maxTokens'>> = {
-  role: '', objective: '', rules: [], language: 'Italiano', tone: 'Professionale ed empatico', responseLength: 'balanced',
+const defaults: Required<Pick<AgentSettings, 'role' | 'objective' | 'personality' | 'rules' | 'forbiddenTopics' | 'forbiddenResponses' | 'handoffTriggers' | 'leadCollectionFields' | 'language' | 'tone' | 'responseLength' | 'fallbackMessage' | 'aiModel' | 'temperature' | 'maxTokens'>> = {
+  role: '', objective: '', personality: '', rules: [], forbiddenTopics: [], forbiddenResponses: [], handoffTriggers: [], leadCollectionFields: [], language: 'Italiano', tone: 'Professionale ed empatico', responseLength: 'balanced',
   fallbackMessage: 'Non ho abbastanza informazioni per rispondere con precisione. Posso metterti in contatto con una persona del team?',
   aiModel: DEFAULT_CHAT_MODEL, temperature: 0.3, maxTokens: 500,
 }
@@ -38,6 +40,9 @@ export default function ChatbotSettingsPage() {
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [mode, setMode] = useState<'custom' | 'template'>('custom')
   const [newRule, setNewRule] = useState('')
+  const [newForbiddenTopic, setNewForbiddenTopic] = useState('')
+  const [newForbiddenResponse, setNewForbiddenResponse] = useState('')
+  const [newHandoffTrigger, setNewHandoffTrigger] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -69,8 +74,8 @@ export default function ChatbotSettingsPage() {
     let value = mode === 'custom' ? systemPrompt : (selectedTemplate?.systemPrompt || '')
     const variables = { COMPANY_NAME: bot?.companyName || '', ...(bot?.promptVariables || {}) }
     Object.entries(variables).forEach(([key, replacement]) => { value = value.replace(new RegExp(`{{${key}}}`, 'g'), replacement) })
-    return value
-  }, [mode, systemPrompt, selectedTemplate, bot])
+    return appendAgentInstructions(value, settings)
+  }, [mode, systemPrompt, selectedTemplate, bot, settings])
 
   const update = <K extends keyof AgentSettings>(key: K, value: AgentSettings[K]) => setSettings(current => ({ ...current, [key]: value }))
   const addRule = () => {
@@ -78,6 +83,15 @@ export default function ChatbotSettingsPage() {
     update('rules', [...(settings.rules || []), newRule.trim()])
     setNewRule('')
   }
+  const addListItem = (key: 'forbiddenTopics' | 'forbiddenResponses' | 'handoffTriggers', value: string, clear: () => void) => {
+    const item = value.trim()
+    if (!item || (settings[key] || []).includes(item)) return
+    update(key, [...(settings[key] || []), item])
+    clear()
+  }
+  const toggleLeadField = (field: string) => update('leadCollectionFields', (settings.leadCollectionFields || []).includes(field)
+    ? settings.leadCollectionFields?.filter(value => value !== field)
+    : [...(settings.leadCollectionFields || []), field])
 
   const save = async () => {
     setSaving(true); setNotice(null)
@@ -146,11 +160,11 @@ export default function ChatbotSettingsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[190px_minmax(0,1fr)_350px]">
         <aside className="card h-fit p-2">
-          {['Identità', 'Personalità', 'Regole', 'Tono di voce', 'Messaggi', 'Comportamento', 'Memoria', 'Avanzate'].map((item, index) => <a key={item} href={`#section-${index}`} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium ${index === 0 ? 'bg-brand-50 text-brand-700' : 'text-gray-600 hover:bg-gray-50'}`}><SlidersHorizontal className="h-3.5 w-3.5" />{item}</a>)}
+          {[['Identità', 'section-0'], ['System prompt', 'section-1'], ['Regole', 'section-2'], ['Comportamento', 'section-3'], ['Sicurezza', 'section-4'], ['Raccolta lead', 'section-5'], ['Modello AI', 'section-7']].map(([item, section], index) => <a key={section} href={`#${section}`} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium ${index === 0 ? 'bg-brand-50 text-brand-700' : 'text-gray-600 hover:bg-gray-50'}`}><SlidersHorizontal className="h-3.5 w-3.5" />{item}</a>)}
         </aside>
 
         <div className="space-y-5">
-          <section id="section-0" className="card p-5"><p className="eyebrow">Identità</p><h2 className="mt-1 text-base font-semibold text-gray-950">Ruolo e obiettivo</h2><div className="mt-4 space-y-4"><Field label="Ruolo dell’agente"><textarea value={settings.role} onChange={e => update('role', e.target.value)} rows={3} placeholder="Es. Sei un consulente professionale esperto..." className="textarea" /></Field><Field label="Obiettivo"><textarea value={settings.objective} onChange={e => update('objective', e.target.value)} rows={3} placeholder="Quale risultato deve aiutare a raggiungere?" className="textarea" /></Field></div></section>
+          <section id="section-0" className="card p-5"><p className="eyebrow">Identità</p><h2 className="mt-1 text-base font-semibold text-gray-950">Ruolo, obiettivo e personalità</h2><div className="mt-4 space-y-4"><Field label="Ruolo dell’agente"><textarea value={settings.role} onChange={e => update('role', e.target.value)} rows={3} placeholder="Es. Sei un consulente professionale esperto..." className="textarea" /></Field><Field label="Obiettivo"><textarea value={settings.objective} onChange={e => update('objective', e.target.value)} rows={3} placeholder="Quale risultato deve aiutare a raggiungere?" className="textarea" /></Field><Field label="Personalità"><textarea value={settings.personality} onChange={e => update('personality', e.target.value)} rows={3} placeholder="Es. Calmo, pratico, rassicurante e mai insistente..." className="textarea" /></Field></div></section>
 
           <section id="section-1" className="card p-5"><div className="flex items-center justify-between"><div><p className="eyebrow">Istruzioni principali</p><h2 className="mt-1 text-base font-semibold text-gray-950">System prompt</h2></div><div className="flex rounded-lg bg-gray-100 p-1 text-xs"><button onClick={() => setMode('custom')} className={`rounded-md px-3 py-1.5 ${mode === 'custom' ? 'bg-white font-semibold text-brand-700 shadow-sm' : 'text-gray-500'}`}>Personalizzato</button><button onClick={() => setMode('template')} className={`rounded-md px-3 py-1.5 ${mode === 'template' ? 'bg-white font-semibold text-brand-700 shadow-sm' : 'text-gray-500'}`}>Template</button></div></div>
             {mode === 'custom' ? <Field label="Istruzioni complete" className="mt-4"><textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={13} placeholder="Definisci cosa deve fare l’agente, quali limiti rispettare e come deve rispondere..." className="textarea font-mono text-xs" /><p className="mt-1 text-right text-[10px] text-gray-400">{systemPrompt.length} caratteri</p></Field> : <Field label="Template di partenza" className="mt-4"><select value={templateId || ''} onChange={e => setTemplateId(e.target.value || null)} className="input"><option value="">Seleziona un template</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name} · {template.category}</option>)}</select><p className="mt-2 text-xs text-gray-500">{selectedTemplate?.description}</p></Field>}
@@ -159,6 +173,10 @@ export default function ChatbotSettingsPage() {
           <section id="section-2" className="card p-5"><p className="eyebrow">Regole</p><h2 className="mt-1 text-base font-semibold text-gray-950">Vincoli operativi</h2><div className="mt-4 space-y-2">{(settings.rules || []).map((rule, index) => <div key={`${rule}-${index}`} className="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs text-gray-700"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" /><span className="flex-1">{rule}</span><button onClick={() => update('rules', settings.rules?.filter((_, current) => current !== index))} className="text-gray-400 hover:text-red-600">×</button></div>)}<div className="flex gap-2"><input value={newRule} onChange={e => setNewRule(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRule()} placeholder="Aggiungi una regola..." className="input" /><Button variant="secondary" size="sm" onClick={addRule}>Aggiungi</Button></div></div></section>
 
           <section id="section-3" className="card p-5"><p className="eyebrow">Comportamento</p><h2 className="mt-1 text-base font-semibold text-gray-950">Stile delle risposte</h2><div className="mt-4 grid gap-4 md:grid-cols-3"><Select label="Lingua" value={settings.language} onChange={value => update('language', value)} options={['Italiano', 'Inglese', 'Spagnolo', 'Francese', 'Automatico']} /><Select label="Tono di voce" value={settings.tone} onChange={value => update('tone', value)} options={['Professionale ed empatico', 'Amichevole', 'Formale', 'Diretto', 'Commerciale']} /><Select label="Lunghezza" value={settings.responseLength} onChange={value => update('responseLength', value as AgentSettings['responseLength'])} options={[['short','Breve'], ['balanced','Equilibrata'], ['detailed','Dettagliata']]} /></div><Field label="Messaggio di fallback" className="mt-4"><textarea value={settings.fallbackMessage} onChange={e => update('fallbackMessage', e.target.value)} rows={3} className="textarea" /></Field></section>
+
+          <section id="section-4" className="card p-5"><div className="flex items-start gap-3"><div className="rounded-xl bg-amber-50 p-2 text-amber-700"><ShieldCheck className="h-5 w-5" /></div><div><p className="eyebrow">Sicurezza e handoff</p><h2 className="mt-1 text-base font-semibold text-gray-950">Limiti e passaggio a operatore</h2><p className="mt-1 text-xs text-gray-500">Questi vincoli vengono aggiunti al prompt realmente inviato al modello.</p></div></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><InstructionList label="Argomenti vietati" placeholder="Es. diagnosi mediche" values={settings.forbiddenTopics || []} input={newForbiddenTopic} setInput={setNewForbiddenTopic} onAdd={() => addListItem('forbiddenTopics', newForbiddenTopic, () => setNewForbiddenTopic(''))} onRemove={index => update('forbiddenTopics', settings.forbiddenTopics?.filter((_, current) => current !== index))} /><InstructionList label="Risposte vietate" placeholder="Es. promettere risultati garantiti" values={settings.forbiddenResponses || []} input={newForbiddenResponse} setInput={setNewForbiddenResponse} onAdd={() => addListItem('forbiddenResponses', newForbiddenResponse, () => setNewForbiddenResponse(''))} onRemove={index => update('forbiddenResponses', settings.forbiddenResponses?.filter((_, current) => current !== index))} /><InstructionList label="Quando passare a un operatore" placeholder="Es. cliente molto insoddisfatto" values={settings.handoffTriggers || []} input={newHandoffTrigger} setInput={setNewHandoffTrigger} onAdd={() => addListItem('handoffTriggers', newHandoffTrigger, () => setNewHandoffTrigger(''))} onRemove={index => update('handoffTriggers', settings.handoffTriggers?.filter((_, current) => current !== index))} /></div></section>
+
+          <section id="section-5" className="card p-5"><div className="flex items-start gap-3"><div className="rounded-xl bg-brand-50 p-2 text-brand-700"><UserRoundCheck className="h-5 w-5" /></div><div><p className="eyebrow">Raccolta lead</p><h2 className="mt-1 text-base font-semibold text-gray-950">Dati che l’agente può richiedere</h2><p className="mt-1 text-xs text-gray-500">L’agente li chiederà soltanto quando pertinenti e con consenso esplicito.</p></div></div><div className="mt-4 flex flex-wrap gap-2">{['Nome', 'Email', 'Telefono', 'Azienda', 'Esigenza', 'Consenso privacy'].map(field => { const active = (settings.leadCollectionFields || []).includes(field); return <button key={field} type="button" aria-pressed={active} onClick={() => toggleLeadField(field)} className={`rounded-full border px-3 py-2 text-xs font-medium transition-colors ${active ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-gray-200 bg-white text-gray-600 hover:border-brand-200'}`}>{active && <Check className="mr-1.5 inline h-3.5 w-3.5" />}{field}</button> })}</div></section>
 
           <section id="section-7" className="card p-5"><p className="eyebrow">Avanzate</p><h2 className="mt-1 text-base font-semibold text-gray-950">Modello AI</h2><div className="mt-4 grid gap-4 md:grid-cols-3"><div><Select label="Modello" value={settings.aiModel} onChange={value => update('aiModel', value)} options={modelOptions} /><p className="mt-1.5 text-[10px] leading-4 text-gray-500">{AI_MODEL_CATALOG.find(model => model.id === settings.aiModel)?.description}</p></div><Field label={`Creatività · ${settings.temperature}`}><input aria-label="Creatività" type="range" min="0" max="2" step="0.1" value={settings.temperature} onChange={e => update('temperature', Number(e.target.value))} className="mt-3 w-full accent-brand-600" /></Field><Field label="Token massimi"><input type="number" min="64" max="4096" value={settings.maxTokens} onChange={e => update('maxTokens', Number(e.target.value))} className="input" /></Field></div></section>
         </div>
@@ -177,3 +195,6 @@ export default function ChatbotSettingsPage() {
 
 function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) { return <label className={`block ${className}`}><span className="mb-1.5 block text-xs font-medium text-gray-700">{label}</span>{children}</label> }
 function Select({ label, value, onChange, options }: { label: string; value?: string; onChange: (value: string) => void; options: (string | [string, string])[] }) { return <Field label={label}><select value={value || ''} onChange={event => onChange(event.target.value)} className="input">{options.map(option => { const [value, label] = Array.isArray(option) ? option : [option, option]; return <option key={value} value={value}>{label}</option> })}</select></Field> }
+function InstructionList({ label, placeholder, values, input, setInput, onAdd, onRemove }: { label: string; placeholder: string; values: string[]; input: string; setInput: (value: string) => void; onAdd: () => void; onRemove: (index: number) => void }) {
+  return <div><p className="text-xs font-semibold text-gray-800">{label}</p><div className="mt-2 space-y-2">{values.map((value, index) => <div key={`${value}-${index}`} className="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2.5 text-[11px] text-gray-700"><span className="flex-1 leading-4">{value}</span><button type="button" onClick={() => onRemove(index)} aria-label={`Rimuovi ${value}`} className="rounded p-0.5 text-gray-400 hover:bg-red-50 hover:text-red-600">×</button></div>)}</div><div className="mt-2 flex gap-2"><input value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onAdd() } }} placeholder={placeholder} className="input min-w-0" /><Button type="button" variant="secondary" size="sm" onClick={onAdd}>Aggiungi</Button></div></div>
+}
