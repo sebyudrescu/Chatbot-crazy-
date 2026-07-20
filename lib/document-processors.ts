@@ -3,6 +3,7 @@
  * Extract text from PDFs and URLs
  */
 
+import 'pdf-parse/worker'
 import { PDFParse } from 'pdf-parse'
 import * as cheerio from 'cheerio'
 import mammoth from 'mammoth'
