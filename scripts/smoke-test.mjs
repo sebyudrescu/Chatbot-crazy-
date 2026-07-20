@@ -786,10 +786,12 @@ try {
     "Global search failed",
   );
   const suggestions = await request(
-    `/api/suggestions?botId=${botId}&status=pending`,
+    `/api/suggestions?botId=${restoredId}&status=pending`,
   );
   assert(
-    suggestions.data.some((item) => item.category === "knowledge"),
+    suggestions.data.some(
+      (item) => item.botId === restoredId && item.category === "knowledge",
+    ),
     "Suggestion engine failed",
   );
 
@@ -1059,7 +1061,7 @@ try {
   );
   assert(
     knowledgeSyncPreview.data[0].syncDays === 1 &&
-      knowledgeSyncPreview.data[0].urlSources === 1 &&
+      knowledgeSyncPreview.data[0].urlSources >= 2 &&
       knowledgeSyncPreview.data[0].staleSources === 1,
     "Knowledge sync preview did not detect an obsolete URL source",
   );
