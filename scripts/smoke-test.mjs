@@ -72,6 +72,11 @@ try {
       typeof systemStatus.data.operations.ingestion?.pending === "number",
     "Operational health summary is missing",
   );
+  assert(
+    typeof systemStatus.data?.deployment?.ready === "boolean" &&
+      Array.isArray(systemStatus.data.deployment.missing),
+    "Deployment readiness summary is missing",
+  );
 
   const created = await request("/api/chatbots", {
     method: "POST",
@@ -1060,6 +1065,7 @@ try {
           "knowledge-sync-cron-auth",
           "operational-health",
           "crawler-notifications",
+          "deployment-readiness",
         ],
       },
       null,

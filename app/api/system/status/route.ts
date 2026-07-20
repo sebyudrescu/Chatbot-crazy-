@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getOperationalHealth } from '@/lib/operational-health'
+import { getDeploymentReadiness } from '@/lib/deployment-readiness'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,17 +13,19 @@ export async function GET() {
       prisma.conversation.count(),
       getOperationalHealth(),
     ])
+    const deployment = getDeploymentReadiness()
     return NextResponse.json({
       success: true,
       data: {
         database: true,
         openAI: Boolean(process.env.OPENAI_API_KEY),
-        pinecone: Boolean(process.env.PINECONE_API_KEY && process.env.PINECONE_INDEX),
+        pinecone: Boolean(process.env.PINECONE_API_KEY && (process.env.PINECONE_INDEX_NAME || process.env.PINECONE_INDEX)),
         firecrawl: Boolean(process.env.FIRECRAWL_API_KEY),
         accessProtection: Boolean(process.env.APP_ACCESS_PASSWORD),
         environment: process.env.NODE_ENV || 'development',
         counts: { agents, sources, conversations },
         operations,
+        deployment,
       },
     })
   } catch {
@@ -31,12 +34,13 @@ export async function GET() {
       data: {
         database: false,
         openAI: Boolean(process.env.OPENAI_API_KEY),
-        pinecone: Boolean(process.env.PINECONE_API_KEY && process.env.PINECONE_INDEX),
+        pinecone: Boolean(process.env.PINECONE_API_KEY && (process.env.PINECONE_INDEX_NAME || process.env.PINECONE_INDEX)),
         firecrawl: Boolean(process.env.FIRECRAWL_API_KEY),
         accessProtection: Boolean(process.env.APP_ACCESS_PASSWORD),
         environment: process.env.NODE_ENV || 'development',
         counts: { agents: 0, sources: 0, conversations: 0 },
         operations: null,
+        deployment: getDeploymentReadiness(),
       },
     }, { status: 503 })
   }

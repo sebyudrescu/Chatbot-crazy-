@@ -1,0 +1,50 @@
+import "server-only";
+
+type Environment = Record<string, string | undefined>;
+
+const placeholder = /^(?:change|replace|choose|your-|sk-your|https?:\/\/localhost|file:)/i;
+
+function strongSecret(value: string | undefined, minimum: number) {
+  return Boolean(value && value.length >= minimum && !placeholder.test(value));
+}
+
+function productionDatabase(value: string | undefined) {
+  if (!value || placeholder.test(value)) return false;
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "postgresql:" || protocol === "postgres:";
+  } catch {
+    return false;
+  }
+}
+
+function publicHttpsUrl(value: string | undefined) {
+  if (!value || placeholder.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname !== "localhost";
+  } catch {
+    return false;
+  }
+}
+
+export function getDeploymentReadiness(env: Environment = process.env) {
+  const checks = [
+    { key: "DATABASE_URL", label: "Database PostgreSQL di produzione", ready: productionDatabase(env.DATABASE_URL), required: true },
+    { key: "OPENAI_API_KEY", label: "Chiave OpenAI server-side", ready: strongSecret(env.OPENAI_API_KEY, 20), required: true },
+    { key: "APP_ACCESS_PASSWORD", label: "Password proprietario robusta", ready: strongSecret(env.APP_ACCESS_PASSWORD, 16), required: true },
+    { key: "APP_AUTH_SALT", label: "Salt firma sessione", ready: strongSecret(env.APP_AUTH_SALT, 32), required: true },
+    { key: "CRON_SECRET", label: "Protezione automazioni cron", ready: strongSecret(env.CRON_SECRET, 32), required: true },
+    { key: "NEXT_PUBLIC_APP_URL", label: "URL pubblico HTTPS", ready: publicHttpsUrl(env.NEXT_PUBLIC_APP_URL), required: true },
+    { key: "PINECONE_API_KEY", label: "Pinecone persistente", ready: strongSecret(env.PINECONE_API_KEY, 16), required: false },
+    { key: "FIRECRAWL_API_KEY", label: "Crawler avanzato Firecrawl", ready: strongSecret(env.FIRECRAWL_API_KEY, 16), required: false },
+  ];
+  const required = checks.filter((check) => check.required);
+  return {
+    ready: required.every((check) => check.ready),
+    completed: required.filter((check) => check.ready).length,
+    total: required.length,
+    checks,
+    missing: required.filter((check) => !check.ready).map((check) => check.key),
+  };
+}

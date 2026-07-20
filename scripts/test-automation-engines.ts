@@ -14,6 +14,7 @@ import {
   retryFailedIngestionJob,
 } from "../lib/operational-health";
 import { getAgentReadiness } from "../lib/agent-readiness";
+import { getDeploymentReadiness } from "../lib/deployment-readiness";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -187,6 +188,27 @@ async function main() {
   assert(
     databaseUrl.searchParams.get("schema") === "codex_automation_test",
     "Automation tests refuse to run outside the isolated codex_automation_test schema",
+  );
+  const deployable = getDeploymentReadiness({
+    DATABASE_URL: "postgresql://user:password@example.com:5432/app",
+    OPENAI_API_KEY: "sk-production-key-with-enough-entropy",
+    APP_ACCESS_PASSWORD: "owner-password-with-entropy",
+    APP_AUTH_SALT: "session-signing-salt-with-32-characters",
+    CRON_SECRET: "cron-signing-secret-with-32-characters",
+    NEXT_PUBLIC_APP_URL: "https://agents.example.com",
+  });
+  assert(deployable.ready, "Valid production environment was not accepted");
+  const unsafeDeployment = getDeploymentReadiness({
+    DATABASE_URL: "file:./dev.db",
+    OPENAI_API_KEY: "sk-your-api-key-here",
+    APP_ACCESS_PASSWORD: "short",
+    APP_AUTH_SALT: "replace-me",
+    CRON_SECRET: "change-me",
+    NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+  });
+  assert(
+    !unsafeDeployment.ready && unsafeDeployment.missing.length === 6,
+    "Unsafe production environment was not rejected",
   );
   await testWebhookDelivery();
   await testAgentPublicationReadiness();

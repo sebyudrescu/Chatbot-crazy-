@@ -18,6 +18,7 @@ interface Status {
   environment: string
   counts: { agents: number; sources: number; conversations: number }
   operations: Parameters<typeof OperationalMonitor>[0]['initialHealth'] | null
+  deployment: { ready: boolean; completed: number; total: number; missing: string[] }
 }
 
 export default function SettingsPage() {
@@ -38,7 +39,7 @@ export default function SettingsPage() {
         </div></section>
         <aside className="space-y-5"><div className="card p-5"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand-600" /><h2 className="text-sm font-semibold">Sicurezza segreti</h2></div><p className="mt-3 text-xs leading-5 text-gray-600">Le credenziali vanno configurate esclusivamente nelle variabili protette del server. La piattaforma mostra soltanto se il servizio è collegato.</p><div className="mt-4 rounded-lg bg-emerald-50 p-3 text-[11px] leading-5 text-emerald-700"><KeyRound className="mb-2 h-4 w-4" />Nessuna chiave API viene inviata al browser o salvata da questa pagina.</div></div>
           <div className="card p-5"><h2 className="text-sm font-semibold">Configurazione agenti</h2><p className="mt-2 text-xs leading-5 text-gray-500">Modello, tono, lingua, regole, system prompt e fallback si configurano separatamente per ciascun cliente.</p><Link href="/chatbots" className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700">Apri gli agenti <ExternalLink className="h-3 w-3" /></Link></div>
-          <div className={`rounded-xl border p-4 ${status.environment === 'production' && !status.accessProtection ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-gray-200 bg-gray-50 text-gray-600'}`}><p className="text-xs font-semibold">Ambiente: {status.environment}</p><p className="mt-1 text-[11px] leading-5">{status.environment === 'production' && !status.accessProtection ? 'Prima della pubblicazione abilita una protezione di accesso: l’app contiene dati dei clienti.' : 'Configurazione coerente con l’ambiente attuale.'}</p></div></aside>
+          <div className={`rounded-xl border p-4 ${status.deployment.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}><p className="text-xs font-semibold">Produzione: {status.deployment.completed}/{status.deployment.total} controlli</p><p className="mt-1 text-[11px] leading-5">{status.deployment.ready ? 'Le variabili obbligatorie risultano configurate per il deploy.' : `Mancano o non sono robuste: ${status.deployment.missing.join(', ')}.`}</p></div></aside>
       </div>
       <div className="mt-5"><PrivacyDataManager /></div>
       {status.operations ? <div className="mt-5"><OperationalMonitor initialHealth={status.operations} /></div> : null}
