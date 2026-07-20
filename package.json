@@ -42,7 +42,7 @@
         "next": "^16.2.10",
         "openai": "^4.24.1",
         "p-queue": "^9.0.1",
-        "pdf-parse": "^1.1.1",
+        "pdf-parse": "^2.4.5",
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
         "robots-parser": "^3.0.1",

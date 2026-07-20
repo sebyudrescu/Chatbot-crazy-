@@ -3,7 +3,7 @@
  * Extract text from PDFs and URLs
  */
 
-import pdf from 'pdf-parse'
+import { PDFParse } from 'pdf-parse'
 import * as cheerio from 'cheerio'
 import mammoth from 'mammoth'
 import { assertSafeRemoteUrl } from './url-safety'
@@ -12,12 +12,15 @@ import { assertSafeRemoteUrl } from './url-safety'
  * Extract text from PDF buffer
  */
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  const parser = new PDFParse({ data: new Uint8Array(buffer) })
   try {
-    const data = await pdf(buffer)
-    return data.text
+    const result = await parser.getText()
+    return result.text
   } catch (error) {
     console.error('Error extracting text from PDF:', error)
     throw new Error('Failed to extract text from PDF')
+  } finally {
+    await parser.destroy().catch(() => undefined)
   }
 }
 
