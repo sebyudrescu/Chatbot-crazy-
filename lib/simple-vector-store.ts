@@ -40,8 +40,7 @@ function ensureStoreDir(botId: string) {
  * Get file path for bot's vector store
  */
 function getStorePath(botId: string) {
-  const botDir = ensureStoreDir(botId)
-  return path.join(botDir, 'vectors.json')
+  return path.join(VECTOR_STORE_DIR, botId, 'vectors.json')
 }
 
 /**
@@ -100,7 +99,7 @@ export function saveVectorStore(botId: string, documents: VectorDocument[]): voi
     lastUpdated: new Date().toISOString(),
   }
   
-  const storePath = getStorePath(botId)
+  const storePath = path.join(ensureStoreDir(botId), 'vectors.json')
   fs.writeFileSync(storePath, JSON.stringify(store, null, 2))
   
   // Update cache
