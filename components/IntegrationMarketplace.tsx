@@ -1,13 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Bot, Check, CheckCircle2, CircleX, ExternalLink, Loader2, Plug, Search, Settings2, ShieldCheck, Unplug, Wifi } from 'lucide-react'
+import { Bot, Check, CheckCircle2, CircleX, Copy, ExternalLink, Loader2, Plug, Search, Settings2, ShieldCheck, Unplug, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
 interface Agent { id: string; companyName: string }
 interface Connection { id: string; enabled: boolean; status: string; config: Record<string, string>; lastTestedAt?: string; lastError?: string }
 interface Integration { provider: string; name: string; category: string; description: string; color: string; initials: string; mode: 'native' | 'configuration' | 'planned'; fields?: Array<{ key: string; label: string; placeholder: string; type?: string }>; connection: Connection | null }
-interface MetaChannelState { configured: boolean; connected: boolean; status: string; lastError?: string | null; label?: string | null }
+interface MetaSetupCheck { key: string; label: string; ready: boolean }
+interface MetaChannelState { configured: boolean; connected: boolean; status: string; lastError?: string | null; label?: string | null; setup: { ready: boolean; checks: MetaSetupCheck[]; missing: string[] } }
 interface MetaStatus { appId: string; graphVersion: string; whatsappConfigId: string; webhookUrl: string; whatsapp: MetaChannelState; instagram: MetaChannelState }
 
 const categoryNames: Record<string, string> = { all: 'Tutte', channels: 'Canali', crm: 'CRM', calendar: 'Calendario', automation: 'Automazioni', commerce: 'E-commerce', support: 'Supporto', data: 'Dati' }
@@ -85,7 +86,52 @@ function IntegrationDialog({ editing, botId, config, setConfig, busy, message, m
 }
 
 function MetaConnectionPanel({ provider, state, webhookUrl }: { provider: 'whatsapp' | 'instagram'; state?: MetaChannelState; webhookUrl?: string }) {
-  return <div className={`rounded-xl border p-4 ${state?.configured ? 'border-brand-100 bg-brand-50/40' : 'border-amber-200 bg-amber-50'}`}><div className="flex items-start gap-3"><ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${state?.configured ? 'text-brand-600' : 'text-amber-600'}`} /><div><p className="text-xs font-semibold text-gray-900">Accesso ufficiale Meta</p><p className="mt-1 text-[11px] leading-5 text-gray-600">{state?.connected ? `${state.label ? `${state.label} · ` : ''}Connessione attiva e token conservato cifrato.` : state?.configured ? `Si aprirà il login ${provider === 'whatsapp' ? 'Facebook/WhatsApp' : 'Instagram'}: il cliente seleziona il proprio account senza copiare password o token.` : 'La base è pronta, ma servono ancora le credenziali della Meta App sul server.'}</p>{webhookUrl && <p className="mt-2 break-all rounded-lg bg-white/80 p-2 font-mono text-[9px] text-gray-500">Webhook: {webhookUrl}</p>}</div></div></div>
+  const [copied, setCopied] = useState(false)
+  const copyWebhook = async () => {
+    if (!webhookUrl) return
+    await navigator.clipboard.writeText(webhookUrl)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1800)
+  }
+  const docsUrl = provider === 'whatsapp'
+    ? 'https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview'
+    : 'https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login'
+
+  return <div className={`rounded-xl border p-4 ${state?.configured ? 'border-brand-100 bg-brand-50/40' : 'border-amber-200 bg-amber-50'}`}>
+    <div className="flex items-start gap-3">
+      <ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${state?.configured ? 'text-brand-600' : 'text-amber-600'}`} />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold text-gray-900">Accesso ufficiale Meta</p>
+        <p className="mt-1 text-[11px] leading-5 text-gray-600">{state?.connected
+          ? `${state.label ? `${state.label} · ` : ''}Connessione attiva e token conservato cifrato.`
+          : state?.configured
+            ? `Configurazione proprietario completata. Si aprirà il login ${provider === 'whatsapp' ? 'Facebook/WhatsApp' : 'Instagram'} e il cliente selezionerà il proprio account senza condividere password o token.`
+            : 'Configurazione proprietario da completare una sola volta. I clienti non dovranno fornirti App ID, segreti o token.'}</p>
+
+        {!state?.configured && state?.setup && <div className="mt-4 rounded-xl border border-amber-200 bg-white/80 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Setup della tua piattaforma</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {state.setup.checks.map(check => <div key={check.key} className="flex items-center gap-2 text-[10px] text-gray-600">
+              {check.ready ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <CircleX className="h-3.5 w-3.5 shrink-0 text-amber-600" />}
+              <span>{check.label}</span>
+            </div>)}
+          </div>
+          <ol className="mt-3 list-decimal space-y-1 pl-4 text-[10px] leading-4 text-gray-600">
+            <li>Crea la Meta App aziendale e abilita {provider === 'whatsapp' ? 'WhatsApp Embedded Signup' : 'Instagram Login'}.</li>
+            <li>Salva i valori indicati come mancanti nelle variabili protette di Vercel.</li>
+            <li>Configura e verifica il webhook, poi ripubblica l’app.</li>
+          </ol>
+          <a href={docsUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-[10px] font-semibold text-brand-700">Apri la guida ufficiale Meta <ExternalLink className="h-3 w-3" /></a>
+        </div>}
+
+        {webhookUrl && <div className="mt-3 flex items-center gap-2 rounded-lg bg-white/80 p-2">
+          <p className="min-w-0 flex-1 break-all font-mono text-[9px] text-gray-500">Webhook: {webhookUrl}</p>
+          <button type="button" onClick={copyWebhook} aria-label="Copia indirizzo webhook" className="shrink-0 rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-brand-700"><Copy className="h-3.5 w-3.5" /></button>
+          <span className="sr-only" aria-live="polite">{copied ? 'Webhook copiato' : ''}</span>
+        </div>}
+      </div>
+    </div>
+  </div>
 }
 
 type FacebookSdk = { init(options: { appId: string; cookie: boolean; xfbml: boolean; version: string }): void; login(callback: (response: { authResponse?: { code?: string } }) => void, options: Record<string, unknown>): void }
