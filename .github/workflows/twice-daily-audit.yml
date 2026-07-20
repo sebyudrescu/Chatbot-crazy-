@@ -37,10 +37,9 @@ jobs:
 
     env:
       CI: true
+      CI_MOCK_AI: true
       DATABASE_URL: postgresql://litx:litx_ci_password@localhost:5432/litx_ci?schema=public
       OPENAI_API_KEY: sk-ci-placeholder
-      PINECONE_API_KEY: ci-placeholder
-      PINECONE_INDEX_NAME: litx-ci
       APP_ACCESS_PASSWORD: ci-private-password
       APP_AUTH_SALT: ci-static-salt
       CRON_SECRET: ci-retention-secret

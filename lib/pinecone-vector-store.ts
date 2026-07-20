@@ -299,7 +299,11 @@ export async function getIndexStats(): Promise<{
  * Check if Pinecone is configured and available
  */
 export function isPineconeConfigured(): boolean {
-  return !!(PINECONE_API_KEY && PINECONE_INDEX_NAME)
+  const useCiFallback =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.CI === 'true' &&
+    process.env.CI_MOCK_AI === 'true'
+  return !useCiFallback && !!(PINECONE_API_KEY && PINECONE_INDEX_NAME)
 }
 
 /**

@@ -4,11 +4,26 @@
  */
 
 import OpenAI from 'openai'
+import { createHash } from 'node:crypto'
 import { recordAIUsage } from './ai-usage'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
+
+const useDeterministicEmbeddings =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.CI === 'true' &&
+  process.env.CI_MOCK_AI === 'true'
+
+function deterministicEmbedding(text: string): number[] {
+  const digest = createHash('sha256').update(text).digest()
+  const values = Array.from({ length: 1536 }, (_, index) =>
+    (digest[index % digest.length] - 127.5) / 127.5,
+  )
+  const norm = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0)) || 1
+  return values.map(value => value / norm)
+}
 
 export interface VectorDocument {
   id: string
@@ -33,6 +48,8 @@ const vectorStore = new Map<string, VectorDocument[]>()
  * - Faster processing
  */
 export async function generateEmbedding(text: string, tracking?: { botId?: string; conversationId?: string; feature?: string }): Promise<number[]> {
+  if (useDeterministicEmbeddings) return deterministicEmbedding(text)
+
   try {
     const startedAt = Date.now()
     const model = 'text-embedding-3-small'
