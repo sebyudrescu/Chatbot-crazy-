@@ -38,6 +38,7 @@ export const ChatbotSettingsSchema = z.object({
   tone: z.string().max(80).optional(),
   responseLength: z.enum(["short", "balanced", "detailed"]).optional(),
   fallbackMessage: z.string().max(1000).optional(),
+  handoffMessage: z.string().max(1000).optional(),
   aiModel: z.string().max(100).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(64).max(4096).optional(),

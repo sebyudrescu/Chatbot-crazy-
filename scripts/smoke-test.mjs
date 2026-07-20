@@ -58,6 +58,30 @@ function assert(value, message) {
   if (!value) throw new Error(message);
 }
 
+function smokePdf() {
+  const text = "Documento PDF di prova per LitX AI. Questa fonte verifica che il caricamento funzioni in ambiente serverless senza creare cartelle locali. Contiene informazioni sufficienti per essere indicizzata correttamente nella knowledge base del chatbot.";
+  const escaped = text.replace(/([\\()])/g, "\\$1");
+  const stream = `BT /F1 12 Tf 72 720 Td (${escaped}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+  let output = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(output));
+    output += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(output);
+  output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  output += offsets.slice(1).map(offset => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(output);
+}
+
 await authenticate();
 
 try {
@@ -97,6 +121,7 @@ try {
         tone: "Professionale",
         responseLength: "short",
         fallbackMessage: "Fallback",
+        handoffMessage: "Passaggio a operatore attivato.",
         aiModel: "gpt-3.5-turbo",
         temperature: 0.2,
         maxTokens: 256,
@@ -157,6 +182,19 @@ try {
   assert(
     initialReadiness.data.ready === false && initialReadiness.data.total === 5,
     "Agent readiness checklist failed",
+  );
+  const pdfForm = new FormData();
+  pdfForm.set("botId", botId);
+  pdfForm.set("file", new File([smokePdf()], "serverless-smoke.pdf", { type: "application/pdf" }));
+  const pdfUploadResponse = await fetch(`${baseUrl}/api/knowledge-sources/upload-pdf`, {
+    method: "POST",
+    headers: authCookie ? { Cookie: authCookie } : {},
+    body: pdfForm,
+  });
+  const pdfUpload = await pdfUploadResponse.json();
+  assert(
+    pdfUploadResponse.status === 201 && pdfUpload.data?.status === "completed" && pdfUpload.data?.chunks > 0,
+    `Serverless PDF upload failed: ${pdfUpload.error || pdfUploadResponse.status}`,
   );
   const manualPreview = await request("/api/knowledge-sources/manual", {
     method: "POST",
@@ -1051,6 +1089,7 @@ try {
           "settings",
           "prompt-versions",
           "knowledge-preview",
+          "pdf-upload-serverless",
           "crawler-input-safety",
           "widget",
           "widget-feedback",

@@ -92,6 +92,7 @@ export interface OrchestratorContext {
     tone?: string
     responseLength?: 'short' | 'balanced' | 'detailed'
     fallbackMessage?: string
+    handoffMessage?: string
     aiModel?: string
     temperature?: number
     maxTokens?: number

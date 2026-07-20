@@ -29,6 +29,7 @@ import { generateContextualCTAs } from '@/lib/cta-generator'
 import { isAllowedWidgetOrigin } from '@/lib/widget-origin'
 import { z } from 'zod'
 import { checkRateLimit, requestClientIp } from '@/lib/rate-limit'
+import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from '@/lib/agent-policy'
 
 const ChatRequestSchema = z.object({
   botId: z.string().uuid(),
@@ -243,6 +244,7 @@ export async function POST(request: NextRequest) {
         tone: chatbotSettings.tone,
         responseLength: chatbotSettings.responseLength,
         fallbackMessage: chatbotSettings.fallbackMessage,
+        handoffMessage: chatbotSettings.handoffMessage,
         aiModel: chatbotSettings.aiModel,
         temperature: chatbotSettings.temperature,
         maxTokens: chatbotSettings.maxTokens,
@@ -251,6 +253,7 @@ export async function POST(request: NextRequest) {
     
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything
     const result = await orchestrateResponse(orchestratorContext)
+    const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
     const { runActiveWorkflows } = await import('@/lib/workflow-engine')
     const workflowResult = await runActiveWorkflows({
       botId,
@@ -269,6 +272,9 @@ export async function POST(request: NextRequest) {
       message,
       intent: result.decision.intent.intent,
     })
+    const outgoingPolicy = enforceOutgoingPolicy(result.response, chatbotSettings)
+    const policyDecision = incomingPolicy.action !== 'allow' ? incomingPolicy : outgoingPolicy
+    if (policyDecision.action !== 'allow') result.response = policyResponse(policyDecision, chatbotSettings)
     
     console.log(`✅ [ChatAPI] Orchestrator completed in ${result.metadata.processingTimeMs}ms`)
     console.log(`   Strategy: ${result.metadata.responseType}`)
@@ -318,6 +324,8 @@ export async function POST(request: NextRequest) {
       actionsExecuted: actionResult.executed,
       actionsFailed: actionResult.failed,
       actionsSkipped: actionResult.skipped,
+      policyAction: policyDecision.action,
+      policyCategory: policyDecision.category,
       // Validation metadata
       ...(result.validationResult && {
         coherenceScore: result.validationResult.coherenceScore,
@@ -365,6 +373,11 @@ export async function POST(request: NextRequest) {
         userIntent: result.decision.intent.intent,
         sentiment: conversation.sentiment,
         topicsDiscussed: topics.length > 0 ? JSON.stringify(topics) : null,
+        ...(policyDecision.action === 'handoff' ? {
+          needsHumanEscalation: true,
+          escalatedAt: new Date(),
+          escalationReason: `Policy agente: ${policyDecision.matchedRule}`,
+        } : {}),
       },
     })
 
@@ -434,6 +447,7 @@ export async function POST(request: NextRequest) {
           coherenceScore: result.validationResult?.coherenceScore,
           isCoherent: result.validationResult?.isCoherent,
         },
+        handoffRequested: policyDecision.action === 'handoff',
         
         // Cognitive Memory
         memory: {

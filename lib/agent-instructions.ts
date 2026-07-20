@@ -11,6 +11,7 @@ export interface AgentInstructionConfig {
   tone?: string
   responseLength?: 'short' | 'balanced' | 'detailed'
   fallbackMessage?: string
+  handoffMessage?: string
 }
 
 function numbered(title: string, values?: string[]) {
@@ -33,6 +34,7 @@ export function appendAgentInstructions(basePrompt: string, config: AgentInstruc
     config.tone && `Tono di voce: ${config.tone}.`,
     config.responseLength && lengthLabels[config.responseLength],
     config.fallbackMessage && `Quando le informazioni non sono sufficienti usa questo fallback, adattandolo al contesto senza inventare: "${config.fallbackMessage}"`,
+    config.handoffMessage && `Quando attivi il passaggio a un operatore comunica esattamente questo messaggio: "${config.handoffMessage}"`,
     numbered('Regole obbligatorie', config.rules),
     numbered('Argomenti vietati: non fornire istruzioni o contenuti su questi temi; usa il messaggio di fallback e proponi assistenza umana', config.forbiddenTopics),
     numbered('Risposte vietate: non formulare mai risposte che contengano o realizzino queste richieste', config.forbiddenResponses),
