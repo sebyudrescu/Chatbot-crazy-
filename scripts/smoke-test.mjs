@@ -61,6 +61,15 @@ function assert(value, message) {
 await authenticate();
 
 try {
+  const middlewareBypassAttempt = await fetch(`${baseUrl}/api/system/status`, {
+    headers: {
+      "x-middleware-subrequest": "middleware:middleware:middleware:middleware:middleware",
+    },
+  });
+  assert(
+    middlewareBypassAttempt.status === 401,
+    "Protected API accepted an x-middleware-subrequest bypass attempt",
+  );
   const health = await request("/api/health");
   assert(
     health.status === "healthy" || health.success !== false,
@@ -1024,6 +1033,7 @@ try {
         success: true,
         checks: [
           "health",
+          "owner-proxy-bypass-rejection",
           "agent",
           "settings",
           "prompt-versions",
