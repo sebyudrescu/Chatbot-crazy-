@@ -309,7 +309,8 @@ export async function completeJob(
     chunksCreated,
   })
   
-  // Check if all jobs for this bot are completed
+  // Refresh usable knowledge immediately. A retrying source must not make
+  // already indexed sources unavailable to the chatbot.
   const pendingJobs = await prisma.ingestionJob.count({
     where: {
       botId: job.botId,
@@ -317,24 +318,24 @@ export async function completeJob(
     }
   })
   
+  const totalChunks = await prisma.knowledgeSource.aggregate({
+    where: { botId: job.botId, status: 'completed' },
+    _sum: { chunkCount: true }
+  })
+  const availableChunks = totalChunks._sum.chunkCount || 0
+  const oldStatus = job.chatbot.kbStatus
+
+  await prisma.chatbot.update({
+    where: { id: job.botId },
+    data: {
+      kbStatus: pendingJobs === 0 ? 'ready' : 'indexing',
+      kbLastIndexed: new Date(),
+      kbTotalChunks: availableChunks,
+      ...(pendingJobs === 0 ? { kbIndexingError: null } : {})
+    }
+  })
+
   if (pendingJobs === 0) {
-    // All jobs done! Mark KB as ready
-    const totalChunks = await prisma.knowledgeSource.aggregate({
-      where: { botId: job.botId, status: 'completed' },
-      _sum: { chunkCount: true }
-    })
-    
-    const oldStatus = job.chatbot.kbStatus
-    
-    await prisma.chatbot.update({
-      where: { id: job.botId },
-      data: {
-        kbStatus: 'ready',
-        kbLastIndexed: new Date(),
-        kbTotalChunks: totalChunks._sum.chunkCount || 0,
-        kbIndexingError: null
-      }
-    })
     
     console.log(`[IngestionQueue] 🎉 Bot ${job.botId} KB is now READY with ${totalChunks._sum.chunkCount} chunks`)
     
@@ -342,7 +343,7 @@ export async function completeJob(
     await eventStore.logKBStatusChanged(job.botId, {
       from: oldStatus,
       to: 'ready',
-      totalChunks: totalChunks._sum.chunkCount || 0,
+      totalChunks: availableChunks,
     })
   }
   
@@ -405,11 +406,19 @@ export async function failJob(
       }
     })
     
-    // Update bot status to failed
+    const completedKnowledge = await prisma.knowledgeSource.aggregate({
+      where: { botId: job.botId, status: 'completed' },
+      _sum: { chunkCount: true }
+    })
+    const availableChunks = completedKnowledge._sum.chunkCount || 0
+
+    // Keep a partially indexed bot usable. The failed source remains visible
+    // in diagnostics and can be retried independently.
     await prisma.chatbot.update({
       where: { id: job.botId },
       data: {
-        kbStatus: 'failed',
+        kbStatus: availableChunks > 0 ? 'ready' : 'failed',
+        kbTotalChunks: availableChunks,
         kbIndexingError: error.message
       }
     })
@@ -493,6 +502,14 @@ export async function isBotReady(botId: string): Promise<{
       }
       
     case 'indexing':
+      if (bot.kbTotalChunks > 0) {
+        return {
+          ready: true,
+          status: 'ready',
+          message: `Knowledge base ready with ${bot.kbTotalChunks} chunks; altre fonti sono in aggiornamento`,
+          totalChunks: bot.kbTotalChunks
+        }
+      }
       return {
         ready: false,
         status: 'indexing',

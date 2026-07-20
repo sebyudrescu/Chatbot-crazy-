@@ -57,10 +57,16 @@ export async function GET(request: NextRequest) {
           type: job.jobType,
           status: job.status,
           progress: job.progress,
+          progressMessage: job.progressMessage,
           createdAt: job.createdAt,
+          startedAt: job.startedAt,
           completedAt: job.completedAt,
           sourcesCreated: job.sourcesCreated,
           chunksCreated: job.chunksCreated,
+          error: job.errorMessage,
+          attempts: job.attempts,
+          maxAttempts: job.maxAttempts,
+          nextRetryAt: job.nextRetryAt,
         }))
       })
 

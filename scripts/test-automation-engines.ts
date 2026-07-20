@@ -16,6 +16,7 @@ import {
 import { getAgentReadiness } from "../lib/agent-readiness";
 import { getDeploymentReadiness } from "../lib/deployment-readiness";
 import { checkPersistentRateLimit } from "../lib/rate-limit";
+import { completeJob, isBotReady } from "../lib/ingestion-queue";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -207,6 +208,73 @@ async function testPersistentRateLimit() {
   }
 }
 
+async function testPartialKnowledgeAvailability() {
+  const bot = await prisma.chatbot.create({
+    data: {
+      companyName: "Partial knowledge availability test",
+      kbStatus: "indexing",
+      kbTotalChunks: 0,
+    },
+  });
+  try {
+    const completedJob = await prisma.ingestionJob.create({
+      data: {
+        botId: bot.id,
+        jobType: "url",
+        params: JSON.stringify({ singleUrl: "https://example.com/ready" }),
+        status: "running",
+        attempts: 1,
+        maxAttempts: 5,
+        startedAt: new Date(),
+      },
+    });
+    await prisma.ingestionJob.create({
+      data: {
+        botId: bot.id,
+        jobType: "url",
+        params: JSON.stringify({ singleUrl: "https://example.com/pending" }),
+        status: "pending",
+      },
+    });
+    await prisma.knowledgeSource.create({
+      data: {
+        botId: bot.id,
+        ingestionJobId: completedJob.id,
+        sourceType: "url",
+        sourceUrl: "https://example.com/ready",
+        contentText: "Fonte valida già indicizzata.",
+        status: "completed",
+        chunkCount: 3,
+      },
+    });
+    await completeJob(completedJob.id, 1, 3);
+    const refreshedBot = await prisma.chatbot.findUnique({
+      where: { id: bot.id },
+      select: { kbStatus: true, kbTotalChunks: true },
+    });
+    assert(
+      refreshedBot?.kbStatus === "indexing" && refreshedBot.kbTotalChunks === 3,
+      "Completing one source did not refresh usable knowledge during another pending job",
+    );
+    const partiallyReady = await isBotReady(bot.id);
+    assert(
+      partiallyReady.ready && partiallyReady.totalChunks === 3,
+      "Completed knowledge became unavailable while another source was indexing",
+    );
+    await prisma.chatbot.update({
+      where: { id: bot.id },
+      data: { kbTotalChunks: 0 },
+    });
+    const emptyIndex = await isBotReady(bot.id);
+    assert(
+      !emptyIndex.ready && emptyIndex.status === "indexing",
+      "An empty indexing knowledge base was incorrectly marked ready",
+    );
+  } finally {
+    await prisma.chatbot.delete({ where: { id: bot.id } });
+  }
+}
+
 async function main() {
   const databaseUrl = new URL(process.env.DATABASE_URL || "");
   assert(
@@ -237,6 +305,7 @@ async function main() {
   await testWebhookDelivery();
   await testAgentPublicationReadiness();
   await testPersistentRateLimit();
+  await testPartialKnowledgeAvailability();
 
   const simulation = simulateWorkflow({
     triggerType: "keyword",
