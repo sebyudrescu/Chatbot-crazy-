@@ -49,6 +49,7 @@ assert.deepEqual(instagramAttachmentDescriptor({ type: "image", payload: { url: 
 
 const audioFallback = unsupportedAttachment({ type: "audio", mediaId: "audio-1" });
 assert.equal(audioFallback.analyzed, false);
+assert.equal(audioFallback.actionText, "");
 assert.match(audioFallback.queryText, /non inventare il contenuto/i);
 
 function smokePdf() {
@@ -92,6 +93,7 @@ global.fetch = async (url) => {
 const analyzedAudio = await analyzeMetaAttachment({ provider: "whatsapp", descriptor: { type: "audio", mediaId: "media-audio", mimeType: "audio/ogg; codecs=opus" }, config, botId: "00000000-0000-4000-8000-000000000001" });
 assert.equal(analyzedAudio.analyzed, true);
 assert.match(analyzedAudio.queryText, /prenotare domani alle sedici/i);
+assert.equal(analyzedAudio.actionText, "Vorrei prenotare domani alle sedici");
 assert.equal(transcriptionInput.model, "gpt-4o-mini-transcribe");
 assert.equal(transcriptionInput.file.type, "audio/ogg");
 assert.equal(transcriptionUsage.feature, "channel_attachment_transcription");
@@ -103,7 +105,7 @@ await assert.rejects(
 );
 global.fetch = originalFetch;
 
-console.log(JSON.stringify({ success: true, checks: 16 }, null, 2));
+console.log(JSON.stringify({ success: true, checks: 18 }, null, 2));
 })().catch((error) => {
   global.fetch = originalFetch;
   console.error(error);

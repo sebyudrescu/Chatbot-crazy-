@@ -10,7 +10,7 @@ const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
 const CHANNEL_RATE_LIMIT_MESSAGE = "Ho ricevuto molti messaggi in poco tempo. Attendi qualche minuto prima di continuare, così potrò aiutarti correttamente.";
 
-export async function processIncomingChannelMessage(input: { botId: string; channel: "whatsapp" | "instagram"; externalThreadId: string; externalMessageId: string; text: string; analysisText?: string; userName?: string; userPhone?: string }) {
+export async function processIncomingChannelMessage(input: { botId: string; channel: "whatsapp" | "instagram"; externalThreadId: string; externalMessageId: string; text: string; analysisText?: string; automationText?: string; userName?: string; userPhone?: string }) {
   const duplicate = await prisma.message.findUnique({ where: { externalMessageId: input.externalMessageId }, select: { id: true } });
   if (duplicate) return { duplicate: true as const };
 
@@ -39,6 +39,7 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const settings = (parseJSON(conversation.chatbot.settings) || {}) as ChatbotSettings;
   const history = [...conversation.messages].reverse().map(message => ({ role: message.role, content: message.content }));
   const query = input.analysisText?.trim() || input.text;
+  const automationMessage = input.automationText?.trim() || input.text;
   const context: OrchestratorContext = {
     botId: input.botId,
     conversationId: conversation.id,
@@ -58,13 +59,13 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     },
   };
   const result = await orchestrateResponse(context);
-  const incomingPolicy = evaluateIncomingPolicy(query, settings);
+  const incomingPolicy = evaluateIncomingPolicy(automationMessage, settings);
   const workflow = incomingPolicy.action === "allow"
-    ? await import("@/lib/workflow-engine").then(({ runActiveWorkflows }) => runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: query, intent: result.decision.intent.intent, sentiment: conversation.sentiment || undefined }))
+    ? await import("@/lib/workflow-engine").then(({ runActiveWorkflows }) => runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent, sentiment: conversation.sentiment || undefined }))
     : { executed: [], failed: [], skipped: [], actions: [] };
   if (workflow.responseOverride) result.response = workflow.responseOverride;
   const actionResult = incomingPolicy.action === "allow"
-    ? await import("@/lib/action-engine").then(({ runTriggeredActions }) => runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: query, intent: result.decision.intent.intent }))
+    ? await import("@/lib/action-engine").then(({ runTriggeredActions }) => runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent }))
     : { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: false };
   const channelActionText = actionResult.channelMessages.filter((message) => message.trim()).join("\n\n");
   if (channelActionText && !result.response.includes(channelActionText)) {

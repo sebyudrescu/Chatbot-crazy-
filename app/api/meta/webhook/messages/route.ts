@@ -52,7 +52,7 @@ async function handleWhatsApp(payload: MetaPayload) {
       const attachment = descriptor ? await analyzeAttachmentLimited("whatsapp", descriptor, found.connection.botId, message.from, found.config) : null;
       const text = attachment?.displayText || whatsappIncomingText(message);
       if (!text) continue;
-      await respond({ provider: "whatsapp", channel: "whatsapp", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: message.from, externalMessageId: message.id, text, analysisText: attachment?.queryText, recipientId: message.from, userName: value?.contacts?.[0]?.profile?.name, userPhone: value?.contacts?.[0]?.wa_id });
+      await respond({ provider: "whatsapp", channel: "whatsapp", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: message.from, externalMessageId: message.id, text, analysisText: attachment?.queryText, automationText: attachment?.actionText, recipientId: message.from, userName: value?.contacts?.[0]?.profile?.name, userPhone: value?.contacts?.[0]?.wa_id });
     }
   }
 }
@@ -94,8 +94,9 @@ async function handleInstagram(payload: MetaPayload) {
       const incomingText = instagramIncomingText(event);
       const displayText = [incomingText, ...attachments.map(item => item.displayText)].filter(Boolean).join("\n");
       const analysisText = [incomingText, ...attachments.map(item => item.queryText)].filter(Boolean).join("\n\n");
+      const automationText = [incomingText, ...attachments.map(item => item.actionText)].filter(Boolean).join("\n");
       if (!displayText) continue;
-      await respond({ provider: "instagram", channel: "instagram", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: event.sender.id, externalMessageId, text: displayText, analysisText: analysisText || undefined, recipientId: event.sender.id });
+      await respond({ provider: "instagram", channel: "instagram", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: event.sender.id, externalMessageId, text: displayText, analysisText: analysisText || undefined, automationText: automationText || undefined, recipientId: event.sender.id });
     }
   }
 }
