@@ -7,6 +7,7 @@ import { processIncomingChannelMessage } from "@/lib/channel-message-processor";
 import { sendMetaText } from "@/lib/meta-messaging";
 import { normalizeMetaDeliveryStatus, shouldAdvanceDeliveryStatus } from "@/lib/meta-payloads";
 import { analyzeMetaAttachment, instagramAttachmentDescriptor, unsupportedAttachment, whatsappAttachmentDescriptor, type MetaAttachmentDescriptor } from "@/lib/meta-attachments";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type WhatsAppMessage = { id?: string; from?: string; type?: string; text?: { body?: string }; image?: { id?: string; mime_type?: string; caption?: string }; document?: { id?: string; mime_type?: string; filename?: string; caption?: string }; audio?: { id?: string; mime_type?: string }; video?: { id?: string; mime_type?: string; caption?: string }; sticker?: { id?: string; mime_type?: string } };
 type WhatsAppStatus = { id?: string; status?: string; errors?: Array<{ code?: number; title?: string; message?: string }> };
@@ -48,7 +49,7 @@ async function handleWhatsApp(payload: MetaPayload) {
       if (!message.id || !message.from) continue;
       if (await alreadyProcessed(message.id)) continue;
       const descriptor = whatsappAttachmentDescriptor(message);
-      const attachment = descriptor ? await analyzeAttachment("whatsapp", descriptor, found.connection.botId, found.config) : null;
+      const attachment = descriptor ? await analyzeAttachmentLimited("whatsapp", descriptor, found.connection.botId, message.from, found.config) : null;
       const text = attachment?.displayText || message.text?.body?.trim() || "";
       if (!text) continue;
       await respond({ provider: "whatsapp", channel: "whatsapp", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: message.from, externalMessageId: message.id, text, analysisText: attachment?.queryText, recipientId: message.from, userName: value?.contacts?.[0]?.profile?.name, userPhone: value?.contacts?.[0]?.wa_id });
@@ -85,7 +86,10 @@ async function handleInstagram(payload: MetaPayload) {
       if (!event.message?.mid || !event.sender?.id || event.message.is_echo) continue;
       if (await alreadyProcessed(event.message.mid)) continue;
       const descriptors = (event.message.attachments || []).map(instagramAttachmentDescriptor).filter((item): item is MetaAttachmentDescriptor => Boolean(item)).slice(0, 3);
-      const attachments = await Promise.all(descriptors.map(descriptor => analyzeAttachment("instagram", descriptor, found.connection.botId, found.config)));
+      const attachmentLimit = descriptors.length ? await checkRateLimit(`meta-attachment:${found.connection.botId}:instagram:${event.sender.id}`, 10, 5 * 60_000) : null;
+      const attachments = attachmentLimit?.allowed === false
+        ? descriptors.map(descriptor => unsupportedAttachment(descriptor))
+        : await Promise.all(descriptors.map(descriptor => analyzeAttachment("instagram", descriptor, found.connection.botId, found.config)));
       const displayText = [event.message.text?.trim(), ...attachments.map(item => item.displayText)].filter(Boolean).join("\n");
       const analysisText = [event.message.text?.trim(), ...attachments.map(item => item.queryText)].filter(Boolean).join("\n\n");
       if (!displayText) continue;
@@ -96,6 +100,11 @@ async function handleInstagram(payload: MetaPayload) {
 
 async function alreadyProcessed(externalMessageId: string) {
   return Boolean(await prisma.message.findUnique({ where: { externalMessageId }, select: { id: true } }));
+}
+
+async function analyzeAttachmentLimited(provider: "whatsapp" | "instagram", descriptor: MetaAttachmentDescriptor, botId: string, externalThreadId: string, config: NonNullable<ReturnType<typeof parseMetaConnection>>) {
+  const limit = await checkRateLimit(`meta-attachment:${botId}:${provider}:${externalThreadId}`, 10, 5 * 60_000);
+  return limit.allowed ? analyzeAttachment(provider, descriptor, botId, config) : unsupportedAttachment(descriptor);
 }
 
 async function analyzeAttachment(provider: "whatsapp" | "instagram", descriptor: MetaAttachmentDescriptor, botId: string, config: NonNullable<ReturnType<typeof parseMetaConnection>>) {
