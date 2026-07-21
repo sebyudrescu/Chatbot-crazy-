@@ -25,7 +25,7 @@ import {
 import { getOptimizedContext } from '@/lib/conversation-memory'
 import { formatTokenUsage } from '@/lib/token-counter'
 import { generateQuickReplies } from '@/lib/quick-replies-generator'
-import { generateContextualCTAs } from '@/lib/cta-generator'
+import { configuredCtasOnly } from '@/lib/cta-policy'
 import { isAllowedWidgetOrigin } from '@/lib/widget-origin'
 import { z } from 'zod'
 import { checkRateLimit, requestClientIp } from '@/lib/rate-limit'
@@ -296,11 +296,9 @@ export async function POST(request: NextRequest) {
       userIntent: result.decision.intent.intent,
     })
 
-    const contextualCTAs = [...actionResult.ctas, ...generateContextualCTAs({
-      lastAssistantMessage: result.response,
-      topics: conversation.topicsDiscussed ? JSON.parse(conversation.topicsDiscussed) : undefined,
-      userIntent: result.decision.intent.intent,
-    })].filter((item, index, all) => all.findIndex(candidate => candidate.action === item.action) === index)
+    // Never invent navigation targets from words in the answer. Every CTA must
+    // come from an enabled owner-configured action with a validated HTTPS URL.
+    const contextualCTAs = configuredCtasOnly(actionResult.ctas)
 
     console.log(`💡 [ChatAPI] UX Enhancements: ${quickReplies.length} quick replies, ${contextualCTAs.length} CTAs`)
 

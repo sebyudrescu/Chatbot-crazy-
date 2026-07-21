@@ -7,7 +7,7 @@ interface SafeRichTextProps {
 
 const inlinePattern = /(\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|`([^`\n]+)`|\*([^*\n]+)\*|_([^_\n]+)_)/g;
 
-function safeLink(value: string) {
+export function safeHttpUrl(value: string) {
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
@@ -26,7 +26,7 @@ function inlineNodes(value: string, prefix: string): ReactNode[] {
     const key = `${prefix}-${index}`;
 
     if (match[2] && match[3]) {
-      const href = safeLink(match[3]);
+      const href = safeHttpUrl(match[3]);
       nodes.push(
         href ? (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">

@@ -13,6 +13,7 @@
         "test:knowledge-formats": "node scripts/test-knowledge-formats.mjs",
         "test:widget": "node scripts/test-widget-interactions.mjs",
         "test:rich-text": "node scripts/test-safe-rich-text.cjs",
+        "test:cta": "node scripts/test-cta-policy.cjs",
         "test:crawler": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler.ts",
         "test:automations": "node scripts/run-automation-tests.cjs",
         "test:meta": "node scripts/test-meta-security.cjs",
