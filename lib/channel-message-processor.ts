@@ -5,7 +5,7 @@ import { parseJSON, stringifyJSON } from "@/lib/utils";
 import type { ChatbotSettings } from "@/lib/types";
 import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from "@/lib/agent-policy";
 
-export async function processIncomingChannelMessage(input: { botId: string; channel: "whatsapp" | "instagram"; externalThreadId: string; externalMessageId: string; text: string; userName?: string; userPhone?: string }) {
+export async function processIncomingChannelMessage(input: { botId: string; channel: "whatsapp" | "instagram"; externalThreadId: string; externalMessageId: string; text: string; analysisText?: string; userName?: string; userPhone?: string }) {
   const duplicate = await prisma.message.findUnique({ where: { externalMessageId: input.externalMessageId }, select: { id: true } });
   if (duplicate) return { duplicate: true as const };
 
@@ -21,10 +21,11 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
 
   const settings = (parseJSON(conversation.chatbot.settings) || {}) as ChatbotSettings;
   const history = [...conversation.messages].reverse().map(message => ({ role: message.role, content: message.content }));
+  const query = input.analysisText?.trim() || input.text;
   const context: OrchestratorContext = {
     botId: input.botId,
     conversationId: conversation.id,
-    query: input.text,
+    query,
     conversationHistory: history,
     conversationMetadata: { userIntent: conversation.userIntent || undefined, sentiment: conversation.sentiment || undefined, topics: parseJSON<string[]>(conversation.topicsDiscussed) || undefined },
     botConfig: {
@@ -40,12 +41,12 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     },
   };
   const result = await orchestrateResponse(context);
-  const incomingPolicy = evaluateIncomingPolicy(input.text, settings);
+  const incomingPolicy = evaluateIncomingPolicy(query, settings);
   const { runActiveWorkflows } = await import("@/lib/workflow-engine");
-  const workflow = await runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: input.text, intent: result.decision.intent.intent, sentiment: conversation.sentiment || undefined });
+  const workflow = await runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: query, intent: result.decision.intent.intent, sentiment: conversation.sentiment || undefined });
   if (workflow.responseOverride) result.response = workflow.responseOverride;
   const { runTriggeredActions } = await import("@/lib/action-engine");
-  await runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: input.text, intent: result.decision.intent.intent });
+  await runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: query, intent: result.decision.intent.intent });
   const outgoingPolicy = enforceOutgoingPolicy(result.response, settings);
   const policyDecision = incomingPolicy.action !== "allow" ? incomingPolicy : outgoingPolicy;
   if (policyDecision.action !== "allow") result.response = policyResponse(policyDecision, settings);

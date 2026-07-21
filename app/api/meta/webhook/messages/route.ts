@@ -6,11 +6,12 @@ import { verifyMetaSignature } from "@/lib/meta-security";
 import { processIncomingChannelMessage } from "@/lib/channel-message-processor";
 import { sendMetaText } from "@/lib/meta-messaging";
 import { normalizeMetaDeliveryStatus, shouldAdvanceDeliveryStatus } from "@/lib/meta-payloads";
+import { analyzeMetaAttachment, instagramAttachmentDescriptor, unsupportedAttachment, whatsappAttachmentDescriptor, type MetaAttachmentDescriptor } from "@/lib/meta-attachments";
 
-type WhatsAppMessage = { id?: string; from?: string; type?: string; text?: { body?: string } };
+type WhatsAppMessage = { id?: string; from?: string; type?: string; text?: { body?: string }; image?: { id?: string; mime_type?: string; caption?: string }; document?: { id?: string; mime_type?: string; filename?: string; caption?: string }; audio?: { id?: string; mime_type?: string }; video?: { id?: string; mime_type?: string; caption?: string }; sticker?: { id?: string; mime_type?: string } };
 type WhatsAppStatus = { id?: string; status?: string; errors?: Array<{ code?: number; title?: string; message?: string }> };
 type WhatsAppValue = { metadata?: { phone_number_id?: string }; contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>; messages?: WhatsAppMessage[]; statuses?: WhatsAppStatus[] };
-type InstagramEvent = { sender?: { id?: string }; recipient?: { id?: string }; message?: { mid?: string; text?: string; is_echo?: boolean } };
+type InstagramEvent = { sender?: { id?: string }; recipient?: { id?: string }; message?: { mid?: string; text?: string; is_echo?: boolean; attachments?: Array<{ type?: string; payload?: { url?: string } }> } };
 type MetaPayload = { object?: string; entry?: Array<{ id?: string; changes?: Array<{ value?: WhatsAppValue }>; messaging?: InstagramEvent[] }> };
 
 export async function GET(request: NextRequest) {
@@ -44,8 +45,13 @@ async function handleWhatsApp(payload: MetaPayload) {
     if (!found) continue;
     for (const status of value?.statuses || []) await updateWhatsAppDeliveryStatus(status, found.connection.id, found.config);
     for (const message of value?.messages || []) {
-      if (!message.id || !message.from || message.type !== "text" || !message.text?.body) continue;
-      await respond({ provider: "whatsapp", channel: "whatsapp", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: message.from, externalMessageId: message.id, text: message.text.body, recipientId: message.from, userName: value?.contacts?.[0]?.profile?.name, userPhone: value?.contacts?.[0]?.wa_id });
+      if (!message.id || !message.from) continue;
+      if (await alreadyProcessed(message.id)) continue;
+      const descriptor = whatsappAttachmentDescriptor(message);
+      const attachment = descriptor ? await analyzeAttachment("whatsapp", descriptor, found.connection.botId, found.config) : null;
+      const text = attachment?.displayText || message.text?.body?.trim() || "";
+      if (!text) continue;
+      await respond({ provider: "whatsapp", channel: "whatsapp", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: message.from, externalMessageId: message.id, text, analysisText: attachment?.queryText, recipientId: message.from, userName: value?.contacts?.[0]?.profile?.name, userPhone: value?.contacts?.[0]?.wa_id });
     }
   }
 }
@@ -76,9 +82,27 @@ async function handleInstagram(payload: MetaPayload) {
     const found = await findMetaConnection("instagram", accountId);
     if (!found) continue;
     for (const event of entry.messaging || []) {
-      if (!event.message?.mid || !event.sender?.id || !event.message.text || event.message.is_echo) continue;
-      await respond({ provider: "instagram", channel: "instagram", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: event.sender.id, externalMessageId: event.message.mid, text: event.message.text, recipientId: event.sender.id });
+      if (!event.message?.mid || !event.sender?.id || event.message.is_echo) continue;
+      if (await alreadyProcessed(event.message.mid)) continue;
+      const descriptors = (event.message.attachments || []).map(instagramAttachmentDescriptor).filter((item): item is MetaAttachmentDescriptor => Boolean(item)).slice(0, 3);
+      const attachments = await Promise.all(descriptors.map(descriptor => analyzeAttachment("instagram", descriptor, found.connection.botId, found.config)));
+      const displayText = [event.message.text?.trim(), ...attachments.map(item => item.displayText)].filter(Boolean).join("\n");
+      const analysisText = [event.message.text?.trim(), ...attachments.map(item => item.queryText)].filter(Boolean).join("\n\n");
+      if (!displayText) continue;
+      await respond({ provider: "instagram", channel: "instagram", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: event.sender.id, externalMessageId: event.message.mid, text: displayText, analysisText: analysisText || undefined, recipientId: event.sender.id });
     }
+  }
+}
+
+async function alreadyProcessed(externalMessageId: string) {
+  return Boolean(await prisma.message.findUnique({ where: { externalMessageId }, select: { id: true } }));
+}
+
+async function analyzeAttachment(provider: "whatsapp" | "instagram", descriptor: MetaAttachmentDescriptor, botId: string, config: NonNullable<ReturnType<typeof parseMetaConnection>>) {
+  try {
+    return await analyzeMetaAttachment({ provider, descriptor, botId, config });
+  } catch {
+    return unsupportedAttachment(descriptor);
   }
 }
 

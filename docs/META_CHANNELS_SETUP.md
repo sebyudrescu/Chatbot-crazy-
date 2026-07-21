@@ -73,6 +73,18 @@ LitX applica questa regola anche alle risposte manuali dalla pagina **Chat Logs*
 
 I template con variabili dinamiche nell'intestazione o nei pulsanti sono mostrati ma non selezionabili, per evitare invii parziali o non conformi. Possono essere usati i template con variabili nel solo corpo.
 
+## Allegati in ingresso
+
+LitX analizza gli allegati ricevuti dai webhook ufficiali prima di generare la risposta:
+
+- immagini JPEG, PNG e WebP vengono descritte dal modello visivo; l'eventuale testo visibile viene trattato come dato non attendibile e mai come istruzione di sistema;
+- i PDF testuali vengono scaricati ed estratti interamente in memoria, senza creare file temporanei sul filesystem di Vercel;
+- didascalia e contenuto estratto vengono passati al motore conversazionale, mentre Chat Logs mostra chiaramente che il messaggio conteneva un allegato;
+- audio, video e formati non riconosciuti non vengono ignorati: l'agente viene informato che il contenuto non è analizzabile e deve evitare di inventarlo o proporre un operatore;
+- il limite è 5 MB per allegato e fino a 3 allegati per singolo evento Instagram.
+
+Gli ID messaggio Meta vengono controllati prima del download: una riconsegna dello stesso webhook non ripete l'analisi AI e non genera una seconda risposta.
+
 ## Verifica
 
 1. Apri **Canali > WhatsApp Business**. Tutti gli indicatori del setup proprietario devono risultare verdi.
