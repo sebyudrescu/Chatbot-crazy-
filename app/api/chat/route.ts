@@ -254,24 +254,26 @@ export async function POST(request: NextRequest) {
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything
     const result = await orchestrateResponse(orchestratorContext)
     const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
-    const { runActiveWorkflows } = await import('@/lib/workflow-engine')
-    const workflowResult = await runActiveWorkflows({
-      botId,
-      conversationId: conversation.id,
-      messageId: userMessage.id,
-      message,
-      intent: result.decision.intent.intent,
-      sentiment: conversation.sentiment || undefined,
-    })
+    const workflowResult = incomingPolicy.action === 'allow'
+      ? await import('@/lib/workflow-engine').then(({ runActiveWorkflows }) => runActiveWorkflows({
+        botId,
+        conversationId: conversation.id,
+        messageId: userMessage.id,
+        message,
+        intent: result.decision.intent.intent,
+        sentiment: conversation.sentiment || undefined,
+      }))
+      : { executed: [], failed: [], skipped: [], actions: [] }
     if (workflowResult.responseOverride) result.response = workflowResult.responseOverride
-    const { runTriggeredActions } = await import('@/lib/action-engine')
-    const actionResult = await runTriggeredActions({
-      botId,
-      conversationId: conversation.id,
-      messageId: userMessage.id,
-      message,
-      intent: result.decision.intent.intent,
-    })
+    const actionResult = incomingPolicy.action === 'allow'
+      ? await import('@/lib/action-engine').then(({ runTriggeredActions }) => runTriggeredActions({
+        botId,
+        conversationId: conversation.id,
+        messageId: userMessage.id,
+        message,
+        intent: result.decision.intent.intent,
+      }))
+      : { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: false }
     const outgoingPolicy = enforceOutgoingPolicy(result.response, chatbotSettings)
     const policyDecision = incomingPolicy.action !== 'allow' ? incomingPolicy : outgoingPolicy
     if (policyDecision.action !== 'allow') result.response = policyResponse(policyDecision, chatbotSettings)

@@ -467,6 +467,7 @@ async function main() {
       firstActionRun.executed.includes(action.id),
       "Action did not execute",
     );
+    assert(firstActionRun.handoffActivated, "Handoff action did not expose its channel effect");
     assert(
       repeatedActionRun.skipped.includes(action.id),
       "Action retry was not skipped",
@@ -511,6 +512,34 @@ async function main() {
       leadResult.executed.includes(leadAction.id) &&
         leadResult.leadForms[0]?.title === "Richiedi un contatto",
       "Lead action did not return the guided form",
+    );
+    assert(
+      leadResult.channelMessages.some((value) => value.includes("Richiedi un contatto") && value.includes("email")),
+      "Lead action did not provide a channel-safe contact prompt",
+    );
+
+    const bookingAction = await prisma.agentAction.create({
+      data: {
+        botId: bot.id,
+        name: "Booking channel test",
+        type: "booking_link",
+        triggerKeywords: JSON.stringify(["appuntamento"]),
+        config: JSON.stringify({ label: "Prenota ora", url: "https://booking.example.com/consulta" }),
+      },
+    });
+    const bookingMessage = await prisma.message.create({
+      data: { conversationId: conversation.id, role: "user", content: "Vorrei un appuntamento" },
+    });
+    const bookingResult = await runTriggeredActions({
+      botId: bot.id,
+      conversationId: conversation.id,
+      messageId: bookingMessage.id,
+      message: bookingMessage.content,
+    });
+    assert(
+      bookingResult.executed.includes(bookingAction.id) &&
+        bookingResult.channelMessages.some((value) => value === "Prenota ora: https://booking.example.com/consulta"),
+      "Booking action did not provide its link to messaging channels",
     );
 
     const updatedConversation = await prisma.conversation.findUnique({

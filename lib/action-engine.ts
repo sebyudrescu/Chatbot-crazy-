@@ -24,6 +24,8 @@ export interface ActionResult {
     description: string;
     fields: string[];
   }>;
+  channelMessages: string[];
+  handoffActivated: boolean;
 }
 const parse = <T>(value: string, fallback: T): T => {
   try {
@@ -50,6 +52,8 @@ export async function runTriggeredActions(
       skipped: [],
       ctas: [],
       leadForms: [],
+      channelMessages: [],
+      handoffActivated: false,
     },
     normalized = context.message.toLocaleLowerCase("it");
   for (const action of actions) {
@@ -108,6 +112,7 @@ export async function runTriggeredActions(
           action: url.toString(),
           variant: "primary",
         });
+        result.channelMessages.push(`${config.label || "Prenota appuntamento"}: ${url.toString()}`);
         output = "CTA prenotazione mostrata";
         success = true;
       } else if (action.type === "handoff") {
@@ -131,6 +136,8 @@ export async function runTriggeredActions(
           },
         });
         output = "Conversazione passata a operatore";
+        result.handoffActivated = true;
+        if (config.message?.trim()) result.channelMessages.push(config.message.trim());
         success = true;
       } else if (action.type === "collect_lead") {
         const email = context.message.match(
@@ -146,6 +153,11 @@ export async function runTriggeredActions(
               "Ti ricontatteremo per aiutarti con la tua richiesta.",
             fields: ["name", "email", "phone", "company"],
           });
+          result.channelMessages.push([
+            config.title || "Lascia i tuoi contatti",
+            config.description || "Ti ricontatteremo per aiutarti con la tua richiesta.",
+            "Indicami il tuo nome e almeno un indirizzo email o un numero di telefono.",
+          ].join("\n"));
           output = "Modulo contatto mostrato";
         } else {
           await prisma.conversation.update({
