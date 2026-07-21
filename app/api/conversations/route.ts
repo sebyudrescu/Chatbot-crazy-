@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
           take: 1,
         },
       },
-      orderBy: { startedAt: 'desc' },
+      orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { startedAt: 'desc' }],
     })
     
     return NextResponse.json({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bot,
@@ -96,6 +96,11 @@ export default function ConversationsPage() {
   const [mobilePanel, setMobilePanel] = useState<
     "list" | "conversation" | "details"
   >("list");
+  const selectedRef = useRef<Conversation | null>(null);
+
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const openConversation = useCallback(
     async (conversation: Conversation, showOnMobile = true) => {
@@ -133,7 +138,7 @@ export default function ConversationsPage() {
       const result = await response.json();
       const conversations = result.success ? result.data : [];
       setItems(conversations);
-      if (conversations[0] && !selected) {
+      if (conversations[0] && !selectedRef.current) {
         const requestedId =
           typeof window !== "undefined"
             ? new URLSearchParams(window.location.search).get("conversation")
@@ -147,11 +152,50 @@ export default function ConversationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [openConversation, selected]);
+  }, [openConversation]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    let running = false;
+    const refresh = async () => {
+      if (!active || running || document.hidden) return;
+      running = true;
+      try {
+        const current = selectedRef.current;
+        const [listResult, detailResult] = await Promise.all([
+          fetch("/api/conversations", { cache: "no-store" }).then((response) => response.json()),
+          current
+            ? fetch(`/api/conversations/${current.id}`, { cache: "no-store" }).then((response) => response.json())
+            : Promise.resolve(null),
+        ]);
+        if (!active) return;
+        if (listResult.success) setItems(listResult.data);
+        if (detailResult?.success) {
+          setSelected((selectedConversation) =>
+            selectedConversation && selectedConversation.id === detailResult.data.id
+              ? { ...detailResult.data, _count: selectedConversation._count }
+              : selectedConversation,
+          );
+        }
+      } finally {
+        running = false;
+      }
+    };
+    const interval = window.setInterval(() => void refresh(), 8_000);
+    const onVisibilityChange = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   const bots = useMemo(
     () =>
