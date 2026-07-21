@@ -1016,6 +1016,8 @@ function deliveryLabel(status: string) {
       {
         pending: "invio…",
         sent: "inviato",
+        delivered: "consegnato",
+        read: "letto",
         failed: "non consegnato",
         received: "ricevuto",
       } as Record<string, string>

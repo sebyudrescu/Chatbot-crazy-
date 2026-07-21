@@ -12,12 +12,13 @@ export async function sendMetaText(input: { provider: MetaProvider; config: Meta
   const base = input.provider === "instagram" ? meta.instagramGraphBaseUrl : meta.graphBaseUrl;
   const payload = buildMetaTextPayload(input.provider, input.recipientId, input.text);
   const response = await fetch(`${base}/${meta.graphVersion}/${assetId}/messages`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+  const result = await response.json().catch(() => ({})) as { messages?: Array<{ id?: string }>; message_id?: string; error?: { message?: string } };
   if (!response.ok) {
     await prisma.message.update({ where: { id: input.messageId }, data: { deliveryStatus: "failed" } });
     throw new Error(result.error?.message || `Invio Meta fallito (${response.status})`);
   }
-  await prisma.message.update({ where: { id: input.messageId }, data: { deliveryStatus: "sent" } });
+  const externalMessageId = result.messages?.[0]?.id || result.message_id;
+  await prisma.message.update({ where: { id: input.messageId }, data: { deliveryStatus: "sent", ...(externalMessageId ? { externalMessageId } : {}) } });
 }
 
 export async function listWhatsAppTemplates(config: MetaConnectionConfig) {
@@ -42,10 +43,11 @@ export async function sendWhatsAppTemplate(input: { config: MetaConnectionConfig
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(buildWhatsAppTemplatePayload(input)),
   });
-  const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+  const result = await response.json().catch(() => ({})) as { messages?: Array<{ id?: string }>; error?: { message?: string } };
   if (!response.ok) {
     await prisma.message.update({ where: { id: input.messageId }, data: { deliveryStatus: "failed" } });
     throw new Error(result.error?.message || `Invio template WhatsApp fallito (${response.status})`);
   }
-  await prisma.message.update({ where: { id: input.messageId }, data: { deliveryStatus: "sent" } });
+  const externalMessageId = result.messages?.[0]?.id;
+  await prisma.message.update({ where: { id: input.messageId }, data: { deliveryStatus: "sent", ...(externalMessageId ? { externalMessageId } : {}) } });
 }

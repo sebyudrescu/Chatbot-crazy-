@@ -5,9 +5,11 @@ import { findMetaConnection, parseMetaConnection } from "@/lib/meta-connections"
 import { verifyMetaSignature } from "@/lib/meta-security";
 import { processIncomingChannelMessage } from "@/lib/channel-message-processor";
 import { sendMetaText } from "@/lib/meta-messaging";
+import { normalizeMetaDeliveryStatus, shouldAdvanceDeliveryStatus } from "@/lib/meta-payloads";
 
 type WhatsAppMessage = { id?: string; from?: string; type?: string; text?: { body?: string } };
-type WhatsAppValue = { metadata?: { phone_number_id?: string }; contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>; messages?: WhatsAppMessage[] };
+type WhatsAppStatus = { id?: string; status?: string; errors?: Array<{ code?: number; title?: string; message?: string }> };
+type WhatsAppValue = { metadata?: { phone_number_id?: string }; contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>; messages?: WhatsAppMessage[]; statuses?: WhatsAppStatus[] };
 type InstagramEvent = { sender?: { id?: string }; recipient?: { id?: string }; message?: { mid?: string; text?: string; is_echo?: boolean } };
 type MetaPayload = { object?: string; entry?: Array<{ id?: string; changes?: Array<{ value?: WhatsAppValue }>; messaging?: InstagramEvent[] }> };
 
@@ -31,6 +33,8 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
+export const maxDuration = 60;
+
 async function handleWhatsApp(payload: MetaPayload) {
   for (const entry of payload.entry || []) for (const change of entry.changes || []) {
     const value = change.value;
@@ -38,11 +42,31 @@ async function handleWhatsApp(payload: MetaPayload) {
     if (!phoneNumberId) continue;
     const found = await findMetaConnection("whatsapp", phoneNumberId);
     if (!found) continue;
+    for (const status of value?.statuses || []) await updateWhatsAppDeliveryStatus(status, found.connection.id, found.config);
     for (const message of value?.messages || []) {
       if (!message.id || !message.from || message.type !== "text" || !message.text?.body) continue;
       await respond({ provider: "whatsapp", channel: "whatsapp", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: message.from, externalMessageId: message.id, text: message.text.body, recipientId: message.from, userName: value?.contacts?.[0]?.profile?.name, userPhone: value?.contacts?.[0]?.wa_id });
     }
   }
+}
+
+async function updateWhatsAppDeliveryStatus(status: WhatsAppStatus, connectionId: string, config: NonNullable<ReturnType<typeof parseMetaConnection>>) {
+  if (!status.id || !status.status) return;
+  const normalized = normalizeMetaDeliveryStatus(status.status);
+  if (!normalized) return;
+  const message = await prisma.message.findUnique({ where: { externalMessageId: status.id }, select: { id: true, channel: true, deliveryStatus: true } });
+  if (message?.channel === "whatsapp" && shouldAdvanceDeliveryStatus(message.deliveryStatus, normalized)) {
+    await prisma.message.update({ where: { id: message.id }, data: { deliveryStatus: normalized } });
+  }
+  const failure = normalized === "failed" ? status.errors?.[0] : undefined;
+  await prisma.integrationConnection.update({
+    where: { id: connectionId },
+    data: {
+      config: JSON.stringify({ ...config, lastWebhookAt: new Date().toISOString() }),
+      lastTestedAt: new Date(),
+      ...(failure ? { lastError: (failure.message || failure.title || `Errore Meta ${failure.code || ""}`).slice(0, 500) } : {}),
+    },
+  });
 }
 
 async function handleInstagram(payload: MetaPayload) {

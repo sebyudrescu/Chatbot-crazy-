@@ -17,7 +17,7 @@ const { encryptMetaToken, decryptMetaToken, verifyMetaSignature } = require('../
 const { createMetaOAuthState, readMetaOAuthState } = require('../lib/meta-oauth-state.ts')
 const { createMetaClientLinkToken, readMetaClientLinkToken } = require('../lib/meta-client-link.ts')
 const { getMetaSetupReport, metaReadiness } = require('../lib/meta-config.ts')
-const { buildMetaTextPayload, buildWhatsAppTemplatePayload, renderWhatsAppTemplate, templateHasUnsupportedVariables, templateParameterCount, whatsappServiceWindow } = require('../lib/meta-payloads.ts')
+const { buildMetaTextPayload, buildWhatsAppTemplatePayload, normalizeMetaDeliveryStatus, renderWhatsAppTemplate, shouldAdvanceDeliveryStatus, templateHasUnsupportedVariables, templateParameterCount, whatsappServiceWindow } = require('../lib/meta-payloads.ts')
 
 function assert(condition, message) { if (!condition) throw new Error(message) }
 
@@ -96,5 +96,11 @@ const templatePayload = buildWhatsAppTemplatePayload({ recipientId: '39333123456
 assert(templatePayload.type === 'template' && templatePayload.template.components[0].parameters.length === 2, 'Payload template WhatsApp errato')
 const textPayload = buildMetaTextPayload('whatsapp', '393331234567', 'Ciao')
 assert(textPayload.type === 'text' && textPayload.to === '393331234567', 'Payload testo WhatsApp errato')
+assert(normalizeMetaDeliveryStatus('DELIVERED') === 'delivered', 'Stato consegna Meta non normalizzato')
+assert(normalizeMetaDeliveryStatus('unknown') === null, 'Stato Meta sconosciuto accettato')
+assert(shouldAdvanceDeliveryStatus('sent', 'delivered'), 'Avanzamento sent -> delivered rifiutato')
+assert(shouldAdvanceDeliveryStatus('delivered', 'read'), 'Avanzamento delivered -> read rifiutato')
+assert(!shouldAdvanceDeliveryStatus('read', 'delivered'), 'Stato read retrocesso a delivered')
+assert(!shouldAdvanceDeliveryStatus('failed', 'sent'), 'Stato failed retrocesso a sent')
 
 console.log('Meta security tests: OK')

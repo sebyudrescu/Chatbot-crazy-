@@ -1,5 +1,26 @@
 export const WHATSAPP_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+const DELIVERY_RANK: Record<string, number> = {
+  pending: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+  failed: 4,
+};
+
+export function normalizeMetaDeliveryStatus(value: string) {
+  const status = value.toLowerCase();
+  return status in DELIVERY_RANK ? status : null;
+}
+
+export function shouldAdvanceDeliveryStatus(current: string | null | undefined, next: string) {
+  const normalized = normalizeMetaDeliveryStatus(next);
+  if (!normalized) return false;
+  if (!current || !(current in DELIVERY_RANK)) return true;
+  if (current === "failed" || current === "read") return false;
+  return DELIVERY_RANK[normalized] >= DELIVERY_RANK[current];
+}
+
 export interface WhatsAppTemplateComponent {
   type: string;
   text?: string;
