@@ -198,6 +198,44 @@
       font-size: 14px;
     }
 
+    .chatbot-message-bubble p,
+    .chatbot-message-bubble ul,
+    .chatbot-message-bubble ol {
+      margin: 0;
+    }
+
+    .chatbot-message-bubble p + p,
+    .chatbot-message-bubble p + ul,
+    .chatbot-message-bubble p + ol,
+    .chatbot-message-bubble ul + p,
+    .chatbot-message-bubble ol + p {
+      margin-top: 8px;
+    }
+
+    .chatbot-message-bubble ul,
+    .chatbot-message-bubble ol {
+      padding-left: 20px;
+    }
+
+    .chatbot-message-bubble li + li {
+      margin-top: 4px;
+    }
+
+    .chatbot-message-bubble a {
+      color: inherit;
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .chatbot-message-bubble code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.1);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
     .chatbot-message-content {
       max-width: 84%;
     }
@@ -742,7 +780,11 @@
     const bubble = document.createElement('div');
     bubble.className = 'chatbot-message-bubble';
     if (options && options.error) bubble.classList.add('chatbot-error');
-    bubble.textContent = content;
+    if (sender === 'bot' && !(options && options.error)) {
+      renderSafeMarkdown(bubble, content);
+    } else {
+      bubble.textContent = content;
+    }
     contentElement.appendChild(bubble);
     messageElement.appendChild(contentElement);
     messagesContainer.appendChild(messageElement);
@@ -757,6 +799,93 @@
     // Store message
     messages.push({ sender, content, timestamp: new Date() });
     return contentElement;
+  }
+
+  function safeMarkdownUrl(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      const url = new URL(value, window.location.origin);
+      return ['http:', 'https:'].includes(url.protocol) ? url.toString() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function appendInlineMarkdown(parent, value) {
+    const input = String(value || '');
+    const pattern = /(\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|`([^`\n]+)`|\*([^*\n]+)\*|_([^_\n]+)_)/g;
+    let cursor = 0;
+    let match;
+
+    while ((match = pattern.exec(input)) !== null) {
+      if (match.index > cursor) parent.appendChild(document.createTextNode(input.slice(cursor, match.index)));
+      if (match[2] && match[3]) {
+        const url = safeMarkdownUrl(match[3]);
+        if (url) {
+          const link = document.createElement('a');
+          link.href = url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          appendInlineMarkdown(link, match[2]);
+          parent.appendChild(link);
+        } else {
+          parent.appendChild(document.createTextNode(match[0]));
+        }
+      } else if (match[4] || match[5]) {
+        const strong = document.createElement('strong');
+        appendInlineMarkdown(strong, match[4] || match[5]);
+        parent.appendChild(strong);
+      } else if (match[6]) {
+        const code = document.createElement('code');
+        code.textContent = match[6];
+        parent.appendChild(code);
+      } else if (match[7] || match[8]) {
+        const emphasis = document.createElement('em');
+        appendInlineMarkdown(emphasis, match[7] || match[8]);
+        parent.appendChild(emphasis);
+      }
+      cursor = match.index + match[0].length;
+    }
+
+    if (cursor < input.length) parent.appendChild(document.createTextNode(input.slice(cursor)));
+  }
+
+  function renderSafeMarkdown(container, content) {
+    const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
+    container.replaceChildren();
+
+    for (let index = 0; index < lines.length;) {
+      if (!lines[index].trim()) {
+        index += 1;
+        continue;
+      }
+
+      const unordered = lines[index].match(/^\s*[-+*]\s+(.+)$/);
+      const ordered = lines[index].match(/^\s*\d+[.)]\s+(.+)$/);
+      if (unordered || ordered) {
+        const list = document.createElement(ordered ? 'ol' : 'ul');
+        while (index < lines.length) {
+          const item = lines[index].match(ordered ? /^\s*\d+[.)]\s+(.+)$/ : /^\s*[-+*]\s+(.+)$/);
+          if (!item) break;
+          const listItem = document.createElement('li');
+          appendInlineMarkdown(listItem, item[1]);
+          list.appendChild(listItem);
+          index += 1;
+        }
+        container.appendChild(list);
+        continue;
+      }
+
+      const paragraph = document.createElement('p');
+      let hasLine = false;
+      while (index < lines.length && lines[index].trim() && !/^\s*(?:[-+*]|\d+[.)])\s+/.test(lines[index])) {
+        if (hasLine) paragraph.appendChild(document.createElement('br'));
+        appendInlineMarkdown(paragraph, lines[index]);
+        hasLine = true;
+        index += 1;
+      }
+      container.appendChild(paragraph);
+    }
   }
 
   function disablePendingReplies() {

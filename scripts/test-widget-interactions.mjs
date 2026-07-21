@@ -63,7 +63,13 @@ window.fetch = async (url, options = {}) => {
         conversationId: "00000000-0000-4000-8000-000000000002",
         assistantMessage: {
           id: "00000000-0000-4000-8000-000000000003",
-          content: "Posso aiutarti a prenotare.",
+          content: [
+            "**Posso aiutarti** a prenotare.",
+            "",
+            "- Consulta [i servizi](https://cliente.example/servizi)",
+            "- [Link non sicuro](javascript:alert(1))",
+            "- <img src=x onerror=window.__messageXss=true>",
+          ].join("\n"),
         },
         sources: [
           {
@@ -142,6 +148,15 @@ assert.match(
 );
 
 await window.ChatbotWidget.sendMessage("Vorrei prenotare");
+
+const richBubble = [...window.document.querySelectorAll(".chatbot-message.bot .chatbot-message-bubble")].at(-1);
+assert.equal(richBubble?.querySelector("strong")?.textContent, "Posso aiutarti", "Il grassetto Markdown non viene renderizzato");
+assert.equal(richBubble?.querySelectorAll("ul li").length, 3, "L'elenco Markdown non viene renderizzato");
+assert.equal(richBubble?.querySelector('a[href="https://cliente.example/servizi"]')?.textContent, "i servizi", "Il link HTTPS Markdown non viene renderizzato");
+assert.equal(richBubble?.querySelector('a[href^="javascript:"]'), null, "Un link Markdown pericoloso è cliccabile");
+assert.equal(richBubble?.querySelector("img"), null, "Il contenuto HTML di una risposta è stato eseguito");
+assert.match(richBubble?.textContent || "", /<img src=x onerror=/, "L'HTML non attendibile non resta testo");
+assert.equal(window.__messageXss, undefined, "Il contenuto della risposta ha eseguito JavaScript");
 
 assert.equal(requests.length, 1, "Il widget esegue richieste API superflue");
 assert.equal(requests[0].url, "https://litx.example/api/chat");

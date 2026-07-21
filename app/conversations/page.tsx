@@ -25,6 +25,7 @@ import {
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/Button";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { SafeRichText } from "@/components/chat/SafeRichText";
 import { whatsappServiceWindow } from "@/lib/meta-payloads";
 
 interface Message {
@@ -612,7 +613,11 @@ export default function ConversationsPage() {
                       <div
                         className={`max-w-[88%] rounded-2xl px-4 py-3 text-xs leading-5 shadow-sm sm:max-w-[72%] ${message.role === "user" ? "rounded-bl-sm border bg-white text-gray-700" : "rounded-br-sm bg-brand-600 text-white"}`}
                       >
-                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        {message.role === "assistant" ? (
+                          <SafeRichText content={message.content} />
+                        ) : (
+                          <p className="whitespace-pre-wrap">{message.content}</p>
+                        )}
                         <p className="mt-1 text-[9px] opacity-60">
                           {new Date(message.createdAt).toLocaleTimeString(
                             "it-IT",
