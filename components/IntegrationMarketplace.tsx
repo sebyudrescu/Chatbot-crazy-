@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Bot, Check, CheckCircle2, CircleX, Copy, ExternalLink, Loader2, Plug, Search, Settings2, ShieldCheck, Unplug, Wifi } from 'lucide-react'
+import { Bot, Check, CheckCircle2, CircleX, Copy, ExternalLink, Link2, Loader2, Plug, Search, Settings2, ShieldCheck, Unplug, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { launchWhatsAppEmbeddedSignup } from '@/lib/meta-browser'
 
 interface Agent { id: string; companyName: string }
 interface Connection { id: string; enabled: boolean; status: string; config: Record<string, string>; lastTestedAt?: string; lastError?: string }
@@ -58,8 +59,8 @@ export function IntegrationMarketplace({ initialCategory = 'all' }: { initialCat
         if (!response.ok) throw new Error(result.error || 'Avvio Instagram non riuscito')
         window.location.assign(result.data.url); return
       }
-      const [asset, code] = await Promise.all([waitForWhatsAppSignup(), launchFacebookLogin(metaStatus)])
-      const response = await fetch('/api/meta/whatsapp/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId, code, ...asset }) }), result = await response.json()
+      const signup = await launchWhatsAppEmbeddedSignup(metaStatus)
+      const response = await fetch('/api/meta/whatsapp/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId, ...signup }) }), result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Collegamento WhatsApp non riuscito')
       setMessage('WhatsApp collegato correttamente. Il chatbot può ricevere e rispondere ai nuovi messaggi.'); await load()
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Collegamento Meta non riuscito') }
@@ -79,14 +80,19 @@ function IntegrationDialog({ editing, botId, config, setConfig, busy, message, m
   const meta = isMeta(editing.provider) ? metaStatus?.[editing.provider] : undefined
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="integration-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-hard"><div className="flex items-start gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl text-xs font-bold text-white" style={{ backgroundColor: editing.color }}>{editing.initials}</div><div><p className="eyebrow">Configurazione</p><h2 id="integration-title" className="text-lg font-bold">{editing.name}</h2></div></div><div className="mt-5 space-y-4">
     {editing.fields?.map(field => <label key={field.key} className="block"><span className="label">{field.label}</span><input className="input" type={field.type === 'secret' ? 'password' : field.type || 'text'} autoComplete={field.type === 'secret' ? 'new-password' : undefined} value={config[field.key] || ''} onChange={event => setConfig({ ...config, [field.key]: event.target.value })} placeholder={field.placeholder} /></label>)}
-    {isMeta(editing.provider) ? <MetaConnectionPanel provider={editing.provider} state={meta} webhookUrl={metaStatus?.webhookUrl} /> : editing.mode === 'native' && <div className="rounded-xl bg-emerald-50 p-4 text-xs leading-5 text-emerald-700"><Check className="mb-2 h-4 w-4" />Questa funzione è già inclusa nella piattaforma. Attivandola apparirà tra i canali collegati.</div>}
+    {isMeta(editing.provider) ? <MetaConnectionPanel botId={botId} provider={editing.provider} state={meta} webhookUrl={metaStatus?.webhookUrl} /> : editing.mode === 'native' && <div className="rounded-xl bg-emerald-50 p-4 text-xs leading-5 text-emerald-700"><Check className="mb-2 h-4 w-4" />Questa funzione è già inclusa nella piattaforma. Attivandola apparirà tra i canali collegati.</div>}
     {message && <p role="alert" className={`rounded-lg p-3 text-xs ${message.includes('correttamente') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{message}</p>}
     {editing.provider === 'webhook' && editing.connection && <DeliveryHistory connectionId={editing.connection.id} />}
   </div><div className="mt-6 flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Annulla</Button>{editing.connection && editing.mode === 'configuration' && <Button variant="secondary" onClick={onTest} disabled={busy} icon={<Wifi className="h-4 w-4" />}>Testa</Button>}{isMeta(editing.provider) ? <Button onClick={() => onConnectMeta(editing.provider as 'whatsapp' | 'instagram')} disabled={busy || meta?.connected || !meta?.configured} icon={busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}>{meta?.connected ? 'Collegato' : 'Continua con Meta'}</Button> : <Button onClick={onSave} disabled={busy} icon={busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}>Salva</Button>}</div>{editing.provider === 'public-page' && botId && <a className="mt-4 flex items-center justify-center gap-1 text-xs font-semibold text-brand-700" href={`/chat/${botId}`} target="_blank">Apri pagina pubblica <ExternalLink className="h-3 w-3" /></a>}</div></div>
 }
 
-function MetaConnectionPanel({ provider, state, webhookUrl }: { provider: 'whatsapp' | 'instagram'; state?: MetaChannelState; webhookUrl?: string }) {
+function MetaConnectionPanel({ botId, provider, state, webhookUrl }: { botId: string; provider: 'whatsapp' | 'instagram'; state?: MetaChannelState; webhookUrl?: string }) {
   const [copied, setCopied] = useState(false)
+  const [clientLink, setClientLink] = useState('')
+  const [clientLinkExpiresAt, setClientLinkExpiresAt] = useState('')
+  const [clientLinkBusy, setClientLinkBusy] = useState(false)
+  const [clientLinkError, setClientLinkError] = useState('')
+  const [clientCopied, setClientCopied] = useState(false)
   const copyWebhook = async () => {
     if (!webhookUrl) return
     await navigator.clipboard.writeText(webhookUrl)
@@ -96,6 +102,17 @@ function MetaConnectionPanel({ provider, state, webhookUrl }: { provider: 'whats
   const docsUrl = provider === 'whatsapp'
     ? 'https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview'
     : 'https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login'
+  const createClientLink = async () => {
+    setClientLinkBusy(true); setClientLinkError('')
+    try {
+      const response = await fetch('/api/meta/client-link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId, provider }) })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Link cliente non disponibile')
+      setClientLink(result.data.url); setClientLinkExpiresAt(result.data.expiresAt)
+      await navigator.clipboard.writeText(result.data.url); setClientCopied(true); window.setTimeout(() => setClientCopied(false), 1800)
+    } catch (error) { setClientLinkError(error instanceof Error ? error.message : 'Link cliente non disponibile') }
+    finally { setClientLinkBusy(false) }
+  }
 
   return <div className={`rounded-xl border p-4 ${state?.configured ? 'border-brand-100 bg-brand-50/40' : 'border-amber-200 bg-amber-50'}`}>
     <div className="flex items-start gap-3">
@@ -107,6 +124,13 @@ function MetaConnectionPanel({ provider, state, webhookUrl }: { provider: 'whats
           : state?.configured
             ? `Configurazione proprietario completata. Si aprirà il login ${provider === 'whatsapp' ? 'Facebook/WhatsApp' : 'Instagram'} e il cliente selezionerà il proprio account senza condividere password o token.`
             : 'Configurazione proprietario da completare una sola volta. I clienti non dovranno fornirti App ID, segreti o token.'}</p>
+
+        {state?.configured && !state.connected && <div className="mt-4 rounded-xl border border-brand-100 bg-white/90 p-3">
+          <div className="flex items-start gap-2"><Link2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /><div><p className="text-[10px] font-semibold uppercase tracking-wider text-brand-700">Collegamento assistito cliente</p><p className="mt-1 text-[10px] leading-4 text-gray-600">Genera un link sicuro valido 30 minuti. Il cliente accede direttamente con Meta senza vedere la dashboard e senza comunicarti credenziali.</p></div></div>
+          {clientLink && <div className="mt-3 rounded-lg bg-gray-50 p-2"><p className="break-all font-mono text-[9px] leading-4 text-gray-500">{clientLink}</p><p className="mt-1 text-[9px] text-gray-400">Scade alle {new Date(clientLinkExpiresAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</p></div>}
+          {clientLinkError && <p role="alert" className="mt-2 text-[10px] text-red-700">{clientLinkError}</p>}
+          <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={clientLinkBusy} onClick={createClientLink} icon={clientLinkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : clientCopied ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}>{clientCopied ? 'Link copiato' : clientLink ? 'Genera e copia un nuovo link' : 'Genera e copia link cliente'}</Button>
+        </div>}
 
         {!state?.configured && state?.setup && <div className="mt-4 rounded-xl border border-amber-200 bg-white/80 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Setup della tua piattaforma</p>
@@ -132,23 +156,6 @@ function MetaConnectionPanel({ provider, state, webhookUrl }: { provider: 'whats
       </div>
     </div>
   </div>
-}
-
-type FacebookSdk = { init(options: { appId: string; cookie: boolean; xfbml: boolean; version: string }): void; login(callback: (response: { authResponse?: { code?: string } }) => void, options: Record<string, unknown>): void }
-async function loadFacebookSdk(status: MetaStatus) {
-  const target = window as typeof window & { FB?: FacebookSdk; fbAsyncInit?: () => void }
-  if (target.FB) return target.FB
-  await new Promise<void>((resolve, reject) => { target.fbAsyncInit = () => { target.FB?.init({ appId: status.appId, cookie: true, xfbml: false, version: status.graphVersion }); resolve() }; if (document.getElementById('facebook-jssdk')) return; const script = document.createElement('script'); script.id = 'facebook-jssdk'; script.src = 'https://connect.facebook.net/en_US/sdk.js'; script.async = true; script.defer = true; script.onerror = () => reject(new Error('Impossibile caricare il login Meta')); document.body.appendChild(script) })
-  if (!target.FB) throw new Error('SDK Meta non disponibile')
-  return target.FB
-}
-async function launchFacebookLogin(status: MetaStatus) { const sdk = await loadFacebookSdk(status); return new Promise<string>((resolve, reject) => sdk.login(response => response.authResponse?.code ? resolve(response.authResponse.code) : reject(new Error('Login Meta annullato o non autorizzato')), { config_id: status.whatsappConfigId, response_type: 'code', override_default_response_type: true, extras: { setup: {} } })) }
-function waitForWhatsAppSignup() {
-  return new Promise<{ wabaId: string; phoneNumberId: string; businessId?: string }>((resolve, reject) => {
-    const timeout = window.setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('Meta non ha restituito il numero WhatsApp selezionato')) }, 120_000)
-    const listener = (event: MessageEvent) => { if (!/^https:\/\/([a-z0-9-]+\.)*facebook\.com$/i.test(event.origin)) return; let payload: unknown = event.data; if (typeof payload === 'string') { try { payload = JSON.parse(payload) } catch { return } }; const data = payload as { type?: string; event?: string; data?: { waba_id?: string; phone_number_id?: string; business_id?: string } }; if (data.type !== 'WA_EMBEDDED_SIGNUP') return; if (data.event === 'CANCEL') { window.clearTimeout(timeout); window.removeEventListener('message', listener); reject(new Error('Configurazione WhatsApp annullata')); return }; if (data.event === 'FINISH' && data.data?.waba_id && data.data.phone_number_id) { window.clearTimeout(timeout); window.removeEventListener('message', listener); resolve({ wabaId: data.data.waba_id, phoneNumberId: data.data.phone_number_id, businessId: data.data.business_id }) } }
-    window.addEventListener('message', listener)
-  })
 }
 
 function DeliveryHistory({ connectionId }: { connectionId: string }) {

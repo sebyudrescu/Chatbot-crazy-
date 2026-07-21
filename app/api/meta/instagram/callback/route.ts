@@ -2,9 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { metaConfiguration } from "@/lib/meta-config";
 import { readMetaOAuthState } from "@/lib/meta-oauth-state";
 import { saveMetaConnection } from "@/lib/meta-connections";
+import { readMetaClientLinkToken } from "@/lib/meta-client-link";
 
 function channelsRedirect(request: NextRequest, status: string, detail?: string) {
   const target = new URL("/channels", request.url);
+  target.searchParams.set("meta", status);
+  if (detail) target.searchParams.set("detail", detail.slice(0, 160));
+  return NextResponse.redirect(target);
+}
+
+function clientRedirect(request: NextRequest, token: string, status: string, detail?: string) {
+  const target = new URL("/connect/meta", request.url);
+  target.searchParams.set("token", token);
   target.searchParams.set("meta", status);
   if (detail) target.searchParams.set("detail", detail.slice(0, 160));
   return NextResponse.redirect(target);
@@ -15,9 +24,15 @@ export async function GET(request: NextRequest) {
     const code = request.nextUrl.searchParams.get("code")?.replace(/#_$/, "");
     const state = request.nextUrl.searchParams.get("state");
     const error = request.nextUrl.searchParams.get("error_description");
-    if (error) return channelsRedirect(request, "error", error);
+    if (error) throw new Error(error);
     if (!code || !state) throw new Error("Risposta Instagram incompleta");
     const parsedState = readMetaOAuthState(state);
+    if (parsedState.clientToken) {
+      const clientLink = readMetaClientLinkToken(parsedState.clientToken);
+      if (clientLink.botId !== parsedState.botId || clientLink.provider !== "instagram") {
+        throw new Error("Collegamento cliente non valido");
+      }
+    }
     const meta = metaConfiguration();
     const form = new URLSearchParams({ client_id: meta.instagramAppId, client_secret: meta.instagramAppSecret, grant_type: "authorization_code", redirect_uri: `${meta.appUrl}/api/meta/instagram/callback`, code });
     const tokenResponse = await fetch("https://api.instagram.com/oauth/access_token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
@@ -34,9 +49,30 @@ export async function GET(request: NextRequest) {
     const profile = await profileResponse.json() as { user_id?: string; id?: string; username?: string; error?: { message?: string } };
     const accountId = String(profile.user_id || profile.id || token.user_id || "");
     if (!profileResponse.ok || !accountId) throw new Error(profile.error?.message || "Account professionale Instagram non trovato");
+    const subscriptionUrl = new URL(`${meta.instagramGraphBaseUrl}/${meta.graphVersion}/${accountId}/subscribed_apps`);
+    subscriptionUrl.searchParams.set("subscribed_fields", "messages,messaging_postbacks");
+    const subscriptionResponse = await fetch(subscriptionUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+    const subscription = await subscriptionResponse.json().catch(() => ({})) as { success?: boolean; error?: { message?: string } };
+    if (!subscriptionResponse.ok || subscription.success !== true) {
+      throw new Error(subscription.error?.message || "Impossibile attivare i webhook Instagram per questo account");
+    }
     await saveMetaConnection({ botId: parsedState.botId, provider: "instagram", accessToken, details: { instagramAccountId: accountId, instagramUsername: profile.username, tokenExpiresAt: longToken.expires_in ? new Date(Date.now() + longToken.expires_in * 1000).toISOString() : undefined } });
-    return channelsRedirect(request, "instagram-connected");
+    return parsedState.clientToken
+      ? clientRedirect(request, parsedState.clientToken, "instagram-connected")
+      : channelsRedirect(request, "instagram-connected");
   } catch (error) {
+    const state = request.nextUrl.searchParams.get("state");
+    if (state) {
+      try {
+        const parsed = readMetaOAuthState(state);
+        if (parsed.clientToken) {
+          return clientRedirect(request, parsed.clientToken, "error", error instanceof Error ? error.message : "Collegamento Instagram non riuscito");
+        }
+      } catch {}
+    }
     return channelsRedirect(request, "error", error instanceof Error ? error.message : "Collegamento Instagram non riuscito");
   }
 }

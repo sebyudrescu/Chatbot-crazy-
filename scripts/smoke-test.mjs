@@ -110,6 +110,30 @@ try {
     middlewareBypassAttempt.status === 401,
     "Protected API accepted an x-middleware-subrequest bypass attempt",
   );
+  const metaClientPage = await fetch(`${baseUrl}/connect/meta`, { redirect: "manual" });
+  assert(
+    metaClientPage.status === 200 && (await metaClientPage.text()).includes("LitX AI"),
+    "Public Meta client connection page is unavailable",
+  );
+  const invalidMetaClientLink = await fetch(
+    `${baseUrl}/api/meta/client/status?token=invalid`,
+  );
+  assert(
+    invalidMetaClientLink.status === 401,
+    "Invalid Meta client link was not rejected",
+  );
+  const unauthenticatedMetaLinkCreation = await fetch(`${baseUrl}/api/meta/client-link`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      botId: "00000000-0000-4000-8000-000000000000",
+      provider: "whatsapp",
+    }),
+  });
+  assert(
+    unauthenticatedMetaLinkCreation.status === 401,
+    "Meta client link creation is not owner-protected",
+  );
   const health = await request("/api/health");
   assert(
     health.status === "healthy" || health.success !== false,
@@ -1245,6 +1269,9 @@ try {
         checks: [
           "health",
           "owner-proxy-bypass-rejection",
+          "meta-client-page-public",
+          "meta-client-link-signature-rejection",
+          "meta-client-link-owner-protection",
           "agent",
           "agent-deletion-ingestion-guard",
           "settings",

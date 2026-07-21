@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { MetaProvider } from "@/lib/meta-config";
 
-interface OAuthState { botId: string; provider: MetaProvider; expiresAt: number }
+interface OAuthState { botId: string; provider: MetaProvider; expiresAt: number; clientToken?: string }
 
 function secret(provider: MetaProvider) {
   const value = provider === "instagram"
@@ -12,8 +12,8 @@ function secret(provider: MetaProvider) {
   return value;
 }
 
-export function createMetaOAuthState(botId: string, provider: MetaProvider, now = Date.now()) {
-  const payload = Buffer.from(JSON.stringify({ botId, provider, expiresAt: now + 10 * 60_000 } satisfies OAuthState)).toString("base64url");
+export function createMetaOAuthState(botId: string, provider: MetaProvider, now = Date.now(), clientToken?: string) {
+  const payload = Buffer.from(JSON.stringify({ botId, provider, expiresAt: now + 10 * 60_000, clientToken } satisfies OAuthState)).toString("base64url");
   const signature = createHmac("sha256", secret(provider)).update(payload).digest("base64url");
   return `${payload}.${signature}`;
 }
@@ -28,6 +28,7 @@ export function readMetaOAuthState(value: string, now = Date.now()): OAuthState 
     throw new Error("Stato OAuth non valido");
   }
   if (!parsed.botId || !["whatsapp", "instagram"].includes(parsed.provider)) throw new Error("Stato OAuth non valido");
+  if (parsed.clientToken && parsed.clientToken.length > 2_048) throw new Error("Stato OAuth non valido");
   const expected = createHmac("sha256", secret(parsed.provider)).update(payload).digest("base64url");
   const actualBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);

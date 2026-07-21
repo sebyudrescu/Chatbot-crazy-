@@ -10,6 +10,12 @@ LitX usa i flussi ufficiali Meta. Le credenziali tecniche appartengono alla piat
 4. Il cliente seleziona il proprio Business Account, account professionale e numero.
 5. LitX scambia il codice temporaneo sul server, cifra il token e collega il webhook.
 
+Per Instagram, LitX iscrive automaticamente l'account professionale agli eventi `messages` e `messaging_postbacks` tramite `/{ig_user_id}/subscribed_apps`; il solo login OAuth non è considerato un collegamento completato.
+
+Il proprietario può anche generare da **Canali > Configura > Collegamento assistito cliente** un link firmato valido 30 minuti. Il cliente apre una pagina pubblica limitata al solo collegamento Meta: non vede la dashboard, non conosce la password di LitX e non deve inviare credenziali tramite chat o email.
+
+Il link contiene soltanto agente, provider e scadenza, è protetto con HMAC e viene rifiutato se modificato o scaduto. Dopo il collegamento, la pagina mostra esclusivamente la conferma e può essere chiusa.
+
 ## Configurazione iniziale del proprietario
 
 Nel portale Meta for Developers:

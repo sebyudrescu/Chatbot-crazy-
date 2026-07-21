@@ -15,6 +15,7 @@ process.env.META_INSTAGRAM_APP_SECRET = 'instagram-test-secret-that-is-long-enou
 
 const { encryptMetaToken, decryptMetaToken, verifyMetaSignature } = require('../lib/meta-security.ts')
 const { createMetaOAuthState, readMetaOAuthState } = require('../lib/meta-oauth-state.ts')
+const { createMetaClientLinkToken, readMetaClientLinkToken } = require('../lib/meta-client-link.ts')
 const { getMetaSetupReport, metaReadiness } = require('../lib/meta-config.ts')
 const { buildMetaTextPayload, buildWhatsAppTemplatePayload, renderWhatsAppTemplate, templateHasUnsupportedVariables, templateParameterCount, whatsappServiceWindow } = require('../lib/meta-payloads.ts')
 
@@ -45,6 +46,20 @@ process.env.META_INSTAGRAM_APP_SECRET = previousInstagramSecret
 let expiredRejected = false
 try { readMetaOAuthState(state, 700_000) } catch { expiredRejected = true }
 assert(expiredRejected, 'Stato OAuth scaduto accettato')
+
+const clientLink = createMetaClientLinkToken('3f47da9f-b8c8-4b35-b25b-bd6425af18fb', 'whatsapp', 1_000, 30_000)
+const clientPayload = readMetaClientLinkToken(clientLink.token, 2_000)
+assert(clientPayload.provider === 'whatsapp' && clientPayload.botId === '3f47da9f-b8c8-4b35-b25b-bd6425af18fb', 'Link cliente valido rifiutato')
+let clientLinkTamperRejected = false
+const tamperedClientLink = `${clientLink.token[0] === 'e' ? 'f' : 'e'}${clientLink.token.slice(1)}`
+try { readMetaClientLinkToken(tamperedClientLink, 2_000) } catch { clientLinkTamperRejected = true }
+assert(clientLinkTamperRejected, 'Link cliente alterato accettato')
+let clientLinkExpiredRejected = false
+try { readMetaClientLinkToken(clientLink.token, 31_001) } catch { clientLinkExpiredRejected = true }
+assert(clientLinkExpiredRejected, 'Link cliente scaduto accettato')
+const instagramClientLink = createMetaClientLinkToken(clientPayload.botId, 'instagram', 1_000, 30_000)
+const clientState = createMetaOAuthState(clientPayload.botId, 'instagram', 1_000, instagramClientLink.token)
+assert(readMetaOAuthState(clientState, 2_000).clientToken === instagramClientLink.token, 'Token cliente perso nello stato OAuth')
 
 const completeMetaEnv = {
   NEXT_PUBLIC_APP_URL: 'https://agents.example.com',
