@@ -14,7 +14,7 @@ Per Instagram, LitX iscrive automaticamente l'account professionale agli eventi 
 
 Il proprietario può anche generare da **Canali > Configura > Collegamento assistito cliente** un link firmato valido 30 minuti. Il cliente apre una pagina pubblica limitata al solo collegamento Meta: non vede la dashboard, non conosce la password di LitX e non deve inviare credenziali tramite chat o email.
 
-Il link contiene soltanto agente, provider e scadenza, è protetto con HMAC e viene rifiutato se modificato o scaduto. Dopo il collegamento, la pagina mostra esclusivamente la conferma e può essere chiusa.
+Il link contiene soltanto agente, provider, emissione e scadenza, è protetto con HMAC e viene rifiutato se modificato, scaduto o già utilizzato. Dopo il collegamento, la pagina mostra esclusivamente la conferma e può essere chiusa.
 
 ## Configurazione iniziale del proprietario
 

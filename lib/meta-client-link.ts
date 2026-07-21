@@ -2,10 +2,11 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { metaConfiguration, type MetaProvider } from "./meta-config";
 
-interface MetaClientLinkPayload {
-  version: 1;
+export interface MetaClientLinkPayload {
+  version: 2;
   botId: string;
   provider: MetaProvider;
+  issuedAt: number;
   expiresAt: number;
 }
 
@@ -32,9 +33,10 @@ export function createMetaClientLinkToken(
     throw new Error("Dati collegamento cliente non validi");
   }
   const payload: MetaClientLinkPayload = {
-    version: 1,
+    version: 2,
     botId,
     provider,
+    issuedAt: now,
     expiresAt: now + ttlMs,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -69,13 +71,15 @@ export function readMetaClientLinkToken(
     throw new Error("Link cliente non valido");
   }
   if (
-    payload.version !== 1 ||
+    payload.version !== 2 ||
     !UUID.test(payload.botId) ||
     !["whatsapp", "instagram"].includes(payload.provider) ||
+    !Number.isSafeInteger(payload.issuedAt) ||
     !Number.isSafeInteger(payload.expiresAt)
   ) {
     throw new Error("Link cliente non valido");
   }
-  if (payload.expiresAt < now) throw new Error("Link cliente scaduto");
+  if (payload.expiresAt <= payload.issuedAt) throw new Error("Link cliente non valido");
+  if (payload.expiresAt <= now) throw new Error("Link cliente scaduto");
   return payload;
 }

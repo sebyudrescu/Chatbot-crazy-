@@ -50,12 +50,13 @@ assert(expiredRejected, 'Stato OAuth scaduto accettato')
 const clientLink = createMetaClientLinkToken('3f47da9f-b8c8-4b35-b25b-bd6425af18fb', 'whatsapp', 1_000, 30_000)
 const clientPayload = readMetaClientLinkToken(clientLink.token, 2_000)
 assert(clientPayload.provider === 'whatsapp' && clientPayload.botId === '3f47da9f-b8c8-4b35-b25b-bd6425af18fb', 'Link cliente valido rifiutato')
+assert(clientPayload.version === 2 && clientPayload.issuedAt === 1_000, 'Versione o data emissione link cliente errata')
 let clientLinkTamperRejected = false
 const tamperedClientLink = `${clientLink.token[0] === 'e' ? 'f' : 'e'}${clientLink.token.slice(1)}`
 try { readMetaClientLinkToken(tamperedClientLink, 2_000) } catch { clientLinkTamperRejected = true }
 assert(clientLinkTamperRejected, 'Link cliente alterato accettato')
 let clientLinkExpiredRejected = false
-try { readMetaClientLinkToken(clientLink.token, 31_001) } catch { clientLinkExpiredRejected = true }
+try { readMetaClientLinkToken(clientLink.token, 31_000) } catch { clientLinkExpiredRejected = true }
 assert(clientLinkExpiredRejected, 'Link cliente scaduto accettato')
 const instagramClientLink = createMetaClientLinkToken(clientPayload.botId, 'instagram', 1_000, 30_000)
 const clientState = createMetaOAuthState(clientPayload.botId, 'instagram', 1_000, instagramClientLink.token)

@@ -3,6 +3,7 @@ import { metaConfiguration } from "@/lib/meta-config";
 import { readMetaOAuthState } from "@/lib/meta-oauth-state";
 import { saveMetaConnection } from "@/lib/meta-connections";
 import { readMetaClientLinkToken } from "@/lib/meta-client-link";
+import { assertMetaClientLinkUnused } from "@/lib/meta-client-link-usage";
 
 function channelsRedirect(request: NextRequest, status: string, detail?: string) {
   const target = new URL("/channels", request.url);
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest) {
       if (clientLink.botId !== parsedState.botId || clientLink.provider !== "instagram") {
         throw new Error("Collegamento cliente non valido");
       }
+      await assertMetaClientLinkUnused(clientLink);
     }
     const meta = metaConfiguration();
     const form = new URLSearchParams({ client_id: meta.instagramAppId, client_secret: meta.instagramAppSecret, grant_type: "authorization_code", redirect_uri: `${meta.appUrl}/api/meta/instagram/callback`, code });
@@ -58,6 +60,9 @@ export async function GET(request: NextRequest) {
     const subscription = await subscriptionResponse.json().catch(() => ({})) as { success?: boolean; error?: { message?: string } };
     if (!subscriptionResponse.ok || subscription.success !== true) {
       throw new Error(subscription.error?.message || "Impossibile attivare i webhook Instagram per questo account");
+    }
+    if (parsedState.clientToken) {
+      await assertMetaClientLinkUnused(readMetaClientLinkToken(parsedState.clientToken));
     }
     await saveMetaConnection({ botId: parsedState.botId, provider: "instagram", accessToken, details: { instagramAccountId: accountId, instagramUsername: profile.username, tokenExpiresAt: longToken.expires_in ? new Date(Date.now() + longToken.expires_in * 1000).toISOString() : undefined } });
     return parsedState.clientToken

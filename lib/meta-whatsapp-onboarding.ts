@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { metaConfiguration, metaReadiness } from "@/lib/meta-config";
 import { saveMetaConnection } from "@/lib/meta-connections";
+import { assertMetaClientLinkUnused } from "@/lib/meta-client-link-usage";
 
 export interface CompleteWhatsAppConnectionInput {
   botId: string;
@@ -9,6 +10,7 @@ export interface CompleteWhatsAppConnectionInput {
   wabaId: string;
   phoneNumberId: string;
   businessId?: string;
+  clientLinkIssuedAt?: number;
 }
 
 export async function completeWhatsAppConnection(input: CompleteWhatsAppConnectionInput) {
@@ -31,6 +33,24 @@ export async function completeWhatsAppConnection(input: CompleteWhatsAppConnecti
     throw new Error(tokenData.error?.message || "Meta non ha restituito un token valido");
   }
 
+  const phoneListUrl = new URL(`${meta.graphBaseUrl}/${meta.graphVersion}/${input.wabaId}/phone_numbers`);
+  phoneListUrl.searchParams.set("fields", "id,display_phone_number");
+  phoneListUrl.searchParams.set("limit", "100");
+  const phoneResponse = await fetch(phoneListUrl, {
+    headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: "application/json" },
+  });
+  const phones = (await phoneResponse.json().catch(() => ({}))) as {
+    data?: Array<{ id?: string; display_phone_number?: string }>;
+    error?: { message?: string };
+  };
+  if (!phoneResponse.ok) {
+    throw new Error(phones.error?.message || "Impossibile verificare i numeri del WhatsApp Business Account");
+  }
+  const selectedPhone = phones.data?.find((phone) => phone.id === input.phoneNumberId);
+  if (!selectedPhone) {
+    throw new Error("Il numero selezionato non appartiene al WhatsApp Business Account autorizzato");
+  }
+
   const subscription = await fetch(
     `${meta.graphBaseUrl}/${meta.graphVersion}/${input.wabaId}/subscribed_apps`,
     { method: "POST", headers: { Authorization: `Bearer ${tokenData.access_token}` } },
@@ -40,11 +60,13 @@ export async function completeWhatsAppConnection(input: CompleteWhatsAppConnecti
     throw new Error(detail.error?.message || "Impossibile iscrivere il webhook al WhatsApp Business Account");
   }
 
-  const phoneResponse = await fetch(
-    `${meta.graphBaseUrl}/${meta.graphVersion}/${input.phoneNumberId}?fields=display_phone_number`,
-    { headers: { Authorization: `Bearer ${tokenData.access_token}` } },
-  );
-  const phone = (await phoneResponse.json().catch(() => ({}))) as { display_phone_number?: string };
+  if (input.clientLinkIssuedAt) {
+    await assertMetaClientLinkUnused({
+      botId: input.botId,
+      provider: "whatsapp",
+      issuedAt: input.clientLinkIssuedAt,
+    });
+  }
   await saveMetaConnection({
     botId: input.botId,
     provider: "whatsapp",
@@ -53,11 +75,11 @@ export async function completeWhatsAppConnection(input: CompleteWhatsAppConnecti
       wabaId: input.wabaId,
       phoneNumberId: input.phoneNumberId,
       businessId: input.businessId,
-      displayPhoneNumber: phone.display_phone_number,
+      displayPhoneNumber: selectedPhone.display_phone_number,
       tokenExpiresAt: tokenData.expires_in
         ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
         : undefined,
     },
   });
-  return { displayPhoneNumber: phone.display_phone_number || null };
+  return { displayPhoneNumber: selectedPhone.display_phone_number || null };
 }

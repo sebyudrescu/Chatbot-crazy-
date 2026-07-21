@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readMetaClientLinkToken } from "@/lib/meta-client-link";
+import { assertMetaClientLinkUnused } from "@/lib/meta-client-link-usage";
 import { createMetaOAuthState } from "@/lib/meta-oauth-state";
 import { metaConfiguration, metaReadiness } from "@/lib/meta-config";
 
@@ -8,6 +9,7 @@ export async function GET(request: NextRequest) {
     const token = request.nextUrl.searchParams.get("token") || "";
     const link = readMetaClientLinkToken(token);
     if (link.provider !== "instagram") throw new Error("Questo link non è valido per Instagram");
+    await assertMetaClientLinkUnused(link);
     if (!metaReadiness("instagram")) throw new Error("Configurazione Instagram non disponibile");
 
     const meta = metaConfiguration();
