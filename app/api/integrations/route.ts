@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { findIntegration, INTEGRATION_CATALOG, safeHttpsUrl } from '@/lib/integration-catalog'
 import { redactSecrets, restoreMaskedSecrets } from '@/lib/secret-config'
 import { assertSafeRemoteUrl } from '@/lib/url-safety'
+import { metaTokenExpired, parseMetaConnection } from '@/lib/meta-connections'
 
 const Schema = z.object({ botId: z.string().uuid(), provider: z.string(), config: z.record(z.string()).default({}), enabled: z.boolean().default(true) })
 const parse = (value: string) => { try { return JSON.parse(value) } catch { return {} } }
@@ -16,10 +17,11 @@ export async function GET(request: NextRequest) {
     const connection = connections.find(item => item.provider === definition.provider)
     if (!connection) return { ...definition, connection: null }
     const config = parse(connection.config)
+    const metaConfig = definition.provider === 'whatsapp' || definition.provider === 'instagram' ? parseMetaConnection(connection.config) : null
     const validMetaConnection = definition.provider === 'whatsapp'
-      ? Boolean(config.accessTokenEncrypted && config.phoneNumberId)
+      ? Boolean(config.accessTokenEncrypted && config.phoneNumberId && metaConfig && !metaTokenExpired(metaConfig))
       : definition.provider === 'instagram'
-        ? Boolean(config.accessTokenEncrypted && config.instagramAccountId)
+        ? Boolean(config.accessTokenEncrypted && config.instagramAccountId && metaConfig && !metaTokenExpired(metaConfig))
         : true
     return { ...definition, connection: { ...connection, enabled: connection.enabled && validMetaConnection, status: validMetaConnection ? connection.status : 'disconnected', config: redactSecrets(config) } }
   }) })

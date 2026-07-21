@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { readMetaClientLinkToken } from "@/lib/meta-client-link";
 import { getMetaSetupReport, metaConfiguration } from "@/lib/meta-config";
-import { parseMetaConnection } from "@/lib/meta-connections";
+import { metaTokenExpired, parseMetaConnection } from "@/lib/meta-connections";
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
       connection?.enabled &&
         connection.status === "connected" &&
         details?.accessTokenEncrypted &&
+        !metaTokenExpired(details) &&
         (link.provider === "whatsapp" ? details.phoneNumberId : details.instagramAccountId),
     );
     const meta = metaConfiguration();

@@ -16,6 +16,8 @@ Il proprietario può anche generare da **Canali > Configura > Collegamento assis
 
 Il link contiene soltanto agente, provider, emissione e scadenza, è protetto con HMAC e viene rifiutato se modificato, scaduto o già utilizzato. Dopo il collegamento, la pagina mostra esclusivamente la conferma e può essere chiusa.
 
+La stessa risorsa Meta non può essere collegata contemporaneamente a due agenti. Quando un canale viene disconnesso, LitX elimina il token cifrato locale e richiede anche la rimozione della sottoscrizione webhook a Meta. Un token scaduto non viene mostrato come connessione attiva e il canale può essere autorizzato nuovamente dal cliente.
+
 ## Configurazione iniziale del proprietario
 
 Nel portale Meta for Developers:
