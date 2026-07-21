@@ -57,6 +57,16 @@ Per collegare Business Account che non appartengono agli amministratori o tester
 
 Quando un cliente scrive, l'agente può inviare risposte libere durante la finestra di assistenza prevista da Meta. Fuori da quella finestra, un nuovo messaggio deve usare un template WhatsApp approvato. Il webhook e il motore AI non eliminano questa regola della piattaforma.
 
+LitX applica questa regola anche alle risposte manuali dalla pagina **Chat Logs**:
+
+- durante la finestra aperta, la risposta dell'operatore viene inviata realmente al contatto tramite Cloud API;
+- quando la finestra è chiusa, l'editor libero viene sostituito dal selettore dei template approvati;
+- LitX carica i template `UTILITY` e `AUTHENTICATION` dal WhatsApp Business Account;
+- le variabili numerate presenti nel corpo (`{{1}}`, `{{2}}`...) vengono richieste prima dell'invio;
+- lo stato del messaggio passa da `pending` a `sent` oppure `failed` in base alla risposta di Meta.
+
+I template con variabili dinamiche nell'intestazione o nei pulsanti sono mostrati ma non selezionabili, per evitare invii parziali o non conformi. Possono essere usati i template con variabili nel solo corpo.
+
 ## Verifica
 
 1. Apri **Canali > WhatsApp Business**. Tutti gli indicatori del setup proprietario devono risultare verdi.

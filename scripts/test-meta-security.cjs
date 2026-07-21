@@ -16,6 +16,7 @@ process.env.META_INSTAGRAM_APP_SECRET = 'instagram-test-secret-that-is-long-enou
 const { encryptMetaToken, decryptMetaToken, verifyMetaSignature } = require('../lib/meta-security.ts')
 const { createMetaOAuthState, readMetaOAuthState } = require('../lib/meta-oauth-state.ts')
 const { getMetaSetupReport, metaReadiness } = require('../lib/meta-config.ts')
+const { buildMetaTextPayload, buildWhatsAppTemplatePayload, renderWhatsAppTemplate, templateHasUnsupportedVariables, templateParameterCount, whatsappServiceWindow } = require('../lib/meta-payloads.ts')
 
 function assert(condition, message) { if (!condition) throw new Error(message) }
 
@@ -66,5 +67,19 @@ assert(!insecureEncryption.ready && insecureEncryption.missing.includes('META_TO
 
 const localUrl = getMetaSetupReport('instagram', { ...completeMetaEnv, NEXT_PUBLIC_APP_URL: 'http://localhost:3000' })
 assert(!localUrl.ready && localUrl.missing.includes('NEXT_PUBLIC_APP_URL'), 'URL locale accettato per i webhook Meta')
+
+const now = new Date('2026-07-21T12:00:00.000Z')
+assert(whatsappServiceWindow('2026-07-20T12:00:01.000Z', now).open, 'Finestra WhatsApp valida chiusa in anticipo')
+assert(!whatsappServiceWindow('2026-07-20T12:00:00.000Z', now).open, 'Finestra WhatsApp oltre 24 ore accettata')
+assert(!whatsappServiceWindow(null, now).open, 'Conversazione senza messaggio cliente considerata nella finestra')
+
+const template = { name: 'conferma_appuntamento', language: 'it', status: 'APPROVED', category: 'UTILITY', components: [{ type: 'BODY', text: 'Ciao {{1}}, appuntamento il {{2}}.' }] }
+assert(templateParameterCount(template) === 2, 'Numero parametri template errato')
+assert(!templateHasUnsupportedVariables(template), 'Variabili body template segnate come non supportate')
+assert(renderWhatsAppTemplate(template, ['Giulia', '22 luglio']) === 'Ciao Giulia, appuntamento il 22 luglio.', 'Anteprima template errata')
+const templatePayload = buildWhatsAppTemplatePayload({ recipientId: '393331234567', name: template.name, language: template.language, parameters: ['Giulia', '22 luglio'] })
+assert(templatePayload.type === 'template' && templatePayload.template.components[0].parameters.length === 2, 'Payload template WhatsApp errato')
+const textPayload = buildMetaTextPayload('whatsapp', '393331234567', 'Ciao')
+assert(textPayload.type === 'text' && textPayload.to === '393331234567', 'Payload testo WhatsApp errato')
 
 console.log('Meta security tests: OK')

@@ -5,10 +5,13 @@ import { Bot, Check, Clock3, Download, Mail, MessageSquare, Phone, Plus, Refresh
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { whatsappServiceWindow } from '@/lib/meta-payloads'
 
-interface Message { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; feedback?: string | null }
+interface Message { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; feedback?: string | null; channel?: string; deliveryStatus?: string | null }
+interface WhatsAppTemplate { id?: string; name: string; language: string; category: string; body: string; parameterCount: number; supported: boolean }
 interface Conversation {
   id: string; botId: string; userSessionId: string; startedAt: string; lastMessageAt: string | null; userIntent: string | null; sentiment: string | null
+  channel: string; externalThreadId?: string | null
   isResolved: boolean; userName: string | null; userEmail: string | null; userPhone?: string | null; userCompany?: string | null
   needsHumanEscalation: boolean; escalationReason: string | null; assignedAgent?: string | null; summary?: string | null
   internalNotes?: string | null; tags: string[]
@@ -29,11 +32,16 @@ export default function ConversationsPage() {
   const [editing, setEditing] = useState(false)
   const [aiBusy, setAiBusy] = useState<'summary' | 'reply' | null>(null)
   const [aiError, setAiError] = useState('')
+  const [replyError, setReplyError] = useState('')
   const [noteDraft, setNoteDraft] = useState('')
   const [tagDraft, setTagDraft] = useState('')
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templateKey, setTemplateKey] = useState('')
+  const [templateParameters, setTemplateParameters] = useState<string[]>([])
 
   const openConversation = useCallback(async (conversation: Conversation) => {
-    setSelected(conversation); setNoteDraft(conversation.internalNotes || ''); setDetailLoading(true)
+    setSelected(conversation); setNoteDraft(conversation.internalNotes || ''); setReplyError(''); setDetailLoading(true)
     try {
       const response = await fetch(`/api/conversations/${conversation.id}`)
       const result = await response.json()
@@ -62,6 +70,22 @@ export default function ConversationsPage() {
   useEffect(() => { load() }, [load])
 
   const bots = useMemo(() => Array.from(new Map(items.map(item => [item.chatbot.id, item.chatbot])).values()), [items])
+  const lastInboundAt = useMemo(() => selected?.messages.filter(message => message.role === 'user').at(-1)?.createdAt, [selected?.messages])
+  const whatsappWindow = selected?.channel === 'whatsapp' ? whatsappServiceWindow(lastInboundAt) : null
+  const whatsappWindowOpen = whatsappWindow?.open
+  useEffect(() => {
+    if (!selected?.id || selected.channel !== 'whatsapp' || whatsappWindowOpen) {
+      setTemplates([]); setTemplateKey(''); setTemplateParameters([]); return
+    }
+    let active = true
+    setTemplatesLoading(true); setReplyError('')
+    fetch(`/api/meta/whatsapp/templates?botId=${encodeURIComponent(selected.botId)}`).then(response => response.json().then(result => ({ response, result }))).then(({ response, result }) => {
+      if (!active) return
+      if (!response.ok) throw new Error(result.error || 'Lettura template non riuscita')
+      setTemplates(result.data || [])
+    }).catch(error => active && setReplyError(error instanceof Error ? error.message : 'Lettura template non riuscita')).finally(() => active && setTemplatesLoading(false))
+    return () => { active = false }
+  }, [selected?.botId, selected?.channel, selected?.id, whatsappWindowOpen])
   const filtered = useMemo(() => items.filter(item => {
     const query = search.toLowerCase().trim()
     const matchSearch = !query || [item.userName, item.userEmail, item.userPhone, item.userSessionId, item.messages?.[0]?.content].some(value => value?.toLowerCase().includes(query))
@@ -84,14 +108,35 @@ export default function ConversationsPage() {
 
   const sendReply = async () => {
     if (!selected || !reply.trim()) return
-    setBusy(true)
+    setBusy(true); setReplyError('')
     try {
       const response = await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: selected.id, role: 'assistant', content: reply.trim() }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error)
       setSelected(current => current ? { ...current, messages: [...current.messages, result.data], lastMessageAt: result.data.createdAt } : current)
       setReply('')
-    } finally { setBusy(false) }
+    } catch (error) { setReplyError(error instanceof Error ? error.message : 'Invio non riuscito') }
+    finally { setBusy(false) }
+  }
+
+  const selectedTemplate = templates.find(template => `${template.name}:${template.language}` === templateKey)
+  const chooseTemplate = (key: string) => {
+    setTemplateKey(key)
+    const template = templates.find(item => `${item.name}:${item.language}` === key)
+    setTemplateParameters(Array.from({ length: template?.parameterCount || 0 }, () => ''))
+    setReplyError('')
+  }
+  const sendTemplate = async () => {
+    if (!selected || !selectedTemplate || templateParameters.some(value => !value.trim())) return
+    setBusy(true); setReplyError('')
+    try {
+      const response = await fetch('/api/meta/whatsapp/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: selected.id, templateName: selectedTemplate.name, language: selectedTemplate.language, parameters: templateParameters }) })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Invio template non riuscito')
+      setSelected(current => current ? { ...current, messages: [...current.messages, result.data], lastMessageAt: result.data.createdAt } : current)
+      setTemplateKey(''); setTemplateParameters([])
+    } catch (error) { setReplyError(error instanceof Error ? error.message : 'Invio template non riuscito') }
+    finally { setBusy(false) }
   }
 
   const assist = async (mode: 'summary' | 'reply') => {
@@ -126,7 +171,23 @@ export default function ConversationsPage() {
 
       <main className="flex min-w-0 flex-1 flex-col bg-gray-50/70">{selected ? <><div className="flex items-center justify-between border-b bg-white px-6 py-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-700"><User className="h-4 w-4" /></div><div><h2 className="text-sm font-semibold text-gray-950">{displayName(selected)}</h2><p className="text-[10px] text-gray-400">{selected.chatbot.companyName} · avviata {new Date(selected.startedAt).toLocaleString('it-IT')}</p></div></div><div className="flex gap-2">{selected.needsHumanEscalation ? <Button size="sm" variant="secondary" disabled={busy} onClick={() => patchSelected({ needsHumanEscalation: false })}>Ritorna al bot</Button> : <Button size="sm" variant="secondary" disabled={busy} onClick={() => patchSelected({ needsHumanEscalation: true, escalationReason: 'Presa in carico manuale' })} icon={<UserRoundCheck className="h-4 w-4" />}>Prendi in carico</Button>}<Button size="sm" variant={selected.isResolved ? 'secondary' : 'success'} disabled={busy} onClick={() => patchSelected({ isResolved: !selected.isResolved })} icon={<Check className="h-4 w-4" />}>{selected.isResolved ? 'Riapri' : 'Risolvi'}</Button></div></div>
         <div className="flex-1 space-y-4 overflow-y-auto p-6">{detailLoading ? <LoadingSpinner text="Caricamento messaggi..." /> : selected.messages.map(message => <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-start' : 'justify-end'}`}><div className={`max-w-[72%] rounded-2xl px-4 py-3 text-xs leading-5 shadow-sm ${message.role === 'user' ? 'rounded-bl-sm border bg-white text-gray-700' : 'rounded-br-sm bg-brand-600 text-white'}`}><p className="whitespace-pre-wrap">{message.content}</p><p className="mt-1 text-[9px] opacity-60">{new Date(message.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}{message.feedback ? ` · feedback ${message.feedback}` : ''}</p></div></div>)}</div>
-        <div className="border-t bg-white p-4"><div className="mx-auto mb-2 flex max-w-3xl items-center justify-between"><Button size="sm" variant="secondary" disabled={Boolean(aiBusy) || detailLoading} onClick={() => assist('reply')} icon={<Sparkles className={`h-3.5 w-3.5 ${aiBusy === 'reply' ? 'animate-pulse' : ''}`} />}>{aiBusy === 'reply' ? 'Creo la bozza...' : 'Suggerisci risposta AI'}</Button>{aiError && <p className="text-[9px] text-red-600">{aiError}</p>}</div><div className="mx-auto flex max-w-3xl items-end gap-2"><textarea aria-label="Risposta operatore" value={reply} onChange={event => setReply(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendReply() } }} rows={2} className="textarea resize-none text-xs" placeholder="Rispondi come operatore..." /><Button disabled={busy || !reply.trim()} onClick={sendReply} icon={<Send className="h-4 w-4" />} /></div><p className="mx-auto mt-1 max-w-3xl text-[9px] text-gray-400">La bozza AI non viene inviata automaticamente: puoi modificarla prima dell’invio.</p></div></> : <div className="flex flex-1 flex-col items-center justify-center"><MessageSquare className="h-8 w-8 text-brand-500" /><p className="mt-3 text-sm font-semibold">Seleziona una conversazione</p></div>}</main>
+        <div className="border-t bg-white p-4">
+          {selected.channel === 'whatsapp' && <div className={`mx-auto mb-3 max-w-3xl rounded-lg border px-3 py-2 text-[10px] leading-4 ${whatsappWindowOpen ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+            <div className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5 shrink-0" /><span className="font-semibold">{whatsappWindowOpen ? `Finestra WhatsApp aperta${whatsappWindow?.closesAt ? ` fino alle ${new Date(whatsappWindow.closesAt).toLocaleString('it-IT', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}` : ''}` : 'Finestra WhatsApp chiusa: usa un template approvato da Meta.'}</span></div>
+          </div>}
+          {selected.channel === 'whatsapp' && !whatsappWindowOpen ? <div className="mx-auto max-w-3xl space-y-3">
+            <div className="flex items-center justify-between"><p className="text-xs font-semibold text-gray-800">Template WhatsApp</p>{templatesLoading && <LoadingSpinner text="Caricamento template..." />}</div>
+            {!templatesLoading && <select aria-label="Template WhatsApp" className="input text-xs" value={templateKey} onChange={event => chooseTemplate(event.target.value)}><option value="">Seleziona un template approvato</option>{templates.map(template => <option key={`${template.name}:${template.language}`} value={`${template.name}:${template.language}`} disabled={!template.supported}>{template.name} · {template.language} · {template.category}{template.supported ? '' : ' · variabili non supportate'}</option>)}</select>}
+            {selectedTemplate && <div className="rounded-lg bg-gray-50 p-3"><p className="whitespace-pre-wrap text-[11px] leading-5 text-gray-600">{selectedTemplate.body}</p>{templateParameters.map((value, index) => <label key={index} className="mt-2 block"><span className="label">Valore {index + 1}</span><input className="input text-xs" value={value} onChange={event => setTemplateParameters(current => current.map((item, parameterIndex) => parameterIndex === index ? event.target.value : item))} placeholder={`Sostituisce {{${index + 1}}}`} /></label>)}</div>}
+            <div className="flex justify-end"><Button disabled={busy || !selectedTemplate || templateParameters.some(value => !value.trim())} onClick={sendTemplate} icon={<Send className="h-4 w-4" />}>Invia template</Button></div>
+            {!templatesLoading && !templates.length && <p className="rounded-lg bg-gray-50 p-3 text-[10px] text-gray-500">Nessun template Utility o Authentication approvato disponibile nel WhatsApp Business Account.</p>}
+          </div> : <>
+            <div className="mx-auto mb-2 flex max-w-3xl items-center justify-between"><Button size="sm" variant="secondary" disabled={Boolean(aiBusy) || detailLoading} onClick={() => assist('reply')} icon={<Sparkles className={`h-3.5 w-3.5 ${aiBusy === 'reply' ? 'animate-pulse' : ''}`} />}>{aiBusy === 'reply' ? 'Creo la bozza...' : 'Suggerisci risposta AI'}</Button>{aiError && <p className="text-[9px] text-red-600">{aiError}</p>}</div>
+            <div className="mx-auto flex max-w-3xl items-end gap-2"><textarea aria-label="Risposta operatore" value={reply} onChange={event => setReply(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendReply() } }} rows={2} className="textarea resize-none text-xs" placeholder="Rispondi come operatore..." /><Button aria-label="Invia risposta" disabled={busy || !reply.trim()} onClick={sendReply} icon={<Send className="h-4 w-4" />} /></div>
+            <p className="mx-auto mt-1 max-w-3xl text-[9px] text-gray-400">La bozza AI non viene inviata automaticamente: puoi modificarla prima dell’invio.</p>
+          </>}
+          {replyError && <p role="alert" className="mx-auto mt-3 max-w-3xl rounded-lg bg-red-50 p-2 text-[10px] text-red-700">{replyError}</p>}
+        </div></> : <div className="flex flex-1 flex-col items-center justify-center"><MessageSquare className="h-8 w-8 text-brand-500" /><p className="mt-3 text-sm font-semibold">Seleziona una conversazione</p></div>}</main>
 
       <aside className="w-[310px] shrink-0 overflow-y-auto border-l bg-white p-5">{selected && <><div className="flex items-center justify-between"><h2 className="text-xs font-semibold text-gray-900">Dettagli contatto</h2><button onClick={() => setEditing(!editing)} className="text-[10px] font-semibold text-brand-600">{editing ? 'Chiudi' : 'Modifica'}</button></div>{editing ? <ContactEditor conversation={selected} onSave={async data => { await patchSelected(data); setEditing(false) }} /> : <div className="mt-4 space-y-3"><InfoRow icon={User} label="Nome" value={selected.userName || 'Non disponibile'} /><InfoRow icon={Mail} label="Email" value={selected.userEmail || 'Non disponibile'} /><InfoRow icon={Phone} label="Telefono" value={selected.userPhone || 'Non disponibile'} /></div>}<Divider /><h2 className="text-xs font-semibold text-gray-900">Stato conversazione</h2><div className="mt-3 space-y-2"><StateLine label="Stato" value={selected.isResolved ? 'Risolta' : 'Aperta'} good={selected.isResolved} /><StateLine label="Handoff" value={selected.needsHumanEscalation ? 'Richiesto' : 'No'} good={!selected.needsHumanEscalation} /><StateLine label="Assegnata a" value={selected.assignedAgent || 'Non assegnata'} /><StateLine label="Intento" value={selected.userIntent || 'Non rilevato'} /></div>{selected.escalationReason && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-[10px] leading-4 text-amber-700">{selected.escalationReason}</div>}<Divider /><div className="flex items-center justify-between"><h2 className="text-xs font-semibold text-gray-900">Riepilogo AI</h2><button onClick={() => assist('summary')} disabled={Boolean(aiBusy)} className="flex items-center gap-1 text-[9px] font-semibold text-brand-600 disabled:opacity-50"><Sparkles className="h-3 w-3" />{aiBusy === 'summary' ? 'Analisi...' : 'Aggiorna'}</button></div><p className="mt-3 rounded-lg bg-gray-50 p-3 text-[10px] leading-5 text-gray-500">{selected.summary || 'Genera un riepilogo operativo della conversazione.'}</p><Divider /><div className="flex items-center gap-1.5"><TagIcon className="h-3.5 w-3.5 text-gray-400" /><h2 className="text-xs font-semibold text-gray-900">Tag</h2></div><div className="mt-3 flex flex-wrap gap-1.5">{selected.tags?.map(tag => <span key={tag} className="flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-[9px] font-semibold text-brand-700">{tag}<button onClick={() => removeTag(tag)} aria-label={`Rimuovi tag ${tag}`}><X className="h-2.5 w-2.5" /></button></span>)}</div><div className="mt-2 flex gap-1"><input value={tagDraft} onChange={event => setTagDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTag() } }} className="input py-1.5 text-[10px]" placeholder="Aggiungi tag" /><button onClick={addTag} disabled={!tagDraft.trim()} aria-label="Aggiungi tag" className="rounded-lg border px-2 text-gray-500 disabled:opacity-40"><Plus className="h-3 w-3" /></button></div><Divider /><div className="flex items-center gap-1.5"><StickyNote className="h-3.5 w-3.5 text-gray-400" /><h2 className="text-xs font-semibold text-gray-900">Note interne</h2></div><textarea value={noteDraft} onChange={event => setNoteDraft(event.target.value)} className="textarea mt-3 min-h-24 text-[10px] leading-4" placeholder="Contesto privato, prossimi passi, dettagli da ricordare..." /><Button size="sm" variant="secondary" fullWidth className="mt-2" disabled={busy || noteDraft === (selected.internalNotes || '')} onClick={() => patchSelected({ internalNotes: noteDraft || null })}>Salva nota</Button><Divider /><div className="grid grid-cols-2 gap-2"><MiniMetric icon={MessageSquare} label="Messaggi" value={selected.messages.length} /><MiniMetric icon={Clock3} label="Stato" value={selected.isResolved ? 'Chiusa' : 'Attiva'} /></div></>}</aside>
     </div>

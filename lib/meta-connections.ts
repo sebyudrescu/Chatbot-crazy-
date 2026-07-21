@@ -42,3 +42,10 @@ export async function findMetaConnection(provider: MetaProvider, assetId: string
   }
   return null;
 }
+
+export async function getMetaConnectionForBot(botId: string, provider: MetaProvider) {
+  const connection = await prisma.integrationConnection.findUnique({ where: { botId_provider: { botId, provider } } });
+  if (!connection?.enabled || connection.status !== "connected") return null;
+  const config = parseMetaConnection(connection.config);
+  return config ? { connection, config } : null;
+}
