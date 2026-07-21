@@ -115,6 +115,29 @@ export interface MemoryContext {
  */
 export async function storeFact(fact: Omit<StructuredFact, 'id' | 'extractedAt' | 'validFrom' | 'isActive'>): Promise<StructuredFact> {
   console.log(`💾 [StructuredMemory] Storing fact: ${fact.factType} - ${fact.value}`)
+  const normalizedValue = fact.value.trim()
+  const duplicate = await prisma.structuredFact.findFirst({
+    where: {
+      botId: fact.botId,
+      conversationId: fact.conversationId,
+      factType: fact.factType,
+      value: normalizedValue,
+      isActive: true,
+    },
+  })
+  if (duplicate) {
+    const refreshed = await prisma.structuredFact.update({
+      where: { id: duplicate.id },
+      data: {
+        confidence: Math.max(duplicate.confidence, fact.confidence),
+        importance: Math.max(duplicate.importance, fact.importance),
+        extractedAt: new Date(),
+        rawText: fact.rawText || duplicate.rawText,
+        metadata: fact.metadata ? JSON.stringify(fact.metadata) : duplicate.metadata,
+      },
+    })
+    return convertPrismaToFact(refreshed)
+  }
   
   // Generate embedding for semantic search
   let embedding: number[] | undefined
@@ -165,7 +188,7 @@ export async function storeFact(fact: Omit<StructuredFact, 'id' | 'extractedAt' 
       entityType: fact.entityType,
       entityName: fact.entityName,
       attribute: fact.attribute,
-      value: fact.value,
+      value: normalizedValue,
       confidence: fact.confidence,
       source: fact.source,
       validUntil: fact.validUntil,
@@ -270,7 +293,9 @@ export async function queryMemory(query: MemoryQuery): Promise<StructuredFact[]>
       { confidence: 'desc' },
       { extractedAt: 'desc' }
     ],
-    take: query.topK || 20
+    take: query.useSemanticSearch
+      ? Math.min(Math.max((query.topK || 10) * 5, 20), 100)
+      : query.topK || 20
   })
   
   let convertedFacts = facts.map(convertPrismaToFact)
@@ -307,7 +332,8 @@ async function rerankBySemanticSimilarity(query: string, facts: StructuredFact[]
     // Sort by similarity (descending)
     scoredFacts.sort((a, b) => b.similarity - a.similarity)
     
-    return scoredFacts.map(sf => sf.fact)
+    const scoredIds = new Set(scoredFacts.map(item => item.fact.id))
+    return [...scoredFacts.map(item => item.fact), ...facts.filter(fact => !scoredIds.has(fact.id))]
   } catch (error) {
     console.error('[StructuredMemory] Error in semantic reranking:', error)
     return facts // Return original order on error

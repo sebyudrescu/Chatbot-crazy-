@@ -16,7 +16,7 @@
  */
 
 import 'server-only'
-import { queryMemory, type StructuredFact, type MemoryQuery } from './structured-memory'
+import { queryMemory, type StructuredFact, type MemoryQuery, type FactType } from './structured-memory'
 import { queryKnowledgeBase } from './rag-pipeline'
 import { advancedRetrieve, prepareChunksForAdvancedRAG, type RerankResult } from './advanced-rag'
 
@@ -38,6 +38,7 @@ export interface RetrievalPlan {
   contextWeight: number            // 0-1
   
   // Filters for persistent memory
+  relevantFactTypes: FactType[]
   relevantEntities: string[]
   relevantCategories: string[]
   
@@ -96,6 +97,7 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
       persistentMemoryWeight: 0,
       knowledgeBaseWeight: 0,
       contextWeight: 1.0,
+      relevantFactTypes: [],
       relevantEntities: [],
       relevantCategories: [],
       reasoning: 'Intent conversazionale - usa solo contesto'
@@ -103,7 +105,7 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
   }
   
   // === RULE 2: Follow-up questions → Persistent memory + context ===
-  if (isFollowUpQuestion(query, context.recentMessages)) {
+  if (isFollowUpQuestion(query, context.recentMessages) && !isAboutUserPreferences(query)) {
     return {
       usePersistentMemory: true,
       useKnowledgeBase: false,
@@ -111,8 +113,9 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
       persistentMemoryWeight: 0.7,
       knowledgeBaseWeight: 0,
       contextWeight: 0.3,
+      relevantFactTypes: [],
       relevantEntities: entities,
-      relevantCategories: inferCategories(context),
+      relevantCategories: [],
       reasoning: 'Domanda di follow-up - usa memoria persistente + contesto'
     }
   }
@@ -126,8 +129,9 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
       persistentMemoryWeight: 1.0,
       knowledgeBaseWeight: 0,
       contextWeight: 0,
+      relevantFactTypes: ['preference', 'profile', 'decision', 'request'],
       relevantEntities: entities,
-      relevantCategories: ['preference', 'profile', 'decision'],
+      relevantCategories: [],
       reasoning: 'Domanda su preferenze/storico utente - usa solo memoria persistente'
     }
   }
@@ -141,6 +145,7 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
       persistentMemoryWeight: 0.3,
       knowledgeBaseWeight: 0.7,
       contextWeight: 0,
+      relevantFactTypes: [],
       relevantEntities: entities,
       relevantCategories: inferCategories(context),
       domainFilter: inferDomain(context),
@@ -157,8 +162,9 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
       persistentMemoryWeight: 0.5,
       knowledgeBaseWeight: 0.5,
       contextWeight: 0,
+      relevantFactTypes: ['complaint', 'feedback', 'request'],
       relevantEntities: entities,
-      relevantCategories: ['complaint', 'feedback', 'request'],
+      relevantCategories: ['support', 'service'],
       reasoning: 'Complaint/feedback - verifica memoria persistente + KB'
     }
   }
@@ -172,6 +178,7 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
       persistentMemoryWeight: 0,
       knowledgeBaseWeight: 1.0,
       contextWeight: 0,
+      relevantFactTypes: [],
       relevantEntities: entities,
       relevantCategories: [],
       reasoning: 'Domanda generale - usa knowledge base'
@@ -186,6 +193,7 @@ export function planRetrieval(context: RetrievalContext): RetrievalPlan {
     persistentMemoryWeight: 0,
     knowledgeBaseWeight: 0.8,
     contextWeight: 0.2,
+    relevantFactTypes: [],
     relevantEntities: entities,
     relevantCategories: [],
     reasoning: 'Default - KB + contesto'
@@ -308,6 +316,7 @@ export async function multiDimensionalRetrieve(params: {
       botId,
       conversationId,
       query: context.query,
+      factTypes: plan.relevantFactTypes.length > 0 ? plan.relevantFactTypes : undefined,
       entityNames: plan.relevantEntities.length > 0 ? plan.relevantEntities : undefined,
       categories: plan.relevantCategories.length > 0 ? plan.relevantCategories as any : undefined,
       minConfidence: 0.6,
