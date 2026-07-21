@@ -21,6 +21,46 @@ export function shouldAdvanceDeliveryStatus(current: string | null | undefined, 
   return DELIVERY_RANK[normalized] >= DELIVERY_RANK[current];
 }
 
+export function whatsappIncomingText(message: {
+  text?: { body?: string };
+  button?: { text?: string; payload?: string };
+  interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string; description?: string } };
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
+  contacts?: Array<{ name?: { formatted_name?: string }; phones?: Array<{ phone?: string }> }>;
+  order?: { catalog_id?: string; product_items?: Array<{ product_retailer_id?: string; quantity?: number }> };
+}) {
+  const text = message.text?.body?.trim();
+  if (text) return text;
+  const button = message.button;
+  if (button?.text || button?.payload) return [button.text, button.payload ? `(scelta: ${button.payload})` : ""].filter(Boolean).join(" ");
+  const reply = message.interactive?.button_reply || message.interactive?.list_reply;
+  if (reply?.title || reply?.id) return [reply.title, reply.id ? `(scelta: ${reply.id})` : ""].filter(Boolean).join(" ");
+  if (message.location && Number.isFinite(message.location.latitude) && Number.isFinite(message.location.longitude)) {
+    return [`Posizione condivisa: ${message.location.name || ""}`.trim(), message.location.address, `${message.location.latitude}, ${message.location.longitude}`].filter(Boolean).join(" · ");
+  }
+  if (message.contacts?.length) {
+    const contacts = message.contacts.slice(0, 3).map(contact => [contact.name?.formatted_name, contact.phones?.[0]?.phone].filter(Boolean).join(" · ")).filter(Boolean);
+    return contacts.length ? `Contatti condivisi: ${contacts.join("; ")}` : "Contatto condiviso";
+  }
+  if (message.order?.product_items?.length) {
+    const items = message.order.product_items.slice(0, 10).map(item => `${item.product_retailer_id || "prodotto"} × ${item.quantity || 1}`);
+    return `Ordine condiviso: ${items.join(", ")}`;
+  }
+  return "";
+}
+
+export function instagramIncomingText(event: {
+  message?: { text?: string };
+  postback?: { title?: string; payload?: string };
+}) {
+  const text = event.message?.text?.trim();
+  if (text) return text;
+  if (event.postback?.title || event.postback?.payload) {
+    return [event.postback.title, event.postback.payload ? `(scelta: ${event.postback.payload})` : ""].filter(Boolean).join(" ");
+  }
+  return "";
+}
+
 export interface WhatsAppTemplateComponent {
   type: string;
   text?: string;

@@ -5,14 +5,14 @@ import { findMetaConnection, parseMetaConnection } from "@/lib/meta-connections"
 import { verifyMetaSignature } from "@/lib/meta-security";
 import { processIncomingChannelMessage } from "@/lib/channel-message-processor";
 import { sendMetaText } from "@/lib/meta-messaging";
-import { normalizeMetaDeliveryStatus, shouldAdvanceDeliveryStatus } from "@/lib/meta-payloads";
+import { instagramIncomingText, normalizeMetaDeliveryStatus, shouldAdvanceDeliveryStatus, whatsappIncomingText } from "@/lib/meta-payloads";
 import { analyzeMetaAttachment, instagramAttachmentDescriptor, unsupportedAttachment, whatsappAttachmentDescriptor, type MetaAttachmentDescriptor } from "@/lib/meta-attachments";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-type WhatsAppMessage = { id?: string; from?: string; type?: string; text?: { body?: string }; image?: { id?: string; mime_type?: string; caption?: string }; document?: { id?: string; mime_type?: string; filename?: string; caption?: string }; audio?: { id?: string; mime_type?: string }; video?: { id?: string; mime_type?: string; caption?: string }; sticker?: { id?: string; mime_type?: string } };
+type WhatsAppMessage = { id?: string; from?: string; type?: string; text?: { body?: string }; image?: { id?: string; mime_type?: string; caption?: string }; document?: { id?: string; mime_type?: string; filename?: string; caption?: string }; audio?: { id?: string; mime_type?: string }; video?: { id?: string; mime_type?: string; caption?: string }; sticker?: { id?: string; mime_type?: string }; button?: { text?: string; payload?: string }; interactive?: { button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string; description?: string } }; location?: { latitude?: number; longitude?: number; name?: string; address?: string }; contacts?: Array<{ name?: { formatted_name?: string }; phones?: Array<{ phone?: string }> }>; order?: { catalog_id?: string; product_items?: Array<{ product_retailer_id?: string; quantity?: number }> } };
 type WhatsAppStatus = { id?: string; status?: string; errors?: Array<{ code?: number; title?: string; message?: string }> };
 type WhatsAppValue = { metadata?: { phone_number_id?: string }; contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>; messages?: WhatsAppMessage[]; statuses?: WhatsAppStatus[] };
-type InstagramEvent = { sender?: { id?: string }; recipient?: { id?: string }; message?: { mid?: string; text?: string; is_echo?: boolean; attachments?: Array<{ type?: string; payload?: { url?: string } }> } };
+type InstagramEvent = { sender?: { id?: string }; recipient?: { id?: string }; message?: { mid?: string; text?: string; is_echo?: boolean; attachments?: Array<{ type?: string; payload?: { url?: string } }> }; postback?: { mid?: string; title?: string; payload?: string } };
 type MetaPayload = { object?: string; entry?: Array<{ id?: string; changes?: Array<{ value?: WhatsAppValue }>; messaging?: InstagramEvent[] }> };
 
 export async function GET(request: NextRequest) {
@@ -50,7 +50,7 @@ async function handleWhatsApp(payload: MetaPayload) {
       if (await alreadyProcessed(message.id)) continue;
       const descriptor = whatsappAttachmentDescriptor(message);
       const attachment = descriptor ? await analyzeAttachmentLimited("whatsapp", descriptor, found.connection.botId, message.from, found.config) : null;
-      const text = attachment?.displayText || message.text?.body?.trim() || "";
+      const text = attachment?.displayText || whatsappIncomingText(message);
       if (!text) continue;
       await respond({ provider: "whatsapp", channel: "whatsapp", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: message.from, externalMessageId: message.id, text, analysisText: attachment?.queryText, recipientId: message.from, userName: value?.contacts?.[0]?.profile?.name, userPhone: value?.contacts?.[0]?.wa_id });
     }
@@ -83,17 +83,19 @@ async function handleInstagram(payload: MetaPayload) {
     const found = await findMetaConnection("instagram", accountId);
     if (!found) continue;
     for (const event of entry.messaging || []) {
-      if (!event.message?.mid || !event.sender?.id || event.message.is_echo) continue;
-      if (await alreadyProcessed(event.message.mid)) continue;
-      const descriptors = (event.message.attachments || []).map(instagramAttachmentDescriptor).filter((item): item is MetaAttachmentDescriptor => Boolean(item)).slice(0, 3);
+      const externalMessageId = event.message?.mid || event.postback?.mid;
+      if (!externalMessageId || !event.sender?.id || event.message?.is_echo) continue;
+      if (await alreadyProcessed(externalMessageId)) continue;
+      const descriptors = (event.message?.attachments || []).map(instagramAttachmentDescriptor).filter((item): item is MetaAttachmentDescriptor => Boolean(item)).slice(0, 3);
       const attachmentLimit = descriptors.length ? await checkRateLimit(`meta-attachment:${found.connection.botId}:instagram:${event.sender.id}`, 10, 5 * 60_000) : null;
       const attachments = attachmentLimit?.allowed === false
         ? descriptors.map(descriptor => unsupportedAttachment(descriptor))
         : await Promise.all(descriptors.map(descriptor => analyzeAttachment("instagram", descriptor, found.connection.botId, found.config)));
-      const displayText = [event.message.text?.trim(), ...attachments.map(item => item.displayText)].filter(Boolean).join("\n");
-      const analysisText = [event.message.text?.trim(), ...attachments.map(item => item.queryText)].filter(Boolean).join("\n\n");
+      const incomingText = instagramIncomingText(event);
+      const displayText = [incomingText, ...attachments.map(item => item.displayText)].filter(Boolean).join("\n");
+      const analysisText = [incomingText, ...attachments.map(item => item.queryText)].filter(Boolean).join("\n\n");
       if (!displayText) continue;
-      await respond({ provider: "instagram", channel: "instagram", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: event.sender.id, externalMessageId: event.message.mid, text: displayText, analysisText: analysisText || undefined, recipientId: event.sender.id });
+      await respond({ provider: "instagram", channel: "instagram", botId: found.connection.botId, connectionId: found.connection.id, config: found.config, externalThreadId: event.sender.id, externalMessageId, text: displayText, analysisText: analysisText || undefined, recipientId: event.sender.id });
     }
   }
 }

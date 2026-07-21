@@ -17,7 +17,7 @@ const { encryptMetaToken, decryptMetaToken, verifyMetaSignature } = require('../
 const { createMetaOAuthState, readMetaOAuthState } = require('../lib/meta-oauth-state.ts')
 const { createMetaClientLinkToken, readMetaClientLinkToken } = require('../lib/meta-client-link.ts')
 const { getMetaSetupReport, metaReadiness } = require('../lib/meta-config.ts')
-const { buildMetaTextPayload, buildWhatsAppTemplatePayload, normalizeMetaDeliveryStatus, renderWhatsAppTemplate, shouldAdvanceDeliveryStatus, templateHasUnsupportedVariables, templateParameterCount, whatsappServiceWindow } = require('../lib/meta-payloads.ts')
+const { buildMetaTextPayload, buildWhatsAppTemplatePayload, instagramIncomingText, normalizeMetaDeliveryStatus, renderWhatsAppTemplate, shouldAdvanceDeliveryStatus, templateHasUnsupportedVariables, templateParameterCount, whatsappIncomingText, whatsappServiceWindow } = require('../lib/meta-payloads.ts')
 
 function assert(condition, message) { if (!condition) throw new Error(message) }
 
@@ -102,5 +102,10 @@ assert(shouldAdvanceDeliveryStatus('sent', 'delivered'), 'Avanzamento sent -> de
 assert(shouldAdvanceDeliveryStatus('delivered', 'read'), 'Avanzamento delivered -> read rifiutato')
 assert(!shouldAdvanceDeliveryStatus('read', 'delivered'), 'Stato read retrocesso a delivered')
 assert(!shouldAdvanceDeliveryStatus('failed', 'sent'), 'Stato failed retrocesso a sent')
+assert(whatsappIncomingText({ interactive: { button_reply: { id: 'BOOK_NOW', title: 'Prenota ora' } } }) === 'Prenota ora (scelta: BOOK_NOW)', 'Pulsante WhatsApp ignorato')
+assert(whatsappIncomingText({ interactive: { list_reply: { id: 'PLAN_PRO', title: 'Piano Pro' } } }) === 'Piano Pro (scelta: PLAN_PRO)', 'Menu WhatsApp ignorato')
+assert(whatsappIncomingText({ location: { latitude: 45.4384, longitude: 10.9916, name: 'Verona' } }).includes('45.4384'), 'Posizione WhatsApp ignorata')
+assert(whatsappIncomingText({ contacts: [{ name: { formatted_name: 'Mario Rossi' }, phones: [{ phone: '+393331234567' }] }] }).includes('Mario Rossi'), 'Contatto WhatsApp ignorato')
+assert(instagramIncomingText({ postback: { title: 'Parla con noi', payload: 'HUMAN_HANDOFF' } }) === 'Parla con noi (scelta: HUMAN_HANDOFF)', 'Postback Instagram ignorato')
 
 console.log('Meta security tests: OK')
