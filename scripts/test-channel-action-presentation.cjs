@@ -6,6 +6,7 @@ const createdMessages = [];
 let policyAction = "allow";
 let actionCalls = 0;
 let lastActionMessage = "";
+let orchestratorCalls = 0;
 const prisma = {
   message: {
     findUnique: async () => null,
@@ -37,12 +38,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "server-only") return {};
   if (request === "@/lib/db") return { prisma };
   if (request === "@/lib/decision-orchestrator") return {
-    orchestrateResponse: async () => ({
+    orchestrateResponse: async () => { orchestratorCalls += 1; return ({
       response: "Certo, puoi prenotare online.",
       decision: { intent: { intent: "booking", confidence: 0.95 }, topics: ["prenotazione"] },
       metadata: { confidence: 0.9, responseType: "rag" },
       sourcesUsed: [],
-    }),
+    }); },
   };
   if (request === "@/lib/agent-policy") return {
     evaluateIncomingPolicy: () => ({ action: policyAction, category: policyAction === "allow" ? "none" : "forbidden_topic" }),
@@ -90,6 +91,7 @@ const { processIncomingChannelMessage } = require("../lib/channel-message-proces
   });
   assert.equal(blocked.response, "Richiesta non consentita", "Policy in ingresso non applicata");
   assert.equal(actionCalls, 1, "Azione con effetto esterno eseguita nonostante la policy");
+  assert.equal(orchestratorCalls, 1, "Richiesta vietata inviata inutilmente all'orchestratore AI");
 
   policyAction = "allow";
   await processIncomingChannelMessage({
@@ -102,7 +104,7 @@ const { processIncomingChannelMessage } = require("../lib/channel-message-proces
     automationText: "📎 Immagine",
   });
   assert.equal(lastActionMessage, "📎 Immagine", "Testo AI/OCR non attendibile passato al motore azioni");
-  console.log(JSON.stringify({ success: true, checks: 7 }, null, 2));
+  console.log(JSON.stringify({ success: true, checks: 8 }, null, 2));
 })().catch((error) => {
   console.error(error);
   process.exit(1);

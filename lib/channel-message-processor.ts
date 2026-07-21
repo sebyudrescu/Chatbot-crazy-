@@ -40,6 +40,39 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const history = [...conversation.messages].reverse().map(message => ({ role: message.role, content: message.content }));
   const query = input.analysisText?.trim() || input.text;
   const automationMessage = input.automationText?.trim() || input.text;
+  const incomingPolicy = evaluateIncomingPolicy(automationMessage, settings);
+  if (incomingPolicy.action !== "allow") {
+    const response = policyResponse(incomingPolicy, settings);
+    const assistantMessage = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: "assistant",
+        content: response,
+        channel: input.channel,
+        deliveryStatus: "pending",
+        sourcesUsed: stringifyJSON({ sources: [], metadata: { policyAction: incomingPolicy.action, policyCategory: incomingPolicy.category } }),
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastMessageAt: new Date(),
+        ...(incomingPolicy.action === "handoff" ? {
+          needsHumanEscalation: true,
+          escalatedAt: new Date(),
+          escalationReason: `Policy agente: ${incomingPolicy.matchedRule}`,
+        } : {}),
+      },
+    });
+    return {
+      duplicate: false as const,
+      handoff: false as const,
+      handoffActivated: incomingPolicy.action === "handoff",
+      conversationId: conversation.id,
+      assistantMessageId: assistantMessage.id,
+      response,
+    };
+  }
   const context: OrchestratorContext = {
     botId: input.botId,
     conversationId: conversation.id,
@@ -59,20 +92,15 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     },
   };
   const result = await orchestrateResponse(context);
-  const incomingPolicy = evaluateIncomingPolicy(automationMessage, settings);
-  const workflow = incomingPolicy.action === "allow"
-    ? await import("@/lib/workflow-engine").then(({ runActiveWorkflows }) => runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent, sentiment: conversation.sentiment || undefined }))
-    : { executed: [], failed: [], skipped: [], actions: [] };
+  const workflow = await import("@/lib/workflow-engine").then(({ runActiveWorkflows }) => runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent, sentiment: conversation.sentiment || undefined }));
   if (workflow.responseOverride) result.response = workflow.responseOverride;
-  const actionResult = incomingPolicy.action === "allow"
-    ? await import("@/lib/action-engine").then(({ runTriggeredActions }) => runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent }))
-    : { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: false };
+  const actionResult = await import("@/lib/action-engine").then(({ runTriggeredActions }) => runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent }));
   const channelActionText = actionResult.channelMessages.filter((message) => message.trim()).join("\n\n");
   if (channelActionText && !result.response.includes(channelActionText)) {
     result.response = [result.response.trim(), channelActionText].filter(Boolean).join("\n\n");
   }
   const outgoingPolicy = enforceOutgoingPolicy(result.response, settings);
-  const policyDecision = incomingPolicy.action !== "allow" ? incomingPolicy : outgoingPolicy;
+  const policyDecision = outgoingPolicy;
   if (policyDecision.action !== "allow") result.response = policyResponse(policyDecision, settings);
 
   const assistantMessage = await prisma.message.create({
