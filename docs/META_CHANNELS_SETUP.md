@@ -79,8 +79,9 @@ LitX analizza gli allegati ricevuti dai webhook ufficiali prima di generare la r
 
 - immagini JPEG, PNG e WebP vengono descritte dal modello visivo; l'eventuale testo visibile viene trattato come dato non attendibile e mai come istruzione di sistema;
 - i PDF testuali vengono scaricati ed estratti interamente in memoria, senza creare file temporanei sul filesystem di Vercel;
+- i messaggi vocali nei formati FLAC, M4A/MP4, MP3/MPEG, OGG, WAV e WebM vengono trascritti in memoria con `gpt-4o-mini-transcribe`; la trascrizione è trattata come dato non attendibile dell'utente;
 - didascalia e contenuto estratto vengono passati al motore conversazionale, mentre Chat Logs mostra chiaramente che il messaggio conteneva un allegato;
-- audio, video e formati non riconosciuti non vengono ignorati: l'agente viene informato che il contenuto non è analizzabile e deve evitare di inventarlo o proporre un operatore;
+- video, audio non supportati e formati non riconosciuti non vengono ignorati: l'agente viene informato che il contenuto non è analizzabile e deve evitare di inventarlo o proporre un operatore;
 - il limite è 5 MB per allegato e fino a 3 allegati per singolo evento Instagram.
 
 Gli ID messaggio Meta vengono controllati prima del download: una riconsegna dello stesso webhook non ripete l'analisi AI e non genera una seconda risposta.

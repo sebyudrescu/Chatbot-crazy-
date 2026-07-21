@@ -9,6 +9,19 @@ import { assertSafeRemoteUrl } from "./url-safety";
 
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_TEXT = 12_000;
+const TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+
+const AUDIO_EXTENSIONS: Record<string, string> = {
+  "audio/flac": "flac",
+  "audio/m4a": "m4a",
+  "audio/mp4": "m4a",
+  "audio/mpeg": "mp3",
+  "audio/mpga": "mpga",
+  "audio/ogg": "ogg",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/webm": "webm",
+};
 
 export interface MetaAttachmentDescriptor {
   type: "image" | "document" | "audio" | "video" | "file" | "unknown";
@@ -152,6 +165,50 @@ async function describeImage(buffer: Buffer, mimeType: string, botId: string) {
   return completion.choices[0]?.message?.content?.trim() || "Immagine senza contenuto descrivibile.";
 }
 
+async function transcribeAudio(buffer: Buffer, mimeType: string, botId: string) {
+  if (!process.env.OPENAI_API_KEY) throw new Error("Trascrizione audio non configurata");
+  const extension = AUDIO_EXTENSIONS[mimeType];
+  if (!extension) throw new Error("Formato audio non supportato per la trascrizione");
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const model = process.env.OPENAI_TRANSCRIPTION_MODEL || TRANSCRIPTION_MODEL;
+  const startedAt = Date.now();
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: new File([new Uint8Array(buffer)], `messaggio-vocale.${extension}`, { type: mimeType }),
+      model: model as "whisper-1",
+      response_format: "json",
+      prompt: "Conversazione di assistenza clienti. Trascrivi fedelmente nella lingua originale, inclusi nomi, numeri, date e indirizzi.",
+    });
+    const usage = (transcription as unknown as {
+      usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
+    }).usage;
+    const text = transcription.text?.trim();
+    if (!text) throw new Error("Il messaggio vocale non contiene parlato trascrivibile");
+    await recordAIUsage({
+      botId,
+      feature: "channel_attachment_transcription",
+      model,
+      usage: usage ? {
+        prompt_tokens: usage.input_tokens,
+        completion_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+      } : undefined,
+      durationMs: Date.now() - startedAt,
+    });
+    return text.slice(0, MAX_ATTACHMENT_TEXT);
+  } catch (error) {
+    await recordAIUsage({
+      botId,
+      feature: "channel_attachment_transcription",
+      model,
+      durationMs: Date.now() - startedAt,
+      success: false,
+      errorCode: error instanceof Error ? error.name : "TRANSCRIPTION_ERROR",
+    });
+    throw error;
+  }
+}
+
 export async function analyzeMetaAttachment(input: {
   provider: MetaProvider;
   descriptor: MetaAttachmentDescriptor;
@@ -160,16 +217,20 @@ export async function analyzeMetaAttachment(input: {
 }) {
   const descriptor = input.descriptor;
   if (!descriptor.mediaId && !descriptor.url) return unsupportedAttachment(descriptor);
-  if (!["image", "document", "file"].includes(descriptor.type)) return unsupportedAttachment(descriptor);
+  if (!["image", "document", "file", "audio"].includes(descriptor.type)) return unsupportedAttachment(descriptor);
 
   const downloaded = input.provider === "whatsapp"
     ? await resolveWhatsAppMedia(descriptor, input.config)
     : { ...(await boundedDownload(descriptor.url || "")), mimeType: descriptor.mimeType };
-  const mimeType = (downloaded.mimeType || downloaded.contentType || "").toLowerCase();
+  const mimeType = (downloaded.mimeType || downloaded.contentType || "").split(";")[0].trim().toLowerCase();
 
   if (descriptor.type === "image" && ["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
     const description = await describeImage(downloaded.buffer, mimeType, input.botId);
     return analyzedAttachment({ ...descriptor, mimeType }, description);
+  }
+  if (descriptor.type === "audio" && AUDIO_EXTENSIONS[mimeType]) {
+    const transcript = await transcribeAudio(downloaded.buffer, mimeType, input.botId);
+    return analyzedAttachment({ ...descriptor, mimeType, filename: descriptor.filename || `messaggio-vocale.${AUDIO_EXTENSIONS[mimeType]}` }, `Trascrizione del messaggio vocale:\n${transcript}`);
   }
   if (mimeType === "application/pdf" || descriptor.filename?.toLowerCase().endsWith(".pdf")) {
     if (downloaded.buffer.subarray(0, 5).toString("ascii") !== "%PDF-") throw new Error("Il documento non è un PDF valido");

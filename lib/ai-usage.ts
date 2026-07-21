@@ -11,6 +11,7 @@ type Usage = {
 const pricingPerMillion: Array<{ test: RegExp; input: number; cached?: number; output: number }> = [
   { test: /^text-embedding-3-small/i, input: 0.02, output: 0 },
   { test: /^text-embedding-3-large/i, input: 0.13, output: 0 },
+  { test: /^gpt-4o-mini-transcribe/i, input: 1.25, output: 5 },
   { test: /^gpt-4o-mini/i, input: 0.15, cached: 0.075, output: 0.60 },
   { test: /^gpt-4o/i, input: 2.50, cached: 1.25, output: 10 },
   { test: /^gpt-4\.1-mini/i, input: 0.40, cached: 0.10, output: 1.60 },
