@@ -118,6 +118,7 @@ export async function POST(
   }
   const contact = await syncCRMContactFromConversation(
     parsed.data.conversationId,
+    { consentStatus: "granted" },
   );
   after(async () => {
     await emitIntegrationWebhook({

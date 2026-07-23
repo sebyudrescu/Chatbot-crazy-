@@ -1,35 +1,102 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { normalizeCRMEmail, normalizeCRMPhone } from "@/lib/crm-sync";
 
-const parse = (value: string) => { try { return JSON.parse(value) } catch { return [] } }
+const parse = (value: string) => {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 export async function GET(request: NextRequest) {
-  const botId = request.nextUrl.searchParams.get('botId')
-  const conversations = await prisma.conversation.findMany({ where: botId ? { botId } : undefined, include: { chatbot: { select: { id: true, companyName: true } }, _count: { select: { messages: true } } }, orderBy: { lastMessageAt: 'desc' } })
-  const groups = new Map<string, typeof conversations>()
-  for (const item of conversations) {
-    const identity = item.userEmail?.toLowerCase() || item.userPhone?.replace(/\s/g, '') || item.userSessionId
-    const key = `${item.botId}:${identity}`
-    groups.set(key, [...(groups.get(key) || []), item])
+  try {
+    const botId = request.nextUrl.searchParams.get("botId");
+    const where = botId ? { botId } : undefined;
+    const [contacts, conversations] = await Promise.all([
+      prisma.cRMContact.findMany({
+        where,
+        include: { chatbot: { select: { id: true, companyName: true } } },
+        orderBy: { lastInteraction: "desc" },
+      }),
+      prisma.conversation.findMany({
+        where,
+        include: { _count: { select: { messages: true } } },
+      }),
+    ]);
+
+    const conversationById = new Map(conversations.map(item => [item.id, item]));
+    const contactByAlias = new Map<string, string>();
+    for (const contact of contacts) {
+      const lastConversation = contact.lastConversationId
+        ? conversationById.get(contact.lastConversationId)
+        : undefined;
+      const aliases = [
+        contact.identityKey,
+        normalizeCRMEmail(contact.email),
+        normalizeCRMPhone(contact.phone),
+        lastConversation?.userSessionId,
+      ].filter((value): value is string => Boolean(value));
+      for (const alias of aliases) contactByAlias.set(`${contact.botId}:${alias}`, contact.id);
+    }
+
+    const metrics = new Map<string, {
+      conversationCount: number;
+      messageCount: number;
+      intents: Set<string>;
+      needsAttention: boolean;
+      resolvedCount: number;
+    }>();
+    for (const conversation of conversations) {
+      const aliases = [
+        normalizeCRMEmail(conversation.userEmail),
+        normalizeCRMPhone(conversation.userPhone),
+        conversation.userSessionId,
+      ].filter((value): value is string => Boolean(value));
+      const contactId = aliases
+        .map(alias => contactByAlias.get(`${conversation.botId}:${alias}`))
+        .find(Boolean);
+      if (!contactId) continue;
+      const current = metrics.get(contactId) || {
+        conversationCount: 0,
+        messageCount: 0,
+        intents: new Set<string>(),
+        needsAttention: false,
+        resolvedCount: 0,
+      };
+      current.conversationCount += 1;
+      current.messageCount += conversation._count.messages;
+      if (conversation.userIntent) current.intents.add(conversation.userIntent);
+      current.needsAttention ||= conversation.needsHumanEscalation && !conversation.isResolved;
+      if (conversation.isResolved) current.resolvedCount += 1;
+      metrics.set(contactId, current);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: contacts.map(contact => {
+        const item = metrics.get(contact.id);
+        return {
+          ...contact,
+          tags: parse(contact.tags),
+          notes: parse(contact.notes),
+          conversationId: contact.lastConversationId,
+          agent: contact.chatbot,
+          conversationCount: item?.conversationCount || 0,
+          messageCount: item?.messageCount || 0,
+          intents: item ? [...item.intents] : [],
+          needsAttention: item?.needsAttention || false,
+          resolved: Boolean(item?.conversationCount && item.resolvedCount === item.conversationCount),
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Error fetching CRM contacts:", error);
+    return NextResponse.json(
+      { success: false, error: "Impossibile caricare i contatti CRM" },
+      { status: 500 },
+    );
   }
-  const metrics = new Map<string, { conversationCount: number; messageCount: number; intents: string[]; needsAttention: boolean; resolved: boolean }>()
-  await Promise.all([...groups.entries()].map(async ([groupKey, items]) => {
-    const latest = items[0], identityKey = groupKey.slice(latest.botId.length + 1)
-    const intents = [...new Set(items.map(item => item.userIntent).filter((value): value is string => Boolean(value)))]
-    let score = 10
-    if (latest.userEmail) score += 25
-    if (latest.userPhone) score += 20
-    if (latest.userCompany) score += 15
-    if (intents.some(intent => /sales|quote|preventivo|purchase/i.test(intent))) score += 15
-    if (items.length > 1) score += 10
-    if (items.some(item => item.needsHumanEscalation)) score += 5
-    const contact = await prisma.cRMContact.upsert({
-      where: { botId_identityKey: { botId: latest.botId, identityKey } },
-      create: { botId: latest.botId, identityKey, name: latest.userName, email: latest.userEmail, phone: latest.userPhone, company: latest.userCompany, leadScore: Math.min(100, score), lastConversationId: latest.id, lastInteraction: latest.lastMessageAt || latest.startedAt },
-      update: { name: latest.userName || undefined, email: latest.userEmail || undefined, phone: latest.userPhone || undefined, company: latest.userCompany || undefined, leadScore: Math.min(100, score), lastConversationId: latest.id, lastInteraction: latest.lastMessageAt || latest.startedAt },
-    })
-    metrics.set(contact.id, { conversationCount: items.length, messageCount: items.reduce((sum, item) => sum + item._count.messages, 0), intents, needsAttention: items.some(item => item.needsHumanEscalation && !item.isResolved), resolved: items.every(item => item.isResolved) })
-  }))
-  const contacts = await prisma.cRMContact.findMany({ where: botId ? { botId } : undefined, include: { chatbot: { select: { id: true, companyName: true } } }, orderBy: { lastInteraction: 'desc' } })
-  return NextResponse.json({ success: true, data: contacts.map(contact => ({ ...contact, tags: parse(contact.tags), notes: parse(contact.notes), conversationId: contact.lastConversationId, agent: contact.chatbot, ...(metrics.get(contact.id) || { conversationCount: 0, messageCount: 0, intents: [], needsAttention: false, resolved: false }) })) })
 }

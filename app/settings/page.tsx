@@ -12,6 +12,7 @@ import { OperationalMonitor } from '@/components/settings/OperationalMonitor'
 interface Status {
   database: boolean
   openAI: boolean
+  openAIConfigured: boolean
   pinecone: boolean
   firecrawl: boolean
   accessProtection: boolean
@@ -32,7 +33,7 @@ export default function SettingsPage() {
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="card p-5"><div className="flex items-center gap-2"><Server className="h-4 w-4 text-brand-600" /><h2 className="text-sm font-semibold">Servizi collegati</h2></div><p className="mt-1 text-xs text-gray-500">Le chiavi restano sul server e non vengono mai mostrate nel browser.</p><div className="mt-5 divide-y">
           <Service name="Database Neon" detail="Agenti, fonti, chat, CRM e valutazioni" active={status.database} required />
-          <Service name="OpenAI" detail="Risposte, embeddings e classificazione" active={status.openAI} required />
+          <Service name="OpenAI" detail={status.openAI ? 'Chiave verificata: risposte, embeddings e classificazione operativi' : status.openAIConfigured ? 'Chiave configurata ma verifica live non riuscita' : 'Chiave non configurata'} active={status.openAI} required />
           <Service name="Pinecone" detail="Ricerca semantica persistente nella knowledge base" active={status.pinecone} />
           <Service name="Firecrawl" detail="Importazione avanzata di siti web" active={status.firecrawl} />
           <Service name="Protezione accesso" detail="Password privata dell’applicazione" active={status.accessProtection} required={status.environment === 'production'} />

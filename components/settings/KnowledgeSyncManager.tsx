@@ -167,7 +167,7 @@ export function KnowledgeSyncManager() {
         )}
         {automationConfigured
           ? "Controllo automatico protetto pianificato ogni giorno alle 03:15 UTC."
-          : "Configura CRON_SECRET nel deployment per attivare il controllo automatico. La sincronizzazione manuale resta disponibile."}
+          : "Esecuzione automatica disattivata. Il controllo e la sincronizzazione manuale restano sempre disponibili."}
       </div>
 
       <div aria-live="polite">

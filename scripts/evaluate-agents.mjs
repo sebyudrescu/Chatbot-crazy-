@@ -1,8 +1,9 @@
 const baseUrl = process.env.EVALUATION_BASE_URL || 'http://localhost:3000'
+const appOrigin = new URL(baseUrl).origin
 let authCookie = ''
 
 const request = async (path, options = {}) => {
-  const response = await fetch(`${baseUrl}${path}`, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(authCookie ? { Cookie: authCookie } : {}), ...(options.headers || {}) } })
+  const response = await fetch(`${baseUrl}${path}`, { ...options, headers: { Origin: appOrigin, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(authCookie ? { Cookie: authCookie } : {}), ...(options.headers || {}) } })
   const body = await response.json()
   if (!response.ok || body.success === false) throw new Error(body.error || `${response.status} ${path}`)
   return body
@@ -20,9 +21,29 @@ if (password) {
 }
 
 const cases = (await request('/api/evaluations')).data.filter(item => item.isActive)
-const summary = { total: cases.length, passed: 0, failed: 0, results: [] }
+const summary = { total: cases.length, passed: 0, failed: 0, skipped: 0, results: [] }
+const readinessByBot = new Map()
 
 for (const test of cases) {
+  let readiness = readinessByBot.get(test.botId)
+  if (!readiness) {
+    readiness = (await request(`/api/chatbots/${test.botId}/readiness`)).data
+    readinessByBot.set(test.botId, readiness)
+  }
+  const evaluationBlockers = readiness.checks?.filter(
+    check => ['instructions', 'knowledge'].includes(check.key) && !check.done,
+  ) || []
+  if (evaluationBlockers.length) {
+    summary.skipped++
+    summary.results.push({
+      case: test.name,
+      agent: test.chatbot.companyName,
+      passed: null,
+      skipped: true,
+      failures: [evaluationBlockers.map(check => check.label).join(' · ')],
+    })
+    continue
+  }
   const started = Date.now(); let conversationId = null; let response = ''; let confidence = null; const failures = []
   try {
     const chat = await request('/api/chat', { method: 'POST', body: JSON.stringify({ botId: test.botId, message: test.question, userSessionId: `evaluation_cli_${test.id}_${Date.now()}` }) })

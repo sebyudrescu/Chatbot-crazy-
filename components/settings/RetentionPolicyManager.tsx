@@ -129,7 +129,7 @@ export function RetentionPolicyManager() {
           </div>
           <div>
             <h2 id="retention-policy-title" className="text-sm font-semibold text-gray-950">
-              Conservazione automatica
+              Conservazione dati
             </h2>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-gray-500">
               Elimina conversazioni, contatti CRM e tracce collegate quando superano
@@ -162,7 +162,7 @@ export function RetentionPolicyManager() {
         )}
         {automationConfigured
           ? "Pulizia automatica protetta e pianificata ogni giorno alle 02:30 UTC."
-          : "La pianificazione è pronta. Prima del deployment configura CRON_SECRET su Vercel per autorizzarla."}
+          : "Esecuzione automatica disattivata. Puoi controllare i dati scaduti e avviare la pulizia manualmente quando vuoi."}
       </div>
 
       <div aria-live="polite">

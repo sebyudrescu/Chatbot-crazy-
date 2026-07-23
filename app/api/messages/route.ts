@@ -5,6 +5,7 @@ import { stringifyJSON, parseJSON } from '@/lib/utils'
 import { getMetaConnectionForBot } from '@/lib/meta-connections'
 import { sendMetaText } from '@/lib/meta-messaging'
 import { whatsappServiceWindow } from '@/lib/meta-payloads'
+import { syncCRMContactFromConversation } from '@/lib/crm-sync'
 
 // POST /api/messages - Create a message
 export async function POST(request: NextRequest) {
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
       where: { id: validatedData.conversationId },
       data: { lastMessageAt: new Date() },
     })
+    await syncCRMContactFromConversation(validatedData.conversationId)
     
     return NextResponse.json(
       {

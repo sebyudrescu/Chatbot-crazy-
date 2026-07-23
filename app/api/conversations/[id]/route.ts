@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { parseJSON } from '@/lib/utils'
 import { z } from 'zod'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
+import { syncCRMContactFromConversation } from '@/lib/crm-sync'
 
 const ConversationUpdateSchema = z.object({
   isResolved: z.boolean().optional(),
@@ -83,6 +84,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       ...(data.summary !== undefined ? { lastSummaryAt: new Date() } : {}),
     }
     const conversation = await prisma.conversation.update({ where: { id: params.id }, data: update })
+    await syncCRMContactFromConversation(conversation.id)
     if (data.needsHumanEscalation === true) {
       after(async () => {
         await emitIntegrationWebhook({

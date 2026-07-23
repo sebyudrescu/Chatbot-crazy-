@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     return noStore({
       success: true,
       data: await getKnowledgeSyncPreview(botId),
-      automationConfigured: Boolean(process.env.CRON_SECRET),
+      automationConfigured: false,
     });
   } catch {
     return noStore({ success: false, error: "Agente non valido" }, 400);

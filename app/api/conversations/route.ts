@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { CreateConversationSchema } from '@/lib/types'
 import { isAllowedWidgetOrigin } from '@/lib/widget-origin'
 import { parseJSON } from '@/lib/utils'
+import { syncCRMContactFromConversation } from '@/lib/crm-sync'
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204 })
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
         userSessionId: validatedData.userSessionId,
       },
     })
+    await syncCRMContactFromConversation(conversation.id)
     
     return NextResponse.json(
       {

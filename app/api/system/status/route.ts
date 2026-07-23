@@ -5,20 +5,37 @@ import { getDeploymentReadiness } from '@/lib/deployment-readiness'
 
 export const dynamic = 'force-dynamic'
 
+async function verifyOpenAIKey() {
+  const key = process.env.OPENAI_API_KEY
+  if (!key) return false
+  try {
+    const response = await fetch('https://api.openai.com/v1/models', {
+      headers: { Authorization: `Bearer ${key}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 export async function GET() {
   try {
-    const [agents, sources, conversations, operations] = await Promise.all([
+    const [agents, sources, conversations, operations, openAI] = await Promise.all([
       prisma.chatbot.count(),
       prisma.knowledgeSource.count(),
       prisma.conversation.count(),
       getOperationalHealth(),
+      verifyOpenAIKey(),
     ])
     const deployment = getDeploymentReadiness()
     return NextResponse.json({
       success: true,
       data: {
         database: true,
-        openAI: Boolean(process.env.OPENAI_API_KEY),
+        openAI,
+        openAIConfigured: Boolean(process.env.OPENAI_API_KEY),
         pinecone: Boolean(process.env.PINECONE_API_KEY && (process.env.PINECONE_INDEX_NAME || process.env.PINECONE_INDEX)),
         firecrawl: Boolean(process.env.FIRECRAWL_API_KEY),
         accessProtection: Boolean(process.env.APP_ACCESS_PASSWORD),
@@ -33,7 +50,8 @@ export async function GET() {
       success: false,
       data: {
         database: false,
-        openAI: Boolean(process.env.OPENAI_API_KEY),
+        openAI: false,
+        openAIConfigured: Boolean(process.env.OPENAI_API_KEY),
         pinecone: Boolean(process.env.PINECONE_API_KEY && (process.env.PINECONE_INDEX_NAME || process.env.PINECONE_INDEX)),
         firecrawl: Boolean(process.env.FIRECRAWL_API_KEY),
         accessProtection: Boolean(process.env.APP_ACCESS_PASSWORD),

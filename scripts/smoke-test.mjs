@@ -566,22 +566,52 @@ try {
       exportCsv.includes("Nota operativa smoke"),
     "Conversation CSV export failed",
   );
+  const persistedContacts = await prisma.cRMContact.findMany({
+    where: {
+      botId,
+      OR: [{ email: "smoke@example.com" }, { identityKey: "smoke_session" }],
+    },
+  });
+  assert(
+    persistedContacts.length === 1 && persistedContacts[0].email === "smoke@example.com",
+    "CRM contact was not synchronized before reading the CRM list",
+  );
   const contacts = await request(`/api/contacts?botId=${botId}`);
-  const contact = contacts.data[0];
-  assert(contact?.email === "smoke@example.com", "CRM synchronization failed");
+  const matchingContacts = contacts.data.filter(item =>
+    item.email === "smoke@example.com" || item.identityKey === "smoke_session"
+  );
+  const contact = matchingContacts[0];
+  assert(
+    contact?.email === "smoke@example.com" && matchingContacts.length === 1,
+    "CRM lifecycle synchronization or session-to-email deduplication failed",
+  );
   const contactUpdate = await request(`/api/contacts/${contact.id}`, {
     method: "PATCH",
     body: JSON.stringify({
       stage: "qualified",
       potentialValue: 1200,
       tags: ["smoke"],
+      consentStatus: "granted",
       note: "Smoke note",
     }),
   });
   assert(
     contactUpdate.data.stage === "qualified" &&
+      contactUpdate.data.consentStatus === "granted" &&
       contactUpdate.data.notes.length === 1,
     "CRM pipeline persistence failed",
+  );
+  const crmExportResponse = await fetch(
+    `${baseUrl}/api/contacts/export?botId=${botId}`,
+    { headers: authCookie ? { Cookie: authCookie } : {} },
+  );
+  const crmExportCsv = await crmExportResponse.text();
+  assert(
+    crmExportResponse.ok &&
+      crmExportResponse.headers.get("content-type")?.includes("text/csv") &&
+      crmExportCsv.includes("smoke@example.com") &&
+      crmExportCsv.includes("qualified"),
+    "CRM CSV export failed",
   );
 
   const flow = await request("/api/workflows", {
@@ -755,6 +785,14 @@ try {
     assert(
       publicLead.ok && publicLeadBody.data?.contactId,
       "Signed widget lead capture did not create a CRM contact",
+    );
+    const widgetContact = await prisma.cRMContact.findUnique({
+      where: { id: publicLeadBody.data.contactId },
+    });
+    assert(
+      widgetContact?.consentStatus === "granted" &&
+        widgetContact.email === "widget-smoke@example.com",
+      "Widget consent was not persisted in CRM",
     );
     const publicHistory = await fetch(
       `${baseUrl}/api/embed/${botId}/conversations/${publicChat.data.conversationId}?sessionId=${encodeURIComponent(session.data.sessionId)}`,
