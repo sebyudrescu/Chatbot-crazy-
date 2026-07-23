@@ -18,7 +18,7 @@ import { Pinecone } from '@pinecone-database/pinecone'
 // ============================================================================
 
 const PINECONE_API_KEY = process.env.PINECONE_API_KEY
-const PINECONE_INDEX_NAME = process.env.PINECONE_INDEX_NAME || 'chatbot-knowledge-base'
+const PINECONE_INDEX_NAME = process.env.PINECONE_INDEX_NAME || process.env.PINECONE_INDEX || 'chatbot-knowledge-base'
 
 // Lazy initialization
 let pineconeClient: Pinecone | null = null

@@ -5,6 +5,7 @@ import { parseJSON, stringifyJSON } from "@/lib/utils";
 import type { ChatbotSettings } from "@/lib/types";
 import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from "@/lib/agent-policy";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { detectSentiment } from "@/lib/sentiment";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -92,7 +93,8 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     },
   };
   const result = await orchestrateResponse(context);
-  const workflow = await import("@/lib/workflow-engine").then(({ runActiveWorkflows }) => runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent, sentiment: conversation.sentiment || undefined }));
+  const currentSentiment = detectSentiment(automationMessage);
+  const workflow = await import("@/lib/workflow-engine").then(({ runActiveWorkflows }) => runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent, sentiment: currentSentiment }));
   if (workflow.responseOverride) result.response = workflow.responseOverride;
   const actionResult = await import("@/lib/action-engine").then(({ runTriggeredActions }) => runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent }));
   const channelActionText = actionResult.channelMessages.filter((message) => message.trim()).join("\n\n");
@@ -111,6 +113,7 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     data: {
       lastMessageAt: new Date(),
       userIntent: result.decision.intent.intent,
+      sentiment: currentSentiment,
       topicsDiscussed: stringifyJSON(Array.from(new Set([...(parseJSON<string[]>(conversation.topicsDiscussed) || []), ...result.decision.topics]))),
       ...(policyDecision.action === "handoff" ? { needsHumanEscalation: true, escalatedAt: new Date(), escalationReason: `Policy agente: ${policyDecision.matchedRule}` } : {}),
     },

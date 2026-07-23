@@ -39,7 +39,30 @@ export default function EvaluationsPage() {
       try {
         const chat = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId: item.botId, message: item.question, userSessionId: `evaluation_${item.id}_${Date.now()}` }) }); const result = await chat.json()
         if (!chat.ok || !result.success) failureReason = result.message || result.error || 'Il chatbot non ha risposto'
-        else { response = result.data.assistantMessage.content; confidence = result.data.confidence?.score ?? null; conversationId = result.data.conversationId; const verdict = evaluateResponse(response, confidence, item); passed = verdict.passed; failureReason = verdict.failureReason }
+        else {
+          response = result.data.assistantMessage.content
+          confidence = result.data.confidence?.score ?? null
+          conversationId = result.data.conversationId
+          const judgeResponse = await fetch('/api/evaluations/judge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              botId: item.botId,
+              question: item.question,
+              response,
+              confidence,
+              expectedKeywords: item.expectedKeywords,
+              forbiddenKeywords: item.forbiddenKeywords,
+              minimumConfidence: item.minimumConfidence,
+            }),
+          })
+          const judge = await judgeResponse.json()
+          const verdict = judgeResponse.ok && judge.success
+            ? judge.data
+            : evaluateResponse(response, confidence, item)
+          passed = verdict.passed
+          failureReason = verdict.failureReason
+        }
       } catch { failureReason = 'Servizio non raggiungibile' }
       await fetch('/api/evaluations/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caseId: item.id, passed, response, confidence, latencyMs: Math.round(performance.now() - started), failureReason }) })
       if (conversationId) await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' }).catch(() => {})

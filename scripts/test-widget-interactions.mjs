@@ -29,7 +29,20 @@ window.fetch = async (url, options = {}) => {
   requests.push({
     url: requestUrl,
     body: options.body ? JSON.parse(options.body) : null,
+    headers: options.headers || {},
   });
+  if (requestUrl.endsWith("/session")) {
+    return new Response(JSON.stringify({
+      success: true,
+      data: {
+        sessionId: "00000000-0000-4000-8000-000000000111",
+        token: "signed-widget-session-token",
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (requestUrl.endsWith("/feedback")) {
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -158,14 +171,20 @@ assert.equal(richBubble?.querySelector("img"), null, "Il contenuto HTML di una r
 assert.match(richBubble?.textContent || "", /<img src=x onerror=/, "L'HTML non attendibile non resta testo");
 assert.equal(window.__messageXss, undefined, "Il contenuto della risposta ha eseguito JavaScript");
 
-assert.equal(requests.length, 1, "Il widget esegue richieste API superflue");
-assert.equal(requests[0].url, "https://litx.example/api/chat");
-assert.equal(requests[0].body.message, "Vorrei prenotare");
-assert.equal(requests[0].body.source, "widget");
-assert.match(
-  requests[0].body.userSessionId,
-  /^widget_/,
-  "Il widget non crea un'identità di sessione stabile",
+assert.equal(requests.length, 2, "Il widget esegue richieste API superflue");
+assert.equal(requests[0].url, "https://litx.example/api/embed/00000000-0000-4000-8000-000000000001/session");
+assert.equal(requests[1].url, "https://litx.example/api/chat");
+assert.equal(requests[1].body.message, "Vorrei prenotare");
+assert.equal(requests[1].body.source, "widget");
+assert.equal(
+  requests[1].body.userSessionId,
+  "00000000-0000-4000-8000-000000000111",
+  "Il widget non usa l'identità firmata dal server",
+);
+assert.equal(
+  requests[1].headers["X-LitX-Widget-Session"],
+  "signed-widget-session-token",
+  "Il widget non invia la prova crittografica della sessione",
 );
 assert.equal(
   window.localStorage.getItem(
@@ -228,13 +247,14 @@ for (
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
 assert.equal(
-  requests[1]?.url,
+  requests[2]?.url,
   "https://litx.example/api/embed/00000000-0000-4000-8000-000000000001/feedback",
   "Il feedback usa un endpoint inatteso",
 );
-assert.deepEqual(requests[1]?.body, {
+assert.deepEqual(requests[2]?.body, {
   messageId: "00000000-0000-4000-8000-000000000003",
   feedback: "positive",
+  userSessionId: "00000000-0000-4000-8000-000000000111",
 });
 assert.equal(feedbackButtons[0].getAttribute("aria-pressed"), "true");
 
@@ -242,19 +262,19 @@ replies[0].click();
 for (
   let attempt = 0;
   attempt < 40 &&
-  (requests.length < 3 ||
+  (requests.length < 4 ||
     window.document.getElementById("typing-indicator") !== null);
   attempt += 1
 ) {
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
 assert.equal(
-  requests[2]?.body.message,
+  requests[3]?.body.message,
   "Mostrami gli orari",
   "Il click sulla domanda rapida non invia il testo",
 );
 assert.equal(
-  requests[2]?.body.conversationId,
+  requests[3]?.body.conversationId,
   "00000000-0000-4000-8000-000000000002",
   "La domanda rapida non continua la conversazione esistente",
 );
@@ -267,18 +287,18 @@ assert.equal(
 
 await window.ChatbotWidget.sendMessage("Ripristina sessione");
 assert.equal(
-  requests[3]?.body.conversationId,
+  requests[4]?.body.conversationId,
   "00000000-0000-4000-8000-000000000002",
   "Il widget non prova a continuare la sessione salvata",
 );
 assert.equal(
-  requests[4]?.body.conversationId,
+  requests[5]?.body.conversationId,
   null,
   "Il widget non riparte quando la conversazione salvata è scaduta",
 );
 assert.equal(
-  requests[4]?.body.userSessionId,
-  requests[0]?.body.userSessionId,
+  requests[5]?.body.userSessionId,
+  requests[1]?.body.userSessionId,
   "Il recupero perde l'identità stabile del visitatore",
 );
 
@@ -300,12 +320,13 @@ for (
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
 assert.equal(
-  requests[5]?.url,
+  requests[6]?.url,
   "https://litx.example/api/embed/00000000-0000-4000-8000-000000000001/lead",
   "Il modulo lead usa un endpoint inatteso",
 );
-assert.deepEqual(requests[5]?.body, {
+assert.deepEqual(requests[6]?.body, {
   conversationId: "00000000-0000-4000-8000-000000000002",
+  userSessionId: "00000000-0000-4000-8000-000000000111",
   name: "Mario Rossi",
   email: "mario@example.com",
   phone: "",
@@ -334,7 +355,11 @@ restoredWindow.localStorage.setItem(
 );
 restoredWindow.localStorage.setItem(
   "litx:00000000-0000-4000-8000-000000000001:session",
-  "widget_persistent_visitor",
+  "00000000-0000-4000-8000-000000000222",
+);
+restoredWindow.localStorage.setItem(
+  "litx:00000000-0000-4000-8000-000000000001:session-token",
+  "restored-signed-widget-token",
 );
 let historyRequest = "";
 let includeOperatorReply = false;
@@ -404,7 +429,7 @@ for (
 }
 assert.match(
   historyRequest,
-  /sessionId=widget_persistent_visitor/,
+  /sessionId=00000000-0000-4000-8000-000000000222/,
   "Il recupero storico non verifica l'identità della sessione",
 );
 assert.deepEqual(

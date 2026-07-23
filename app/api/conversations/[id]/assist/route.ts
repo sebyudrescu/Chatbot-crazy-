@@ -29,6 +29,33 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       .join('\n')
       .slice(-30000)
     const settings = parseJSON<Record<string, unknown>>(conversation.chatbot.settings) || {}
+    if (process.env.CI_MOCK_AI === 'true') {
+      await prisma.aIUsageEvent.create({
+        data: {
+          botId: conversation.botId,
+          conversationId: conversation.id,
+          feature: `helpdesk_${mode}`,
+          provider: 'mock',
+          model: 'ci-mock',
+          inputTokens: 120,
+          outputTokens: 60,
+          totalTokens: 180,
+          estimatedCostUsd: 0.0001,
+          durationMs: 5,
+        },
+      })
+      return NextResponse.json({
+        success: true,
+        data: {
+          summary: 'Il cliente richiede informazioni sul servizio e sui prossimi passi.',
+          suggestedReply: 'Grazie per la richiesta. Verifico i dettagli disponibili e ti indico i prossimi passi.',
+          tags: ['informazioni', 'smoke'],
+          sentiment: 'neutral',
+          priority: 'medium',
+          openQuestions: ['Quale servizio interessa al cliente?'],
+        },
+      })
+    }
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     const model = process.env.OPENAI_ASSIST_MODEL || process.env.OPENAI_PROMPT_MODEL || 'gpt-4o-mini'
     const startedAt = Date.now()

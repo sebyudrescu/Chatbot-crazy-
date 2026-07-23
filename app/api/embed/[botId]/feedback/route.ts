@@ -3,12 +3,18 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { isAllowedWidgetOrigin } from "@/lib/widget-origin";
 import { checkRateLimit, requestClientIp } from "@/lib/rate-limit";
+import { readWidgetSession, widgetSessionToken } from "@/lib/widget-session";
 
 const FeedbackSchema = z.object({
   messageId: z.string().uuid(),
   feedback: z.enum(["positive", "negative"]),
   feedbackComment: z.string().trim().max(1000).nullable().optional(),
+  userSessionId: z.string().min(1).max(300),
 });
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204 });
+}
 
 export async function POST(
   request: NextRequest,
@@ -23,6 +29,9 @@ export async function POST(
       { status: 400 },
     );
   }
+  if (!request.headers.get("origin") && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ success: false, error: "origin_required" }, { status: 403 });
+  }
 
   if (
     !(await isAllowedWidgetOrigin(
@@ -34,6 +43,18 @@ export async function POST(
     return NextResponse.json(
       { success: false, error: "origin_not_allowed" },
       { status: 403 },
+    );
+  }
+  try {
+    readWidgetSession(
+      widgetSessionToken(request),
+      botId,
+      parsed.data.userSessionId,
+    );
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "widget_session_invalid" },
+      { status: 401 },
     );
   }
 
@@ -60,7 +81,7 @@ export async function POST(
     where: {
       id: parsed.data.messageId,
       role: "assistant",
-      conversation: { botId },
+      conversation: { botId, userSessionId: parsed.data.userSessionId },
     },
     data: {
       feedback: parsed.data.feedback,

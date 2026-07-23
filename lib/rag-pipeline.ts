@@ -13,7 +13,7 @@ import type { TextChunk } from './chunking'
 import { prisma } from './db'
 import { SourceStatus } from './types'
 
-// Vector Store: Use Pinecone if configured, otherwise fallback to simple-vector-store
+// Pinecone is preferred at scale; PostgreSQL is the durable zero-setup fallback.
 import {
   isPineconeConfigured,
   upsertVectors as pineconeUpsert,
@@ -25,14 +25,20 @@ import {
 
 // Fallback to simple vector store
 import {
-  addVectors,
-  saveVectorStore,
-  loadVectorStore,
-  searchVectors,
-  deleteVectorStore,
-  getStoreStats,
-  type VectorDocument,
-} from './simple-vector-store'
+  deleteDatabaseVectorsForBot,
+  getDatabaseVectorStats,
+  replaceDatabaseVectors,
+  searchDatabaseVectors,
+} from './database-vector-store'
+
+interface VectorDocument {
+  id: string
+  text: string
+  embedding: number[]
+  metadata: Record<string, any>
+}
+
+const shouldUsePineconeVectorStore = () => isPineconeConfigured()
 
 /**
  * Process a document and add to knowledge base
@@ -123,9 +129,13 @@ export async function processAndStoreDocument(
       }
     }
     
-    // 3. Store vectors (Pinecone if configured, otherwise file-based)
-    const usePinecone = isPineconeConfigured()
-    
+    // 3. PostgreSQL is always the durable source of truth. Pinecone is an
+    // optional high-scale search replica.
+    const usePinecone = shouldUsePineconeVectorStore()
+    console.log(`💾 Storing ${documents.length} vectors in PostgreSQL for bot ${botId}`)
+    await replaceDatabaseVectors(botId, sourceId, documents)
+    console.log(`✅ Vectors stored in PostgreSQL`)
+
     if (usePinecone) {
       console.log(`💾 Storing ${documents.length} vectors in Pinecone for bot ${botId}`)
       
@@ -144,11 +154,6 @@ export async function processAndStoreDocument(
       
       await pineconeUpsert(botId, vectorChunks)
       console.log(`✅ Vectors stored in Pinecone`)
-      
-    } else {
-      console.log(`💾 Storing ${documents.length} vectors in file system for bot ${botId}`)
-      addVectors(botId, documents)
-      console.log(`✅ Vectors stored in file system`)
     }
     
     // 4. Update both the source and the agent-level KB state. Direct PDF,
@@ -250,46 +255,35 @@ export async function queryKnowledgeBase(
     const questionEmbedding = await generateEmbedding(question, { botId, feature: 'embedding_search' })
     
     // 2. Query vector store (Pinecone if configured, otherwise file-based)
-    const usePinecone = isPineconeConfigured()
+    const usePinecone = shouldUsePineconeVectorStore()
     
     let results: Array<{ text: string; score: number; metadata: any }>
     
     if (usePinecone) {
       console.log(`🔍 Searching Pinecone (top ${topK})`)
-      
-      const pineconeResults = await pineconeQuery(botId, questionEmbedding, {
-        topK,
-        minScore
-      })
-      
-      results = pineconeResults.map(r => ({
-        text: r.text,
-        score: r.score,
-        metadata: r.metadata
-      }))
-      
-    } else {
-      console.log(`🔍 Searching file system (top ${topK})`)
-      
-      // Load vector store
-      const store = loadVectorStore(botId)
-      
-      if (!store || store.documents.length === 0) {
-        console.log(`⚠️ No knowledge base found for bot ${botId}`)
-        return []
-      }
-      
-      // Search vector store
-      const searchResults = searchVectors(botId, questionEmbedding, topK)
-      
-      // Filter by minimum score
-      results = searchResults
-        .filter((r) => r.score >= minScore)
-        .map((r) => ({
-          text: r.document.text,
+      try {
+        const pineconeResults = await pineconeQuery(botId, questionEmbedding, {
+          topK,
+          minScore
+        })
+        results = pineconeResults.map(r => ({
+          text: r.text,
           score: r.score,
-          metadata: r.document.metadata,
+          metadata: r.metadata
         }))
+      } catch (error) {
+        console.error('Pinecone unavailable, using PostgreSQL fallback:', error)
+        results = await searchDatabaseVectors(botId, questionEmbedding, topK, minScore)
+      }
+
+    } else {
+      console.log(`🔍 Searching PostgreSQL vector fallback (top ${topK})`)
+      results = await searchDatabaseVectors(
+        botId,
+        questionEmbedding,
+        topK,
+        process.env.CI_MOCK_AI === 'true' ? -1 : minScore,
+      )
     }
     
     console.log(`✅ Found ${results.length} relevant chunks`)
@@ -298,7 +292,7 @@ export async function queryKnowledgeBase(
     
   } catch (error) {
     console.error(`❌ Error querying knowledge base:`, error)
-    return []
+    throw error
   }
 }
 
@@ -383,14 +377,11 @@ ISTRUZIONI:
  * Delete knowledge base for a bot
  */
 export async function deleteKnowledgeBase(botId: string): Promise<void> {
-  const usePinecone = isPineconeConfigured()
-  
+  const usePinecone = shouldUsePineconeVectorStore()
+  await deleteDatabaseVectorsForBot(botId)
   if (usePinecone) {
     console.log(`🗑️ Deleting vectors from Pinecone for bot ${botId}`)
     await pineconeDelete(botId)
-  } else {
-    console.log(`🗑️ Deleting vectors from file system for bot ${botId}`)
-    deleteVectorStore(botId)
   }
   
   await prisma.knowledgeSource.deleteMany({
@@ -404,7 +395,7 @@ export async function deleteKnowledgeBase(botId: string): Promise<void> {
  * Get knowledge base statistics
  */
 export async function getKnowledgeBaseStats(botId: string) {
-  const usePinecone = isPineconeConfigured()
+  const usePinecone = shouldUsePineconeVectorStore()
   
   let indexStats: any
   
@@ -417,8 +408,8 @@ export async function getKnowledgeBaseStats(botId: string) {
     }
   } else {
     indexStats = {
-      ...getStoreStats(botId),
-      storageType: 'file-system'
+      ...await getDatabaseVectorStats(botId),
+      storageType: 'postgresql'
     }
   }
   

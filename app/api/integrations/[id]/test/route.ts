@@ -3,12 +3,13 @@ import { prisma } from '@/lib/db'
 import { safeHttpsUrl } from '@/lib/integration-catalog'
 import { deliverWebhook } from '@/lib/webhook-delivery'
 import { assertSafeRemoteUrl } from '@/lib/url-safety'
+import { decryptConfigSecrets } from '@/lib/secret-config'
 
 export async function POST(_: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const connection = await prisma.integrationConnection.findUnique({ where: { id: params.id } })
   if (!connection) return NextResponse.json({ success: false, error: 'Connessione non trovata' }, { status: 404 })
-  const config = JSON.parse(connection.config || '{}')
+  const config = decryptConfigSecrets(JSON.parse(connection.config || '{}')) as Record<string, string>
   const candidate = connection.provider === 'webhook' ? config.endpoint : connection.provider === 'calendly' ? config.bookingUrl : null
   if (!candidate || !safeHttpsUrl(candidate)) return NextResponse.json({ success: false, error: 'Configurazione HTTPS non valida' }, { status: 400 })
   try {

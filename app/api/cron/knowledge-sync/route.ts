@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { scheduleKnowledgeSync } from "@/lib/knowledge-sync";
 import { processJobManually } from "@/lib/ingestion-worker";
-import { recoverStaleRunningJobs } from "@/lib/ingestion-queue";
+import { getNextJob, recoverStaleRunningJobs } from "@/lib/ingestion-queue";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -17,15 +17,29 @@ export async function GET(request: NextRequest) {
 
   try {
     const recovered = await recoverStaleRunningJobs();
-    const scheduled = await scheduleKnowledgeSync({ limit: 1, activeOnly: true });
-    const job = scheduled.jobs.find((item) => item.status === "pending");
-    if (job) await processJobManually(job.id);
+    const scheduled = await scheduleKnowledgeSync({ limit: 3, activeOnly: true });
+    const processedJobIds: string[] = [];
+    const failedJobs: Array<{ id: string; error: string }> = [];
+    for (let index = 0; index < 3; index += 1) {
+      const job = await getNextJob();
+      if (!job) break;
+      try {
+        await processJobManually(job.id);
+        processedJobIds.push(job.id);
+      } catch (error) {
+        failedJobs.push({
+          id: job.id,
+          error: error instanceof Error ? error.message : "Elaborazione non riuscita",
+        });
+      }
+    }
     return NextResponse.json({
       success: true,
       data: {
         ...scheduled,
         recoveredJobs: recovered.count,
-        processedJobId: job?.id || null,
+        processedJobIds,
+        failedJobs,
       },
     });
   } catch (error) {

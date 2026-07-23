@@ -51,8 +51,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Remove vectors before deleting the source record so retrieval cannot use stale data.
-    const { deleteSource } = await import('@/lib/simple-vector-store')
-    deleteSource(botId, sourceId)
+    const { deleteDatabaseVectorsForSource } = await import('@/lib/database-vector-store')
+    await deleteDatabaseVectorsForSource(botId, sourceId)
     const { deleteVectorsForSource, isPineconeConfigured } = await import('@/lib/pinecone-vector-store')
     if (isPineconeConfigured()) await deleteVectorsForSource(botId, sourceId)
 

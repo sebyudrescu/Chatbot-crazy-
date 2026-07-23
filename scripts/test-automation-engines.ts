@@ -17,6 +17,11 @@ import { getAgentReadiness } from "../lib/agent-readiness";
 import { getDeploymentReadiness } from "../lib/deployment-readiness";
 import { checkPersistentRateLimit } from "../lib/rate-limit";
 import { completeJob, isBotReady } from "../lib/ingestion-queue";
+import {
+  deleteDatabaseVectorsForSource,
+  replaceDatabaseVectors,
+  searchDatabaseVectors,
+} from "../lib/database-vector-store";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -288,6 +293,8 @@ async function main() {
     APP_AUTH_SALT: "session-signing-salt-with-32-characters",
     CRON_SECRET: "cron-signing-secret-with-32-characters",
     NEXT_PUBLIC_APP_URL: "https://agents.example.com",
+    PINECONE_API_KEY: "pinecone-production-key",
+    PINECONE_INDEX_NAME: "litx-production",
   });
   assert(deployable.ready, "Valid production environment was not accepted");
   const unsafeDeployment = getDeploymentReadiness({
@@ -299,7 +306,7 @@ async function main() {
     NEXT_PUBLIC_APP_URL: "http://localhost:3000",
   });
   assert(
-    !unsafeDeployment.ready && unsafeDeployment.missing.length === 6,
+    !unsafeDeployment.ready && unsafeDeployment.missing.length === 8,
     "Unsafe production environment was not rejected",
   );
   await testWebhookDelivery();
@@ -345,11 +352,56 @@ async function main() {
     actionSimulation.extracted.email === "luca@example.com",
     "Action simulation did not extract the email",
   );
+  const apiSimulation = simulateAction({
+    type: "api_request",
+    triggerKeywords: ["sincronizza"],
+    config: { url: "https://crm.example.com/leads", method: "PATCH" },
+    message: "Sincronizza questo lead",
+  });
+  assert(
+    apiSimulation.matched
+      && apiSimulation.extracted.method === "PATCH"
+      && apiSimulation.safePreview,
+    "API action simulation did not stay side-effect free",
+  );
 
   const bot = await prisma.chatbot.create({
     data: { companyName: "Automation engine test" },
   });
   try {
+    const vectorSource = await prisma.knowledgeSource.create({
+      data: {
+        botId: bot.id,
+        sourceType: "manual",
+        contentText: "Documento vettoriale persistente",
+        status: "completed",
+      },
+    });
+    await replaceDatabaseVectors(bot.id, vectorSource.id, [
+      {
+        id: `${vectorSource.id}_chunk_0`,
+        text: "Pulizie professionali per uffici",
+        embedding: [1, 0, 0],
+        metadata: { sourceId: vectorSource.id, sourceType: "manual", chunkIndex: 0 },
+      },
+      {
+        id: `${vectorSource.id}_chunk_1`,
+        text: "Assistenza informatica",
+        embedding: [0, 1, 0],
+        metadata: { sourceId: vectorSource.id, sourceType: "manual", chunkIndex: 1 },
+      },
+    ]);
+    const vectorMatches = await searchDatabaseVectors(bot.id, [0.9, 0.1, 0], 1, 0.2);
+    assert(
+      vectorMatches[0]?.text === "Pulizie professionali per uffici",
+      "PostgreSQL vector fallback returned the wrong chunk",
+    );
+    await deleteDatabaseVectorsForSource(bot.id, vectorSource.id);
+    assert(
+      (await searchDatabaseVectors(bot.id, [1, 0, 0], 5, 0)).length === 0,
+      "PostgreSQL vector fallback left stale source chunks",
+    );
+
     const failedJob = await prisma.ingestionJob.create({
       data: {
         botId: bot.id,

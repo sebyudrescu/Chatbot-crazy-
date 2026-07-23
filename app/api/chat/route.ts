@@ -30,6 +30,9 @@ import { isAllowedWidgetOrigin } from '@/lib/widget-origin'
 import { z } from 'zod'
 import { checkRateLimit, requestClientIp } from '@/lib/rate-limit'
 import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from '@/lib/agent-policy'
+import { readWidgetSession, widgetSessionToken } from '@/lib/widget-session'
+import { detectSentiment } from '@/lib/sentiment'
+import { verifyOwnerSessionToken } from '@/lib/auth-token'
 
 const ChatRequestSchema = z.object({
   botId: z.string().uuid(),
@@ -70,18 +73,6 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       )
     }
-    if (
-      body.source === 'widget' &&
-      body.userSessionId &&
-      existingConversation &&
-      existingConversation.userSessionId !== body.userSessionId
-    ) {
-      return NextResponse.json(
-        { success: false, error: 'Conversation not found' },
-        { status: 404 }
-      )
-    }
-
     if (!await isAllowedWidgetOrigin(botId, request.headers.get('origin'), request.nextUrl.origin)) {
       return NextResponse.json({ success: false, error: 'origin_not_allowed' }, { status: 403 })
     }
@@ -89,10 +80,18 @@ export async function POST(request: NextRequest) {
     if (!requestOrigin && process.env.NODE_ENV === 'production') {
       return NextResponse.json({ success: false, error: 'origin_required' }, { status: 403 })
     }
-    const externalRequest = requestOrigin
-      ? new URL(requestOrigin).hostname !== request.nextUrl.hostname
-      : false
-    if (body.source === 'widget' || externalRequest) {
+    if (body.source === 'widget') {
+      if (!body.userSessionId) {
+        return NextResponse.json({ success: false, error: 'widget_session_required' }, { status: 401 })
+      }
+      try {
+        readWidgetSession(widgetSessionToken(request), botId, body.userSessionId)
+      } catch {
+        return NextResponse.json({ success: false, error: 'widget_session_invalid' }, { status: 401 })
+      }
+      if (existingConversation && existingConversation.userSessionId !== body.userSessionId) {
+        return NextResponse.json({ success: false, error: 'Conversation not found' }, { status: 404 })
+      }
       const rate = await checkRateLimit(`widget-chat:${botId}:${requestClientIp(request.headers)}`, 30, 60 * 1000)
       if (!rate.allowed) {
         return NextResponse.json(
@@ -103,6 +102,18 @@ export async function POST(request: NextRequest) {
       const publication = await prisma.chatbot.findUnique({ where: { id: botId }, select: { isActive: true } })
       if (!publication?.isActive) {
         return NextResponse.json({ success: false, error: 'agent_not_published' }, { status: 403 })
+      }
+    } else {
+      const password = process.env.APP_ACCESS_PASSWORD
+      const ownerAllowed = !password && process.env.NODE_ENV !== 'production'
+        ? true
+        : Boolean(password) && await verifyOwnerSessionToken(
+          request.cookies.get('litx_owner')?.value,
+          password!,
+          process.env.APP_AUTH_SALT || 'litx-private-owner',
+        )
+      if (!ownerAllowed) {
+        return NextResponse.json({ success: false, error: 'Accesso non autorizzato' }, { status: 401 })
       }
     }
     
@@ -253,6 +264,7 @@ export async function POST(request: NextRequest) {
     
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything
     const result = await orchestrateResponse(orchestratorContext)
+    const currentSentiment = detectSentiment(message)
     const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
     const workflowResult = incomingPolicy.action === 'allow'
       ? await import('@/lib/workflow-engine').then(({ runActiveWorkflows }) => runActiveWorkflows({
@@ -261,7 +273,7 @@ export async function POST(request: NextRequest) {
         messageId: userMessage.id,
         message,
         intent: result.decision.intent.intent,
-        sentiment: conversation.sentiment || undefined,
+        sentiment: currentSentiment,
       }))
       : { executed: [], failed: [], skipped: [], actions: [] }
     if (workflowResult.responseOverride) result.response = workflowResult.responseOverride
@@ -371,7 +383,7 @@ export async function POST(request: NextRequest) {
       data: {
         lastMessageAt: new Date(),
         userIntent: result.decision.intent.intent,
-        sentiment: conversation.sentiment,
+        sentiment: currentSentiment,
         topicsDiscussed: topics.length > 0 ? JSON.stringify(topics) : null,
         ...(policyDecision.action === 'handoff' ? {
           needsHumanEscalation: true,

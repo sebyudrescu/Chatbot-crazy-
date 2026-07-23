@@ -5,7 +5,7 @@ import {
   ActionTypeSchema,
   validateActionDefinition,
 } from "@/lib/action-schema";
-import { redactSecrets, restoreMaskedSecrets } from "@/lib/secret-config";
+import { decryptConfigSecrets, encryptConfigSecrets, redactSecrets, restoreMaskedSecrets } from "@/lib/secret-config";
 import { assertSafeRemoteUrl } from "@/lib/url-safety";
 
 const UpdateSchema = ActionFieldsSchema.omit({
@@ -33,7 +33,7 @@ export async function PATCH(
         { status: 404 },
       );
     }
-    const currentConfig = parse<Record<string, string>>(current.config, {});
+    const currentConfig = decryptConfigSecrets(parse<Record<string, string>>(current.config, {}));
     const nextConfig = input.config
       ? restoreMaskedSecrets(input.config, currentConfig)
       : currentConfig;
@@ -41,7 +41,7 @@ export async function PATCH(
       type: input.type || ActionTypeSchema.parse(current.type),
       config: nextConfig,
     });
-    if ((input.type || current.type) === "webhook") {
+    if ((input.type || current.type) === "webhook" || (input.type || current.type) === "api_request") {
       await assertSafeRemoteUrl(nextConfig.url);
     }
     const updated = await prisma.agentAction.update({
@@ -51,7 +51,7 @@ export async function PATCH(
         triggerKeywords: input.triggerKeywords
           ? JSON.stringify(input.triggerKeywords)
           : undefined,
-        config: input.config ? JSON.stringify(nextConfig) : undefined,
+        config: input.config ? JSON.stringify(encryptConfigSecrets(nextConfig)) : undefined,
       },
     });
     return NextResponse.json({
@@ -59,7 +59,7 @@ export async function PATCH(
       data: {
         ...updated,
         triggerKeywords: parse(updated.triggerKeywords, []),
-        config: redactSecrets(parse(updated.config, {})),
+        config: redactSecrets(decryptConfigSecrets(parse(updated.config, {}))),
       },
     });
   } catch (error) {

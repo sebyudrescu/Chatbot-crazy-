@@ -5,10 +5,12 @@ import { isAllowedWidgetOrigin } from "@/lib/widget-origin";
 import { checkRateLimit, requestClientIp } from "@/lib/rate-limit";
 import { syncCRMContactFromConversation } from "@/lib/crm-sync";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
+import { readWidgetSession, widgetSessionToken } from "@/lib/widget-session";
 
 const LeadSchema = z
   .object({
     conversationId: z.string().uuid(),
+    userSessionId: z.string().min(1).max(300),
     name: z.string().trim().min(2).max(100),
     email: z.string().trim().email().max(254).optional().or(z.literal("")),
     phone: z.string().trim().min(7).max(40).optional().or(z.literal("")),
@@ -18,6 +20,10 @@ const LeadSchema = z
   .refine((value) => Boolean(value.email || value.phone), {
     message: "Inserisci email o telefono",
   });
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204 });
+}
 
 export async function POST(
   request: NextRequest,
@@ -43,6 +49,9 @@ export async function POST(
       { status: 400 },
     );
   }
+  if (!request.headers.get("origin") && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ success: false, error: "origin_required" }, { status: 403 });
+  }
 
   if (
     !(await isAllowedWidgetOrigin(
@@ -54,6 +63,18 @@ export async function POST(
     return NextResponse.json(
       { success: false, error: "origin_not_allowed" },
       { status: 403 },
+    );
+  }
+  try {
+    readWidgetSession(
+      widgetSessionToken(request),
+      botId,
+      parsed.data.userSessionId,
+    );
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "widget_session_invalid" },
+      { status: 401 },
     );
   }
   const rate = await checkRateLimit(
@@ -76,7 +97,11 @@ export async function POST(
   }
 
   const updated = await prisma.conversation.updateMany({
-    where: { id: parsed.data.conversationId, botId },
+    where: {
+      id: parsed.data.conversationId,
+      botId,
+      userSessionId: parsed.data.userSessionId,
+    },
     data: {
       userName: parsed.data.name,
       userEmail: parsed.data.email || null,

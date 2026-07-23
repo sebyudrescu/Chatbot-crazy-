@@ -518,7 +518,7 @@ export default function KnowledgePage() {
                           Inserisci solo l&apos;URL e il crawler farà tutto automaticamente:
                         </p>
                         <ul className="text-sm text-brand-700 mt-2 space-y-1">
-                          <li>✅ Trova tutte le pagine del sito (fino a 200)</li>
+                          <li>✅ Esplora automaticamente fino a 10 pagine per importazione</li>
                           <li>✅ Estrae solo il contenuto di qualità</li>
                           <li>✅ Rimuove automaticamente duplicati e noise</li>
                           <li>✅ Crea chunks ottimizzati per il RAG</li>
@@ -563,8 +563,8 @@ export default function KnowledgePage() {
                   {!crawling && (
                     <div className="p-4 bg-success-50 border border-success-200 rounded-lg">
                       <p className="text-sm text-success-800">
-                        💡 <strong>Automatico:</strong> Il crawler decide automaticamente quante pagine crawlare 
-                        e quanto andare in profondità. Non serve configurare nulla!
+                        💡 <strong>Automatico:</strong> il crawler segue i link interni fino a 3 livelli,
+                        filtra duplicati e contenuti di bassa qualità. Non serve configurare nulla.
                       </p>
                     </div>
                   )}

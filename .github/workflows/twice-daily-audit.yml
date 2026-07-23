@@ -1,4 +1,4 @@
-name: LitX twice-daily project audit
+name: LitX project quality gate
 
 on:
   push:
@@ -115,7 +115,36 @@ jobs:
       - name: Embeddable widget interaction tests
         id: widget
         continue-on-error: true
-        run: npm run test:widget
+        run: |
+          npm run test:widget
+          npm run test:widget-security
+
+      - name: UI content and action safety tests
+        id: ui_safety
+        continue-on-error: true
+        run: |
+          npm run test:rich-text
+          npm run test:cta
+
+      - name: Authentication, prompt and memory tests
+        id: agent_core
+        continue-on-error: true
+        run: |
+          npm run test:auth
+          npm run test:prompt
+          npm run test:memory
+          npm run test:quality
+
+      - name: Meta and channel security tests
+        id: channels
+        continue-on-error: true
+        run: |
+          npm run test:meta
+          npm run test:meta-onboarding
+          npm run test:meta-connections
+          npm run test:meta-attachments
+          npm run test:channel-rate-limit
+          npm run test:channel-actions
 
       - name: Automation engine safety tests
         id: automations
@@ -156,6 +185,9 @@ jobs:
             echo "| Knowledge formats | ${{ steps.knowledge.outcome }} |"
             echo "| Website crawler | ${{ steps.crawler.outcome }} |"
             echo "| Embeddable widget interactions | ${{ steps.widget.outcome }} |"
+            echo "| UI content and action safety | ${{ steps.ui_safety.outcome }} |"
+            echo "| Authentication, prompt and memory | ${{ steps.agent_core.outcome }} |"
+            echo "| Meta and channel security | ${{ steps.channels.outcome }} |"
             echo "| Automation idempotency | ${{ steps.automations.outcome }} |"
             echo
             echo "The audit is read-only: it never edits, commits, pushes or deploys project code."
@@ -174,7 +206,8 @@ jobs:
       - name: Fail when a core check failed
         if: always()
         run: |
-          if [ "${{ steps.typecheck.outcome }}" != "success" ] ||
+          if [ "${{ steps.dependencies.outcome }}" != "success" ] ||
+             [ "${{ steps.typecheck.outcome }}" != "success" ] ||
              [ "${{ steps.lint.outcome }}" != "success" ] ||
              [ "${{ steps.build.outcome }}" != "success" ] ||
              [ "${{ steps.server.outcome }}" != "success" ] ||
@@ -182,6 +215,9 @@ jobs:
              [ "${{ steps.knowledge.outcome }}" != "success" ] ||
              [ "${{ steps.crawler.outcome }}" != "success" ] ||
              [ "${{ steps.widget.outcome }}" != "success" ] ||
+             [ "${{ steps.ui_safety.outcome }}" != "success" ] ||
+             [ "${{ steps.agent_core.outcome }}" != "success" ] ||
+             [ "${{ steps.channels.outcome }}" != "success" ] ||
              [ "${{ steps.automations.outcome }}" != "success" ]; then
             exit 1
           fi

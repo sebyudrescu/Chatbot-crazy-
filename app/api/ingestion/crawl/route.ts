@@ -1,52 +1,57 @@
-/**
- * POST /api/ingestion/crawl
- * 
- * Async crawl endpoint - creates job in queue
- * Returns immediately with job ID
- */
+import { after, NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { createIngestionJob, JobType } from "@/lib/ingestion-queue";
+import { processJobManually } from "@/lib/ingestion-worker";
 
-import { NextRequest, NextResponse } from 'next/server'
-import { createIngestionJob, JobType } from '@/lib/ingestion-queue'
-import { ensureWorkerStarted } from '@/lib/auto-start-worker'
+export const maxDuration = 300;
+
+const CrawlSchema = z.object({
+  botId: z.string().uuid(),
+  url: z.string().trim().min(1).max(2048),
+  maxPages: z.number().int().min(1).max(100).default(10),
+  maxDepth: z.number().int().min(0).max(5).default(3),
+  priority: z.number().int().min(1).max(10).default(5),
+});
 
 export async function POST(request: NextRequest) {
   try {
-    // Start lazily only for a real ingestion request, never while Next.js builds.
-    await ensureWorkerStarted()
-
-    const body = await request.json()
-    const { botId, url, maxPages = 50, maxDepth = 4, priority = 5 } = body
-
-    if (!botId || !url) {
+    const input = CrawlSchema.parse(await request.json());
+    const chatbot = await prisma.chatbot.findUnique({
+      where: { id: input.botId },
+      select: { id: true },
+    });
+    if (!chatbot) {
       return NextResponse.json(
-        { success: false, error: 'Missing botId or url' },
-        { status: 400 }
-      )
+        { success: false, error: "Agente non trovato" },
+        { status: 404 },
+      );
     }
-
-    // Create job (doesn't process yet!)
     const job = await createIngestionJob(
-      botId,
+      input.botId,
       JobType.CRAWL,
-      { url, maxPages, maxDepth },
-      priority
-    )
-
+      {
+        url: input.url,
+        maxPages: input.maxPages,
+        maxDepth: input.maxDepth,
+      },
+      input.priority,
+    );
+    after(() => processJobManually(job.id).catch((error) => {
+      console.error(`[CrawlAPI] Background job ${job.id} failed:`, error);
+    }));
     return NextResponse.json({
       success: true,
       data: {
         jobId: job.id,
         status: job.status,
-        message: 'Crawl job queued. Processing will start shortly.',
-        estimatedTime: '2-5 minutes'
-      }
-    })
-
-  } catch (error: any) {
-    console.error('[API] Crawl error:', error)
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    )
+        message: "Crawl accodato e avviato in background.",
+      },
+    }, { status: 202 });
+  } catch (error) {
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : "Impossibile avviare il crawl",
+    }, { status: 400 });
   }
 }

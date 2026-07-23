@@ -321,14 +321,27 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   
   console.log(`\n💬 [Orchestrator] PHASE 5: GENERATION`)
   
-  const generationResult = await generateResponse({
-    context,
-    decision,
-    intent,
-    retrievalResult,
-    graphResult,
-    validationResult
-  })
+  const generationResult = process.env.CI_MOCK_AI === 'true'
+    ? {
+        response: retrievalResult?.knowledgeChunks[0]?.text
+          ? `Risposta verificata dalla knowledge base: ${retrievalResult.knowledgeChunks[0].text.slice(0, 500)}`
+          : `Risposta di test verificata per ${context.botConfig.companyName}.`,
+        sourcesUsed: (retrievalResult?.knowledgeChunks || []).map((chunk) => ({
+          sourceId: chunk.metadata?.sourceId,
+          sourceType: chunk.metadata?.sourceType || 'manual',
+          score: chunk.score,
+        })).filter((source) => source.sourceId),
+        confidence: retrievalResult?.knowledgeChunks.length ? 0.9 : 0.7,
+        quickReplies: [],
+      }
+    : await generateResponse({
+        context,
+        decision,
+        intent,
+        retrievalResult,
+        graphResult,
+        validationResult
+      })
   
   console.log(`   Response generated (${generationResult.response.length} chars)`)
   console.log(`   Sources used: ${generationResult.sourcesUsed.length}`)
@@ -342,7 +355,9 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   let extractedFacts: any[] = []
   
   // Extract facts only if this was a meaningful exchange
-  if (decision.shouldUseRAG || intent.intent === 'question') {
+  if (process.env.CI_MOCK_AI === 'true') {
+    console.log(`   Skipped fact extraction (CI mock)`)
+  } else if (decision.shouldUseRAG || intent.intent === 'question') {
     try {
       extractedFacts = await extractFactsIncremental({
         conversationId: context.conversationId,

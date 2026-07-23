@@ -4,6 +4,11 @@ import { prisma } from "@/lib/db";
 import { parseJSON } from "@/lib/utils";
 import { isAllowedWidgetOrigin } from "@/lib/widget-origin";
 import { checkRateLimit, requestClientIp } from "@/lib/rate-limit";
+import { readWidgetSession, widgetSessionToken } from "@/lib/widget-session";
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204 });
+}
 
 export async function GET(
   request: NextRequest,
@@ -19,6 +24,17 @@ export async function GET(
     return NextResponse.json(
       { success: false, error: "Sessione non valida" },
       { status: 400 },
+    );
+  }
+  if (!request.headers.get("origin") && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ success: false, error: "origin_required" }, { status: 403 });
+  }
+  try {
+    readWidgetSession(widgetSessionToken(request), botId, sessionId);
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "widget_session_invalid" },
+      { status: 401 },
     );
   }
   if (

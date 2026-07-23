@@ -5,6 +5,8 @@ import type { CTA } from "./cta-generator";
 import { syncCRMContactFromConversation } from "./crm-sync";
 import { deliverWebhook } from "./webhook-delivery";
 import { emitIntegrationWebhook } from "./integration-webhooks";
+import { decryptConfigSecrets } from "./secret-config";
+import { assertSafeRemoteUrl } from "./url-safety";
 
 interface Context {
   botId: string;
@@ -65,7 +67,7 @@ export async function runTriggeredActions(
       )
     )
       continue;
-    const config = parse<Record<string, string>>(action.config, {}),
+    const config = decryptConfigSecrets(parse<Record<string, string>>(action.config, {})),
       started = Date.now();
     const idempotencyKey = `${action.id}:${context.messageId}`;
     let executionId = "";
@@ -201,6 +203,66 @@ export async function runTriggeredActions(
         if (!delivery.success) throw new Error(delivery.error);
         output = `Webhook HTTP ${delivery.status} · ${delivery.attempts} tentativi`;
         success = true;
+      } else if (action.type === "api_request") {
+        const url = safeHttpsUrl(config.url);
+        if (!url) throw new Error("Endpoint API non valido");
+        await assertSafeRemoteUrl(url.toString());
+        const method = (config.method || "POST").toUpperCase();
+        if (!["GET", "POST", "PUT", "PATCH"].includes(method)) {
+          throw new Error("Metodo API non supportato");
+        }
+        const variables: Record<string, string> = {
+          "{{message}}": context.message,
+          "{{intent}}": context.intent || "",
+          "{{conversationId}}": context.conversationId,
+          "{{botId}}": context.botId,
+        };
+        const renderTemplate = (value: unknown): unknown => {
+          if (Array.isArray(value)) return value.map(renderTemplate);
+          if (value && typeof value === "object") {
+            return Object.fromEntries(
+              Object.entries(value as Record<string, unknown>)
+                .map(([key, item]) => [key, renderTemplate(item)]),
+            );
+          }
+          if (typeof value !== "string") return value;
+          return Object.entries(variables).reduce(
+            (rendered, [placeholder, replacement]) =>
+              rendered.replaceAll(placeholder, replacement),
+            value,
+          );
+        };
+        const template = config.bodyTemplate || JSON.stringify({
+          message: "{{message}}",
+          intent: "{{intent}}",
+          conversationId: "{{conversationId}}",
+          botId: "{{botId}}",
+        });
+        const body = method === "GET"
+          ? undefined
+          : JSON.stringify(renderTemplate(JSON.parse(template)));
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8_000);
+        try {
+          const response = await fetch(url, {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent": "LitX-Action/1.0",
+              "Idempotency-Key": idempotencyKey,
+              ...(config.authorization ? { Authorization: config.authorization } : {}),
+            },
+            body,
+            redirect: "manual",
+            signal: controller.signal,
+          });
+          await response.body?.cancel();
+          if (!response.ok) throw new Error(`API HTTP ${response.status}`);
+          output = config.resultMessage || `API HTTP ${response.status}`;
+          success = true;
+        } finally {
+          clearTimeout(timer);
+        }
       } else throw new Error("Tipo azione non supportato");
     } catch (caught) {
       error =

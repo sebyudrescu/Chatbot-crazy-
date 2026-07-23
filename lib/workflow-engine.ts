@@ -3,6 +3,7 @@ import { prisma } from './db'
 import { safeHttpsUrl } from './integration-catalog'
 import { deliverWebhook } from './webhook-delivery'
 import { emitIntegrationWebhook } from './integration-webhooks'
+import { decryptConfigSecrets } from './secret-config'
 
 interface WorkflowStep {
   id: string
@@ -86,7 +87,7 @@ export async function runActiveWorkflows(context: RunContext): Promise<WorkflowR
 
     const workflowActions: string[] = []
     try {
-      const steps = parse<WorkflowStep[]>(workflow.steps, [])
+      const steps = decryptConfigSecrets(parse<WorkflowStep[]>(workflow.steps, []))
       if (!steps.length) throw new Error('Workflow senza passaggi validi')
       let allowed = workflow.triggerType === 'new_message'
       let didRun = false

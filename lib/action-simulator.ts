@@ -65,6 +65,19 @@ export function simulateAction(input: SimulationInput): ActionSimulation {
     };
   }
 
+  if (input.type === "api_request") {
+    const url = safeHttpsUrl(input.config.url || "");
+    const method = (input.config.method || "POST").toUpperCase();
+    return {
+      matched: true,
+      effect: url
+        ? `Eseguirebbe ${method} verso ${url.toString()} (richiesta non inviata)`
+        : "Endpoint API non valido",
+      extracted: url ? { url: url.toString(), method } : {},
+      safePreview: true,
+    };
+  }
+
   const url = safeHttpsUrl(input.config.url || "");
   return {
     matched: true,

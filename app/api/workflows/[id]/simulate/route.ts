@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { WorkflowStepSchema } from "@/lib/workflow-schema";
 import { simulateWorkflow } from "@/lib/workflow-simulator";
+import { decryptConfigSecrets } from "@/lib/secret-config";
 
 const RequestSchema = z.object({
   message: z.string().trim().min(1).max(4000),
@@ -30,7 +31,7 @@ export async function POST(
     }
     const steps =
       input.steps ||
-      z.array(WorkflowStepSchema).parse(JSON.parse(workflow.steps));
+      z.array(WorkflowStepSchema).parse(decryptConfigSecrets(JSON.parse(workflow.steps)));
     const data = simulateWorkflow({
       triggerType:
         input.triggerType ||

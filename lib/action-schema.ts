@@ -6,6 +6,7 @@ export const ActionTypeSchema = z.enum([
   "handoff",
   "collect_lead",
   "webhook",
+  "api_request",
 ]);
 
 export const ActionFieldsSchema = z.object({
@@ -25,10 +26,23 @@ export function validateActionDefinition(
   input: Pick<ActionFields, "type" | "config">,
 ) {
   if (
-    (input.type === "booking_link" || input.type === "webhook") &&
+    (input.type === "booking_link" || input.type === "webhook" || input.type === "api_request") &&
     !safeHttpsUrl(input.config.url || "")
   ) {
     throw new Error("È richiesto un URL HTTPS pubblico valido");
+  }
+  if (
+    input.type === "api_request" &&
+    !["GET", "POST", "PUT", "PATCH"].includes((input.config.method || "POST").toUpperCase())
+  ) {
+    throw new Error("Metodo API non supportato");
+  }
+  if (input.type === "api_request" && input.config.bodyTemplate) {
+    try {
+      JSON.parse(input.config.bodyTemplate);
+    } catch {
+      throw new Error("Il template body deve essere JSON valido");
+    }
   }
   if (
     input.type === "webhook" &&

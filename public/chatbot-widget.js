@@ -60,14 +60,11 @@
   const seenMessageIds = new Set();
   const conversationStorageKey = `litx:${config.botId}:conversation`;
   const sessionStorageKey = `litx:${config.botId}:session`;
+  const sessionTokenStorageKey = `litx:${config.botId}:session-token`;
   let conversationId = readStorage(conversationStorageKey);
   let userSessionId = readStorage(sessionStorageKey);
-  if (!userSessionId) {
-    userSessionId = `widget_${typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;
-    writeStorage(sessionStorageKey, userSessionId);
-  }
+  let signedSessionToken = readStorage(sessionTokenStorageKey);
+  let sessionPromise = null;
 
   // Elementi DOM
   let widgetContainer;
@@ -727,7 +724,9 @@
 
     // Initial message
     addMessage('bot', `Ciao! Sono ${config.title}. ${config.subtitle}`);
-    if (conversationId) restorePromise = restoreConversation();
+    restorePromise = ensureWidgetSession().then(() => {
+      if (conversationId) return restoreConversation();
+    });
 
     isLoaded = true;
   }
@@ -997,10 +996,11 @@
         const buttons = feedback.querySelectorAll('button');
         buttons.forEach((item) => { item.disabled = true; });
         try {
+          await ensureWidgetSession();
           const response = await fetch(`${config.apiUrl}/api/embed/${config.botId}/feedback`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messageId, feedback: value }),
+            headers: widgetHeaders(),
+            body: JSON.stringify({ messageId, feedback: value, userSessionId }),
           });
           if (!response.ok) throw new Error('Feedback non salvato');
           button.setAttribute('aria-pressed', 'true');
@@ -1079,11 +1079,13 @@
       submit.disabled = true;
       status.textContent = '';
       try {
+        await ensureWidgetSession();
         const response = await fetch(`${config.apiUrl}/api/embed/${config.botId}/lead`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: widgetHeaders(),
           body: JSON.stringify({
             conversationId: activeConversationId,
+            userSessionId,
             name: String(values.get('name') || '').trim(),
             email,
             phone,
@@ -1129,8 +1131,10 @@
   async function syncConversationHistory(replaceHistory) {
     if (!conversationId) return;
     try {
+      await ensureWidgetSession();
       const response = await fetch(
         `${config.apiUrl}/api/embed/${config.botId}/conversations/${conversationId}?sessionId=${encodeURIComponent(userSessionId)}`,
+        { headers: widgetHeaders(false) },
       );
       if (response.status === 404) {
         conversationId = null;
@@ -1182,6 +1186,39 @@
     historyPollTimer = null;
   }
 
+  function widgetHeaders(includeContentType = true) {
+    return {
+      ...(includeContentType ? { 'Content-Type': 'application/json' } : {}),
+      'X-LitX-Widget-Session': signedSessionToken,
+    };
+  }
+
+  async function ensureWidgetSession(force = false) {
+    if (!force && userSessionId && signedSessionToken) return;
+    if (!force && sessionPromise) return sessionPromise;
+    sessionPromise = (async () => {
+      const response = await fetch(`${config.apiUrl}/api/embed/${config.botId}/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result || !result.data) {
+        throw new Error(result && result.error || 'Sessione widget non disponibile');
+      }
+      userSessionId = result.data.sessionId;
+      signedSessionToken = result.data.token;
+      conversationId = null;
+      writeStorage(sessionStorageKey, userSessionId);
+      writeStorage(sessionTokenStorageKey, signedSessionToken);
+      writeStorage(conversationStorageKey, null);
+    })();
+    try {
+      await sessionPromise;
+    } finally {
+      sessionPromise = null;
+    }
+  }
+
   function showTyping() {
     const typingElement = document.createElement('div');
     typingElement.className = 'chatbot-message bot';
@@ -1223,11 +1260,10 @@
     sendButton.disabled = true;
 
     try {
+      await ensureWidgetSession();
       let response = await fetch(`${config.apiUrl}/api/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: widgetHeaders(),
         body: JSON.stringify({
           message: normalizedContent,
           botId: config.botId,
@@ -1236,12 +1272,25 @@
           source: 'widget'
         })
       });
-      if (response.status === 404 && conversationId) {
+      if (response.status === 401) {
+        await ensureWidgetSession(true);
+        response = await fetch(`${config.apiUrl}/api/chat`, {
+          method: 'POST',
+          headers: widgetHeaders(),
+          body: JSON.stringify({
+            message: normalizedContent,
+            botId: config.botId,
+            conversationId: null,
+            userSessionId,
+            source: 'widget'
+          })
+        });
+      } else if (response.status === 404 && conversationId) {
         conversationId = null;
         writeStorage(conversationStorageKey, null);
         response = await fetch(`${config.apiUrl}/api/chat`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: widgetHeaders(),
           body: JSON.stringify({
             message: normalizedContent,
             botId: config.botId,

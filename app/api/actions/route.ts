@@ -4,7 +4,7 @@ import {
   ActionFieldsSchema,
   validateActionDefinition,
 } from "@/lib/action-schema";
-import { redactSecrets } from "@/lib/secret-config";
+import { decryptConfigSecrets, encryptConfigSecrets, redactSecrets } from "@/lib/secret-config";
 import { assertSafeRemoteUrl } from "@/lib/url-safety";
 
 const parse = <T>(value: string, fallback: T): T => {
@@ -17,7 +17,7 @@ const parse = <T>(value: string, fallback: T): T => {
 const serialize = (item: any) => ({
   ...item,
   triggerKeywords: parse(item.triggerKeywords, []),
-  config: redactSecrets(parse(item.config, {})),
+  config: redactSecrets(decryptConfigSecrets(parse(item.config, {}))),
 });
 
 export async function GET(request: NextRequest) {
@@ -37,12 +37,12 @@ export async function POST(request: NextRequest) {
   try {
     const input = ActionFieldsSchema.parse(await request.json());
     validateActionDefinition(input);
-    if (input.type === "webhook") await assertSafeRemoteUrl(input.config.url);
+    if (input.type === "webhook" || input.type === "api_request") await assertSafeRemoteUrl(input.config.url);
     const action = await prisma.agentAction.create({
       data: {
         ...input,
         triggerKeywords: JSON.stringify(input.triggerKeywords),
-        config: JSON.stringify(input.config),
+        config: JSON.stringify(encryptConfigSecrets(input.config)),
       },
     });
     return NextResponse.json(

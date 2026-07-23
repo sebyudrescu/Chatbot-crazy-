@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "./db";
 import { deliverWebhook, type WebhookDeliveryResult } from "./webhook-delivery";
+import { decryptConfigSecrets } from "./secret-config";
 
 const parse = <T>(value: string, fallback: T): T => {
   try {
@@ -20,7 +21,7 @@ export async function emitIntegrationWebhook(input: {
     where: { botId_provider: { botId: input.botId, provider: "webhook" } },
   });
   if (!connection?.enabled) return null;
-  const config = parse<Record<string, string>>(connection.config, {});
+  const config = decryptConfigSecrets(parse<Record<string, string>>(connection.config, {}));
   const endpoint = config.endpoint || "";
   const subscribedEvents = (config.events || "")
     .split(",")

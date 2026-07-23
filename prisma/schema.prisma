@@ -29,6 +29,7 @@ model Chatbot {
   kbIndexingError String? // Last indexing error if any
 
   knowledgeSources KnowledgeSource[]
+  knowledgeChunks  KnowledgeChunk[]
   conversations    Conversation[]
   ingestionJobs    IngestionJob[]
   structuredFacts  StructuredFact[] // Cognitive memory
@@ -333,12 +334,32 @@ model KnowledgeSource {
   ingestionJobId String? // Link to async job
 
   chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  chunks  KnowledgeChunk[]
 
   @@index([botId])
   @@index([status])
   @@index([sourceType])
   @@index([ingestionJobId])
   @@map("knowledge_sources")
+}
+
+model KnowledgeChunk {
+  id        String   @id @default(uuid())
+  botId     String
+  sourceId  String
+  chunkKey  String
+  text      String
+  embedding String
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+
+  chatbot Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  source  KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, chunkKey])
+  @@index([botId])
+  @@index([sourceId])
+  @@map("knowledge_chunks")
 }
 
 // ASYNC INGESTION: Job Queue

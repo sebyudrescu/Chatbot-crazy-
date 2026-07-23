@@ -25,7 +25,8 @@ const encrypted = encryptMetaToken('access-token-value')
 assert(encrypted !== 'access-token-value', 'Il token non deve restare in chiaro')
 assert(decryptMetaToken(encrypted) === 'access-token-value', 'Roundtrip cifratura fallito')
 let tamperRejected = false
-try { decryptMetaToken(`${encrypted.slice(0, -1)}x`) } catch { tamperRejected = true }
+const tamperedEncrypted = `${encrypted.slice(0, -1)}${encrypted.endsWith('x') ? 'y' : 'x'}`
+try { decryptMetaToken(tamperedEncrypted) } catch { tamperRejected = true }
 assert(tamperRejected, 'Un token alterato deve essere rifiutato')
 
 const raw = JSON.stringify({ object: 'whatsapp_business_account' })

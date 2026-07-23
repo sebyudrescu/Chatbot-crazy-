@@ -425,8 +425,8 @@ async function processUrlJob(job: any, params: any) {
     })
     if (previous) {
       try {
-        const { deleteSource } = await import('./simple-vector-store')
-        deleteSource(botId, previous.id)
+        const { deleteDatabaseVectorsForSource } = await import('./database-vector-store')
+        await deleteDatabaseVectorsForSource(botId, previous.id)
         const { deleteVectorsForSource, isPineconeConfigured } = await import('./pinecone-vector-store')
         if (isPineconeConfigured()) {
           await deleteVectorsForSource(botId, previous.id)

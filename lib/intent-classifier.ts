@@ -255,14 +255,7 @@ Cosa ti serve?`
 Come posso esserti utile?`
 
     case 'escalation':
-      return `Capisco che preferisci parlare con una persona del nostro team.
-
-📞 **Contatti supporto**:
-• Email: supporto@${companyName.toLowerCase().replace(/\s+/g, '')}.com
-• Telefono: disponibile durante gli orari d'ufficio
-• Live chat: se disponibile sul sito
-
-Nel frattempo, posso comunque provare ad aiutarti. Vuoi farmi una domanda?`
+      return `Capisco. Segnalo subito la conversazione al team di ${companyName}, senza inventare contatti o tempi di risposta. Nel frattempo puoi aggiungere qui i dettagli utili per l'operatore.`
 
     default:
       return `Come posso aiutarti?`

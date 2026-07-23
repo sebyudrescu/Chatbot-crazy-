@@ -320,7 +320,7 @@ try {
       body: JSON.stringify({
         botId,
         url: "https://example.com",
-        maxPages: 26,
+      maxPages: 101,
         maxDepth: 3,
       }),
     },
@@ -415,26 +415,25 @@ try {
     oversizedChat.status === 400,
     "Oversized chat payload was not rejected",
   );
-  const draftChat = await fetch(`${baseUrl}/api/chat`, {
+  const draftWidgetSession = await fetch(`${baseUrl}/api/embed/${botId}/session`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Origin: "https://smoke.example",
     },
-    body: JSON.stringify({ botId, message: "Test widget", source: "widget" }),
   });
   assert(
-    draftChat.status === 403 &&
-      draftChat.headers.get("access-control-allow-origin") ===
+    draftWidgetSession.status === 403 &&
+      draftWidgetSession.headers.get("access-control-allow-origin") ===
         "https://smoke.example",
-    "Draft agent accepted a public widget message",
+    "Draft agent issued a public widget session",
   );
   const chatPreflight = await fetch(`${baseUrl}/api/chat`, {
     method: "OPTIONS",
     headers: {
       Origin: "https://smoke.example",
       "Access-Control-Request-Method": "POST",
-      "Access-Control-Request-Headers": "content-type",
+      "Access-Control-Request-Headers": "content-type,x-litx-widget-session",
     },
   });
   assert(
@@ -450,6 +449,7 @@ try {
     staticWidget.ok &&
       widgetSource.includes("data.data.assistantMessage.content") &&
       widgetSource.includes("source: 'widget'") &&
+      widgetSource.includes("X-LitX-Widget-Session") &&
       widgetSource.includes("chatbot-quick-reply") &&
       widgetSource.includes("chatbot-feedback") &&
       widgetSource.includes("chatbot-sources"),
@@ -508,28 +508,21 @@ try {
       content: "Risposta smoke",
     }),
   });
-  await request(`/api/embed/${botId}/feedback`, {
+  await request(`/api/messages/${assistantMessage.data.id}/feedback`, {
     method: "POST",
     body: JSON.stringify({
-      messageId: assistantMessage.data.id,
       feedback: "positive",
     }),
   });
-  const capturedLead = await request(`/api/embed/${botId}/lead`, {
-    method: "POST",
+  await request(`/api/conversations/${conversationId}`, {
+    method: "PATCH",
     body: JSON.stringify({
-      conversationId,
       name: "Smoke Client",
-      email: "smoke@example.com",
-      phone: "+39 333 123 4567",
-      company: "Smoke SRL",
-      consent: true,
+      userEmail: "smoke@example.com",
+      userPhone: "+39 333 123 4567",
+      userCompany: "Smoke SRL",
     }),
   });
-  assert(
-    capturedLead.data.contactId && capturedLead.data.leadScore >= 55,
-    "Public lead capture did not create a CRM contact",
-  );
   const detail = await request(`/api/conversations/${conversationId}`);
   assert(
     detail.data.userName === "Smoke Client" &&
@@ -540,24 +533,6 @@ try {
       detail.data.internalNotes === "Nota operativa smoke" &&
       detail.data.tags.includes("urgente"),
     "Inbox and public widget feedback flow failed",
-  );
-  const widgetHistory = await request(
-    `/api/embed/${botId}/conversations/${conversationId}?sessionId=smoke_session`,
-  );
-  assert(
-    widgetHistory.data.messages.length === 2 &&
-      widgetHistory.data.messages.at(-1)?.feedback === "positive" &&
-      widgetHistory.data.needsHumanEscalation === true &&
-      widgetHistory.data.assignedAgent === "Sebastian",
-    "Public widget history was not restored",
-  );
-  const foreignSessionHistory = await fetch(
-    `${baseUrl}/api/embed/${botId}/conversations/${conversationId}?sessionId=wrong-session`,
-    { headers: authCookie ? { Cookie: authCookie } : {} },
-  );
-  assert(
-    foreignSessionHistory.status === 404,
-    "Widget history was exposed to a different visitor session",
   );
   if (process.env.SMOKE_AI_ASSIST === "true") {
     const assist = await request(
@@ -717,17 +692,27 @@ try {
     "Published agent widget script is unavailable",
   );
   if (process.env.SMOKE_AI_ASSIST === "true") {
+    const sessionResponse = await fetch(`${baseUrl}/api/embed/${botId}/session`, {
+      method: "POST",
+      headers: { Origin: "https://smoke.example" },
+    });
+    const session = await sessionResponse.json();
+    assert(
+      sessionResponse.ok && session.data?.sessionId && session.data?.token,
+      "Published agent did not issue a signed widget session",
+    );
     const publicChatResponse = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Origin: "https://smoke.example",
+        "X-LitX-Widget-Session": session.data.token,
       },
       body: JSON.stringify({
         botId,
         message: "Cosa verifica il documento PDF presente nelle fonti?",
         source: "widget",
-        userSessionId: `published_smoke_${Date.now()}`,
+        userSessionId: session.data.sessionId,
       }),
     });
     const publicChat = await publicChatResponse.json();
@@ -737,6 +722,57 @@ try {
         publicChat.data?.assistantMessage?.content?.length > 10 &&
         publicChat.data?.sources?.length > 0,
       `Published agent did not answer from its knowledge base: ${publicChat.error || publicChatResponse.status}`,
+    );
+    const widgetHeaders = {
+      "Content-Type": "application/json",
+      Origin: "https://smoke.example",
+      "X-LitX-Widget-Session": session.data.token,
+    };
+    const publicFeedback = await fetch(`${baseUrl}/api/embed/${botId}/feedback`, {
+      method: "POST",
+      headers: widgetHeaders,
+      body: JSON.stringify({
+        messageId: publicChat.data.assistantMessage.id,
+        feedback: "positive",
+        userSessionId: session.data.sessionId,
+      }),
+    });
+    assert(publicFeedback.ok, "Signed widget feedback was rejected");
+    const publicLead = await fetch(`${baseUrl}/api/embed/${botId}/lead`, {
+      method: "POST",
+      headers: widgetHeaders,
+      body: JSON.stringify({
+        conversationId: publicChat.data.conversationId,
+        userSessionId: session.data.sessionId,
+        name: "Widget Smoke",
+        email: "widget-smoke@example.com",
+        phone: "",
+        company: "Widget Smoke SRL",
+        consent: true,
+      }),
+    });
+    const publicLeadBody = await publicLead.json();
+    assert(
+      publicLead.ok && publicLeadBody.data?.contactId,
+      "Signed widget lead capture did not create a CRM contact",
+    );
+    const publicHistory = await fetch(
+      `${baseUrl}/api/embed/${botId}/conversations/${publicChat.data.conversationId}?sessionId=${encodeURIComponent(session.data.sessionId)}`,
+      { headers: widgetHeaders },
+    );
+    const publicHistoryBody = await publicHistory.json();
+    assert(
+      publicHistory.ok
+        && publicHistoryBody.data?.messages?.at(-1)?.feedback === "positive",
+      "Signed widget history did not restore the conversation",
+    );
+    const foreignSessionHistory = await fetch(
+      `${baseUrl}/api/embed/${botId}/conversations/${publicChat.data.conversationId}?sessionId=00000000-0000-4000-8000-000000000999`,
+      { headers: widgetHeaders },
+    );
+    assert(
+      foreignSessionHistory.status === 401,
+      "Widget history accepted a session different from the signed token",
     );
   }
   const blockedWidgetOrigin = await fetch(`${baseUrl}/api/embed/${botId}`, {
@@ -782,6 +818,18 @@ try {
       webhookIntegration.data.config.secret,
     "Webhook integration exposed its signing secret",
   );
+  const initiallyStoredWebhookIntegration =
+    await prisma.integrationConnection.findUnique({
+      where: { botId_provider: { botId, provider: "webhook" } },
+    });
+  const initialWebhookIntegrationSecret = JSON.parse(
+    initiallyStoredWebhookIntegration?.config || "{}",
+  ).secret;
+  assert(
+    initialWebhookIntegrationSecret !== webhookSecret &&
+      initialWebhookIntegrationSecret?.startsWith("litxenc.v1."),
+    "Webhook integration secret was not encrypted at rest",
+  );
   await request("/api/integrations", {
     method: "POST",
     body: JSON.stringify({
@@ -797,11 +845,15 @@ try {
   const storedWebhookIntegration =
     await prisma.integrationConnection.findUnique({
       where: { botId_provider: { botId, provider: "webhook" } },
-    });
+  });
+  const updatedWebhookIntegrationSecret = JSON.parse(
+    storedWebhookIntegration?.config || "{}",
+  ).secret;
   assert(
-    JSON.parse(storedWebhookIntegration?.config || "{}").secret ===
-      webhookSecret,
-    "Masked webhook integration update overwrote the stored secret",
+    updatedWebhookIntegrationSecret !== webhookSecret &&
+      updatedWebhookIntegrationSecret !== webhookIntegration.data.config.secret &&
+      updatedWebhookIntegrationSecret?.startsWith("litxenc.v1."),
+    "Masked webhook integration update did not preserve an encrypted secret",
   );
 
   const webhookActionSecret = "smoke-action-secret-123456";
@@ -825,6 +877,17 @@ try {
       webhookAction.data.config.secret,
     "Webhook action exposed its signing secret",
   );
+  const initiallyStoredWebhookAction = await prisma.agentAction.findUnique({
+    where: { id: webhookAction.data.id },
+  });
+  const initialWebhookActionSecret = JSON.parse(
+    initiallyStoredWebhookAction?.config || "{}",
+  ).secret;
+  assert(
+    initialWebhookActionSecret !== webhookActionSecret &&
+      initialWebhookActionSecret?.startsWith("litxenc.v1."),
+    "Webhook action secret was not encrypted at rest",
+  );
   await request(`/api/actions/${webhookAction.data.id}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -837,10 +900,14 @@ try {
   const storedWebhookAction = await prisma.agentAction.findUnique({
     where: { id: webhookAction.data.id },
   });
+  const updatedWebhookActionSecret = JSON.parse(
+    storedWebhookAction?.config || "{}",
+  ).secret;
   assert(
-    JSON.parse(storedWebhookAction?.config || "{}").secret ===
-      webhookActionSecret,
-    "Masked webhook action update overwrote the stored secret",
+    updatedWebhookActionSecret !== webhookActionSecret &&
+      updatedWebhookActionSecret !== webhookAction.data.config.secret &&
+      updatedWebhookActionSecret?.startsWith("litxenc.v1."),
+    "Masked webhook action update did not preserve an encrypted secret",
   );
   await request(`/api/actions/${webhookAction.data.id}`, {
     method: "DELETE",

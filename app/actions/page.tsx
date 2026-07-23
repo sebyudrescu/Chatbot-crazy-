@@ -7,6 +7,7 @@ import {
   CircleX,
   Clock3,
   Code2,
+  Globe2,
   Loader2,
   Pencil,
   Play,
@@ -74,6 +75,12 @@ const types = [
     text: "Invia i dati a un endpoint HTTPS esterno.",
     icon: Code2,
   },
+  {
+    id: "api_request",
+    name: "API esterna",
+    text: "Chiama un gestionale o servizio HTTPS con dati della conversazione.",
+    icon: Globe2,
+  },
 ];
 export default function ActionsPage() {
   const [agents, setAgents] = useState<Agent[]>([]),
@@ -97,6 +104,10 @@ export default function ActionsPage() {
     reason: "",
     secret: "",
     event: "action.triggered",
+    method: "POST",
+    authorization: "",
+    bodyTemplate: '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
+    resultMessage: "",
   });
   useEffect(() => {
     fetch("/api/chatbots")
@@ -127,6 +138,10 @@ export default function ActionsPage() {
       reason: "",
       secret: "",
       event: "action.triggered",
+      method: "POST",
+      authorization: "",
+      bodyTemplate: '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
+      resultMessage: "",
     });
   const openCreate = () => {
     setEditing(null);
@@ -145,6 +160,10 @@ export default function ActionsPage() {
       reason: action.config.reason || "",
       secret: action.config.secret || "",
       event: action.config.event || "action.triggered",
+      method: action.config.method || "POST",
+      authorization: action.config.authorization || "",
+      bodyTemplate: action.config.bodyTemplate || '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
+      resultMessage: action.config.resultMessage || "",
     });
     setError("");
     setOpen(true);
@@ -157,6 +176,14 @@ export default function ActionsPage() {
         ? { url: form.url, label: form.label || "Prenota appuntamento" }
         : form.type === "webhook"
           ? { url: form.url, secret: form.secret, event: form.event || "action.triggered" }
+          : form.type === "api_request"
+            ? {
+                url: form.url,
+                method: form.method,
+                authorization: form.authorization,
+                bodyTemplate: form.bodyTemplate,
+                resultMessage: form.resultMessage,
+              }
           : form.type === "handoff"
             ? { reason: form.reason || "Richiesta operatore" }
             : {};
@@ -387,7 +414,7 @@ export default function ActionsPage() {
                     placeholder="prenota, appuntamento, consulenza"
                   />
                 </label>
-                {(form.type === "booking_link" || form.type === "webhook") && (
+                {(form.type === "booking_link" || form.type === "webhook" || form.type === "api_request") && (
                   <label className="block">
                     <span className="label">URL HTTPS</span>
                     <input
@@ -426,6 +453,33 @@ export default function ActionsPage() {
                         }
                         placeholder="action.triggered"
                       />
+                    </label>
+                  </div>
+                )}
+                {form.type === "api_request" && (
+                  <div className="space-y-3 rounded-xl border border-gray-100 p-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="label">Metodo</span>
+                        <select className="input" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
+                          {["GET", "POST", "PUT", "PATCH"].map((method) => <option key={method}>{method}</option>)}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="label">Authorization (opzionale)</span>
+                        <input className="input" type="password" autoComplete="new-password" value={form.authorization} onChange={(e) => setForm({ ...form, authorization: e.target.value })} placeholder="Bearer ..." />
+                      </label>
+                    </div>
+                    {form.method !== "GET" && (
+                      <label className="block">
+                        <span className="label">Body JSON</span>
+                        <textarea className="textarea font-mono text-[11px]" rows={5} value={form.bodyTemplate} onChange={(e) => setForm({ ...form, bodyTemplate: e.target.value })} />
+                        <span className="mt-1 block text-[9px] text-gray-400">Variabili: {"{{message}}"}, {"{{intent}}"}, {"{{conversationId}}"}, {"{{botId}}"}</span>
+                      </label>
+                    )}
+                    <label className="block">
+                      <span className="label">Messaggio nel log (opzionale)</span>
+                      <input className="input" value={form.resultMessage} onChange={(e) => setForm({ ...form, resultMessage: e.target.value })} placeholder="Lead inviato al CRM" />
                     </label>
                   </div>
                 )}

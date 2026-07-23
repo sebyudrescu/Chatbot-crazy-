@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { ActionTypeSchema } from "@/lib/action-schema";
 import { simulateAction } from "@/lib/action-simulator";
+import { decryptConfigSecrets } from "@/lib/secret-config";
 
 const RequestSchema = z.object({
   message: z.string().trim().min(1).max(4000),
@@ -41,7 +42,7 @@ export async function POST(
       type: input.type || ActionTypeSchema.parse(action.type),
       triggerKeywords:
         input.triggerKeywords || parse<string[]>(action.triggerKeywords, []),
-      config: input.config || parse<Record<string, string>>(action.config, {}),
+      config: input.config || decryptConfigSecrets(parse<Record<string, string>>(action.config, {})),
       message: input.message,
     });
     return NextResponse.json({ success: true, data });
