@@ -36,6 +36,7 @@ import { verifyOwnerSessionToken } from '@/lib/auth-token'
 import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@/lib/commerce-types'
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
+import { tryWooCommerceOrderLookup } from '@/lib/woocommerce-order-tracking'
 
 const ChatRequestSchema = z.object({
   botId: z.string().uuid(),
@@ -124,34 +125,10 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // ========================================================================
-    // STEP 1: CHECK KB STATUS
-    // ========================================================================
-    
     console.log(`\n🤖 [ChatAPI] New request for bot: ${botId}`)
-    
-    const { isBotReady } = await import('@/lib/ingestion-queue')
-    const kbStatus = await isBotReady(botId)
-    
-    if (!kbStatus.ready) {
-      console.log(`⚠️ [ChatAPI] KB not ready: ${kbStatus.status}`)
-      return NextResponse.json({
-        success: false,
-        error: 'knowledge_base_not_ready',
-        kbStatus: kbStatus.status,
-        message: kbStatus.message,
-        suggestion: kbStatus.status === 'indexing' 
-          ? 'Attendere qualche momento mentre indicizziamo la knowledge base.'
-          : kbStatus.status === 'empty'
-          ? 'Aggiungere prima alcuni documenti alla knowledge base.'
-          : 'Errore durante l\'indicizzazione. Ricaricare i documenti.'
-      }, { status: 503 })
-    }
-    
-    console.log(`✅ [ChatAPI] KB ready with ${kbStatus.totalChunks} chunks`)
 
     // ========================================================================
-    // STEP 2: GET OR CREATE CONVERSATION
+    // STEP 1: GET OR CREATE CONVERSATION
     // ========================================================================
     
     let conversation = existingConversation
@@ -178,8 +155,94 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const previousAssistantText = [...conversation.messages]
+      .reverse()
+      .find((item) => item.role === MessageRole.ASSISTANT)?.content || ''
+    const orderLookup = await tryWooCommerceOrderLookup({
+      botId,
+      text: message,
+      previousAssistantText,
+      rateLimitScope: `${conversation.id}:${requestClientIp(request.headers)}`,
+    })
+    if (orderLookup.handled && orderLookup.response) {
+      const [userMessage, assistantMessage] = await prisma.$transaction([
+        prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: MessageRole.USER,
+            content: orderLookup.redactedUserText,
+          },
+        }),
+        prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: MessageRole.ASSISTANT,
+            content: orderLookup.response,
+            sourcesUsed: stringifyJSON({
+              sources: [],
+              metadata: { responseType: 'verified_order_lookup', verified: orderLookup.verified },
+            }),
+          },
+        }),
+        prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastMessageAt: new Date(),
+            userIntent: 'order_tracking',
+            ...(orderLookup.handoff ? {
+              needsHumanEscalation: true,
+              escalatedAt: new Date(),
+              escalationReason: 'Tracking ordine non disponibile sul canale automatico',
+            } : {}),
+          },
+        }),
+      ])
+      return NextResponse.json({
+        success: true,
+        data: {
+          conversationId: conversation.id,
+          userMessage: { id: userMessage.id, content: userMessage.content, createdAt: userMessage.createdAt },
+          assistantMessage: { id: assistantMessage.id, content: assistantMessage.content, createdAt: assistantMessage.createdAt },
+          sources: [],
+          intent: { type: 'order_tracking', confidence: 1, reasoning: 'Flusso deterministico con verifica WooCommerce' },
+          queryClassification: { type: 'transactional', complexity: 'simple' },
+          decision: { strategy: 'verified_order_lookup', sources: ['woocommerce'], reasoning: 'Verifica diretta sul negozio collegato' },
+          confidence: { score: orderLookup.verified ? 1 : 0.8, isCoherent: true },
+          handoffRequested: Boolean(orderLookup.handoff),
+          memory: { persistentFactsUsed: 0, knowledgeChunksUsed: 0, factsExtracted: 0 },
+          responseType: 'verified_order_lookup',
+          processingTimeMs: 0,
+          workflow: { executed: [], failed: [], skipped: [], actions: [] },
+          actions: { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: Boolean(orderLookup.handoff) },
+          quickReplies: [],
+          ctas: [],
+          productCards: [],
+        },
+      })
+    }
+
+    // Transactional tools remain available even while knowledge is being
+    // indexed; ordinary RAG answers still require a ready knowledge base.
+    const { isBotReady } = await import('@/lib/ingestion-queue')
+    const kbStatus = await isBotReady(botId)
+    if (!kbStatus.ready) {
+      console.log(`⚠️ [ChatAPI] KB not ready: ${kbStatus.status}`)
+      return NextResponse.json({
+        success: false,
+        error: 'knowledge_base_not_ready',
+        kbStatus: kbStatus.status,
+        message: kbStatus.message,
+        suggestion: kbStatus.status === 'indexing'
+          ? 'Attendere qualche momento mentre indicizziamo la knowledge base.'
+          : kbStatus.status === 'empty'
+          ? 'Aggiungere prima alcuni documenti alla knowledge base.'
+          : 'Errore durante l\'indicizzazione. Ricaricare i documenti.'
+      }, { status: 503 })
+    }
+    console.log(`✅ [ChatAPI] KB ready with ${kbStatus.totalChunks} chunks`)
+
     // ========================================================================
-    // STEP 3: SAVE USER MESSAGE
+    // STEP 2: SAVE USER MESSAGE
     // ========================================================================
     
     const userMessage = await prisma.message.create({

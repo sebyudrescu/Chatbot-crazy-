@@ -6,6 +6,7 @@ import type { ChatbotSettings } from "@/lib/types";
 import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from "@/lib/agent-policy";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { detectSentiment } from "@/lib/sentiment";
+import { parseOrderLookupMessage, redactOrderLookupMessage, tryWooCommerceOrderLookup } from "@/lib/woocommerce-order-tracking";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -22,7 +23,10 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     include: { chatbot: true, messages: { orderBy: { createdAt: "desc" }, take: 12 } },
   });
 
-  const userMessage = await prisma.message.create({ data: { conversationId: conversation.id, role: "user", content: input.text, channel: input.channel, externalMessageId: input.externalMessageId, deliveryStatus: "received" } });
+  const previousAssistantText = conversation.messages.find(message => message.role === "assistant")?.content || "";
+  const parsedOrderLookup = parseOrderLookupMessage(input.text, previousAssistantText);
+  const persistedUserText = redactOrderLookupMessage(input.text, parsedOrderLookup);
+  const userMessage = await prisma.message.create({ data: { conversationId: conversation.id, role: "user", content: persistedUserText, channel: input.channel, externalMessageId: input.externalMessageId, deliveryStatus: "received" } });
   if (conversation.needsHumanEscalation && !conversation.isResolved) return { duplicate: false as const, handoff: true as const, conversationId: conversation.id };
 
   const channelLimitKey = `${input.botId}:${input.channel}:${input.externalThreadId}`;
@@ -35,6 +39,38 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       data: { conversationId: conversation.id, role: "assistant", content: CHANNEL_RATE_LIMIT_MESSAGE, channel: input.channel, deliveryStatus: "pending" },
     });
     return { duplicate: false as const, handoff: false as const, handoffActivated: false, conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: CHANNEL_RATE_LIMIT_MESSAGE };
+  }
+
+  const orderLookup = await tryWooCommerceOrderLookup({
+    botId: input.botId,
+    text: input.text,
+    previousAssistantText,
+    rateLimitScope: `${input.channel}:${input.externalThreadId}`,
+  });
+  if (orderLookup.handled && orderLookup.response) {
+    const assistantMessage = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: "assistant",
+        content: orderLookup.response,
+        channel: input.channel,
+        deliveryStatus: "pending",
+        sourcesUsed: stringifyJSON({ sources: [], metadata: { responseType: "verified_order_lookup", verified: orderLookup.verified } }),
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastMessageAt: new Date(),
+        userIntent: "order_tracking",
+        ...(orderLookup.handoff ? {
+          needsHumanEscalation: true,
+          escalatedAt: new Date(),
+          escalationReason: "Tracking ordine non disponibile sul canale automatico",
+        } : {}),
+      },
+    });
+    return { duplicate: false as const, handoff: false as const, handoffActivated: Boolean(orderLookup.handoff), conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: orderLookup.response };
   }
 
   const settings = (parseJSON(conversation.chatbot.settings) || {}) as ChatbotSettings;

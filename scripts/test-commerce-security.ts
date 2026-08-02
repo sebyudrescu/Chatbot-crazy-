@@ -16,6 +16,11 @@ import {
   verifyWooCommerceOAuthState,
   verifyWooCommerceWebhookHmac,
 } from "../lib/woocommerce-signatures";
+import {
+  parseOrderLookupMessage,
+  presentVerifiedWooOrder,
+  redactOrderLookupMessage,
+} from "../lib/woocommerce-order-tracking-contract";
 
 const secret = "shopify-client-secret-for-security-tests";
 const now = 1_800_000_000_000;
@@ -56,5 +61,26 @@ assert.equal(verifyWooCommerceOAuthState(wooState, secret, now + 16 * 60 * 1000)
 const wooWebhookSignature = createHmac("sha256", secret).update(webhookBody).digest("base64");
 assert.equal(verifyWooCommerceWebhookHmac(webhookBody, wooWebhookSignature, secret), true);
 assert.equal(verifyWooCommerceWebhookHmac(`${webhookBody} `, wooWebhookSignature, secret), false);
+
+const lookup = parseOrderLookupMessage("Dov'è il mio ordine #WC-123? Email Cliente@Example.com");
+assert.equal(lookup.hasIntent, true);
+assert.equal(lookup.orderNumber, "WC-123");
+assert.equal(lookup.email, "cliente@example.com");
+assert.equal(redactOrderLookupMessage("Ordine WC-123 cliente@example.com", lookup), "[Dati di verifica ordine rimossi automaticamente]");
+assert.equal(parseOrderLookupMessage("La sede dove si trova?").hasIntent, false);
+assert.equal(parseOrderLookupMessage("#777 cliente@example.com", "Inviami numero d’ordine ed email").hasIntent, true);
+const presented = presentVerifiedWooOrder({
+  id: 123,
+  number: "WC-123",
+  status: "processing",
+  total: "49.90",
+  currency: "EUR",
+  billing: { email: "cliente@example.com" },
+  shipping_lines: [{ method_title: "Corriere espresso" }],
+  meta_data: [{ key: "_tracking_number", value: "TRACK-123" }, { key: "tracking_url", value: "https://carrier.example/track/TRACK-123" }],
+});
+assert.match(presented, /Ordine #WC-123/);
+assert.match(presented, /TRACK-123/);
+assert.doesNotMatch(presented, /cliente@example\.com/);
 
 console.log("Commerce security tests passed");

@@ -112,6 +112,15 @@ jobs:
         continue-on-error: true
         run: npm run test:crawler
 
+      - name: Commerce contracts, security and isolated database tests
+        id: commerce
+        continue-on-error: true
+        run: |
+          npm run test:commerce
+          npm run test:product-extractor
+          npm run test:commerce-security
+          npm run test:commerce-db
+
       - name: Embeddable widget interaction tests
         id: widget
         continue-on-error: true
@@ -184,6 +193,7 @@ jobs:
             echo "| API smoke test | ${{ steps.smoke.outcome }} |"
             echo "| Knowledge formats | ${{ steps.knowledge.outcome }} |"
             echo "| Website crawler | ${{ steps.crawler.outcome }} |"
+            echo "| Commerce security and database | ${{ steps.commerce.outcome }} |"
             echo "| Embeddable widget interactions | ${{ steps.widget.outcome }} |"
             echo "| UI content and action safety | ${{ steps.ui_safety.outcome }} |"
             echo "| Authentication, prompt and memory | ${{ steps.agent_core.outcome }} |"
@@ -214,6 +224,7 @@ jobs:
              [ "${{ steps.smoke.outcome }}" != "success" ] ||
              [ "${{ steps.knowledge.outcome }}" != "success" ] ||
              [ "${{ steps.crawler.outcome }}" != "success" ] ||
+             [ "${{ steps.commerce.outcome }}" != "success" ] ||
              [ "${{ steps.widget.outcome }}" != "success" ] ||
              [ "${{ steps.ui_safety.outcome }}" != "success" ] ||
              [ "${{ steps.agent_core.outcome }}" != "success" ] ||

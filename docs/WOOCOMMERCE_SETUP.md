@@ -28,3 +28,17 @@ stessa consegna.
 - WordPress deve poter eseguire richieste HTTPS in uscita verso il webhook LitX.
 
 Il callback è `/api/woocommerce/oauth/callback`; il webhook è `/api/woocommerce/webhooks`.
+
+## Tracking ordine sicuro
+
+Nel widget, su WhatsApp e su Instagram il cliente può chiedere lo stato del proprio ordine. LitX:
+
+1. richiede numero ordine ed email nello stesso messaggio;
+2. rimuove automaticamente entrambi dal testo salvato nella conversazione;
+3. interroga WooCommerce sul server e confronta l'email senza esporla;
+4. restituisce solo stato, totale, metodo di spedizione, corriere e tracking disponibili;
+5. usa una risposta indistinguibile se numero o email non corrispondono;
+6. limita i tentativi per conversazione e per coppia ordine/email.
+
+Se WooCommerce non è collegato, la conversazione viene inoltrata realmente all'help desk. Nome,
+email, indirizzo e telefono presenti nell'ordine non vengono aggiunti alla memoria del chatbot.

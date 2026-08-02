@@ -44,9 +44,12 @@ Il vantaggio competitivo non sarà “avere una chat”, ma offrire in un solo p
 - Webhook WooCommerce firmati per prodotti e ordini, con attribuzione conversioni priva di dati personali.
 - Idempotenza degli ordini tramite ID evento esterno e attribuzione opzionale a conversazione/prodotto/variante.
 - Pannello per generare o ruotare la chiave di conversione senza esporla nel widget.
+- Tracking ordine WooCommerce nel widget e nei canali Meta con verifica numero ordine + email.
+- Dati di verifica rimossi dalla cronologia, risposta anti-enumerazione, rate limit e handoff reale.
+- Quality gate commerce su PostgreSQL temporaneo: contratti, sicurezza, persistenza e card prodotto.
 
-Restano nel P0 operativo: configurazione delle credenziali della Shopify App su Vercel, collegamento di
-development store reali Shopify/WooCommerce, tracking ordine con verifica identità e test database isolato nel CI.
+Restano nel P0 operativo: configurazione delle credenziali della Shopify App su Vercel e collegamento di
+development store reali Shopify/WooCommerce per il collaudo end-to-end con account esterni.
 
 ### Già disponibile
 
