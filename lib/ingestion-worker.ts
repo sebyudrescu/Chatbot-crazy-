@@ -188,7 +188,8 @@ async function processCrawlJob(job: any, params: any) {
         title: p.title,
         textContent: p.textContent,
         excerpt: p.textContent?.substring(0, 200) || '',
-        quality: p.quality || 50
+        quality: p.quality || 50,
+        products: p.products || []
       }))
       
       usedCrawler = 'internal (fallback)'
@@ -214,7 +215,8 @@ async function processCrawlJob(job: any, params: any) {
       title: p.title,
       textContent: p.textContent,
       excerpt: p.textContent?.substring(0, 200) || '',
-      quality: p.quality || 50
+      quality: p.quality || 50,
+      products: p.products || []
     }))
     
     usedCrawler = 'internal'
@@ -224,6 +226,13 @@ async function processCrawlJob(job: any, params: any) {
   
   if (pages.length === 0) {
     throw new Error(`No pages could be crawled from ${url}. The site may be blocking requests or the URL is invalid.`)
+  }
+
+  const extractedProducts = pages.flatMap(page => Array.isArray(page.products) ? page.products : [])
+  if (extractedProducts.length > 0) {
+    await updateJobProgress(job.id, 35, `Importing ${extractedProducts.length} verified products...`)
+    const { persistExtractedProducts } = await import('./commerce-importer')
+    await persistExtractedProducts(botId, url, extractedProducts)
   }
   
   await updateJobProgress(job.id, 40, `Crawled ${pages.length} pages, processing...`)
@@ -383,6 +392,11 @@ async function processUrlJob(job: any, params: any) {
   }
   
   const page = pages[0]
+
+  if (page.products?.length) {
+    const { persistExtractedProducts } = await import('./commerce-importer')
+    await persistExtractedProducts(botId, singleUrl, page.products)
+  }
   
   // Validate page content
   if (!page.textContent || typeof page.textContent !== 'string' || page.textContent.trim().length === 0) {

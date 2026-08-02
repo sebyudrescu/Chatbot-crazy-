@@ -10,12 +10,10 @@
  * Goal: Optimize for conversion in early conversation stages
  */
 
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import { DEFAULT_CHAT_MODEL } from './ai-models'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 export interface ConversationContext {
   messageCount: number           // How many messages in this conversation?

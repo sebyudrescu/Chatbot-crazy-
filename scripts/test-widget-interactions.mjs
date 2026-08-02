@@ -124,6 +124,26 @@ window.fetch = async (url, options = {}) => {
             action: "javascript:alert(1)",
           },
         ],
+        productCards: [
+          {
+            productId: "00000000-0000-4000-8000-000000000020",
+            title: "Prodotto verificato",
+            shortDescription: "Descrizione del catalogo",
+            imageUrl: "https://cliente.example/images/product.jpg",
+            productUrl: "https://cliente.example/products/verified",
+            price: 89.9,
+            compareAtPrice: 109.9,
+            currency: "EUR",
+            availability: "in_stock",
+            badge: "In offerta",
+          },
+          {
+            productId: "00000000-0000-4000-8000-000000000021",
+            title: "Prodotto non sicuro",
+            productUrl: "javascript:alert(1)",
+            availability: "in_stock",
+          },
+        ],
         actions: {
           leadForms: [
             {
@@ -176,6 +196,8 @@ assert.equal(requests[0].url, "https://litx.example/api/embed/00000000-0000-4000
 assert.equal(requests[1].url, "https://litx.example/api/chat");
 assert.equal(requests[1].body.message, "Vorrei prenotare");
 assert.equal(requests[1].body.source, "widget");
+assert.equal(requests[1].body.pageContext.url, "https://cliente.example/servizi");
+assert.equal(requests[1].body.pageContext.language, "en-US");
 assert.equal(
   requests[1].body.userSessionId,
   "00000000-0000-4000-8000-000000000111",
@@ -214,6 +236,14 @@ assert.equal(
   "Il widget accetta protocolli CTA non sicuri",
 );
 assert.equal(actions[0].getAttribute("rel"), "noopener noreferrer");
+const productCards = window.document.querySelectorAll(".chatbot-product-card");
+assert.equal(productCards.length, 1, "Le product card HTTPS non vengono renderizzate in sicurezza");
+assert.equal(
+  productCards[0].querySelector(".chatbot-product-image-link")?.getAttribute("href"),
+  "https://cliente.example/products/verified",
+  "La foto prodotto non punta alla pagina canonica",
+);
+assert.match(productCards[0].textContent || "", /89,90|€89\.90|89\.90/, "Il prezzo prodotto non viene mostrato");
 const sources = window.document.querySelectorAll(".chatbot-source");
 assert.equal(sources.length, 3, "Le fonti della risposta non vengono mostrate");
 assert.equal(
@@ -495,6 +525,8 @@ console.log(
         "human-handoff-sync",
         "message-deduplication",
         "keyboard-accessible-controls",
+        "page-context",
+        "verified-product-cards",
       ],
     },
     null,

@@ -11,15 +11,13 @@
  * - Sound natural, not forced or scripted
  */
 
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import type { BusinessContext } from './business-context'
 import type { IntentType } from './intent-classifier'
 import { recordAIUsage } from './ai-usage'
 import { DEFAULT_CHAT_MODEL } from './ai-models'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 export interface FollowUpContext {
   intentType: IntentType

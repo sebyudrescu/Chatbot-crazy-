@@ -1,5 +1,8 @@
 # 🚀 Roadmap Miglioramenti - Chatbot Enterprise
 
+> Documento storico. La roadmap aggiornata e verificata sul codice è
+> [ROADMAP_CANONICA_2026.md](./ROADMAP_CANONICA_2026.md).
+
 Questo documento contiene **tutte le idee e funzionalità** che possono essere implementate per portare il chatbot al livello successivo.
 
 ---

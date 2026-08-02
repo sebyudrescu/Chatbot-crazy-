@@ -3,13 +3,11 @@
  * Uses OpenAI embeddings and in-memory vector storage
  */
 
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import { createHash } from 'node:crypto'
 import { recordAIUsage } from './ai-usage'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 const useDeterministicEmbeddings =
   process.env.NODE_ENV !== 'production' &&

@@ -9,6 +9,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import crypto from 'crypto'
 import { assertSafeRemoteUrl } from './url-safety'
+import type { ExtractedProduct } from './product-extractor'
 
 export interface SimpleCrawlOptions {
   maxPages?: number
@@ -23,6 +24,7 @@ export interface CrawledPage {
   wordCount: number
   quality: number
   depth: number
+  products?: ExtractedProduct[]
 }
 
 export class SimpleIntelligentCrawler {
@@ -281,6 +283,8 @@ export class SimpleIntelligentCrawler {
         throw new Error(`Tipo di contenuto non supportato: ${contentType}`)
       }
       const html = response.data
+      const { extractProductsFromHtml } = await import('./product-extractor')
+      const products = extractProductsFromHtml(html, finalUrl)
 
       // Extract links
       const links = this.extractLinks(html, finalUrl)
@@ -320,7 +324,8 @@ export class SimpleIntelligentCrawler {
         textContent: extracted.textContent,
         wordCount: extracted.textContent.split(/\s+/).length,
         quality,
-        depth
+        depth,
+        products
       }
 
       this.results.push(page)

@@ -3,13 +3,11 @@
  * Classifies user messages to route them appropriately
  */
 
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import { recordAIUsage } from './ai-usage'
 import { DEFAULT_CHAT_MODEL } from './ai-models'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 export type IntentType = 'greeting' | 'question' | 'identity_question' | 'chitchat' | 'escalation' | 'unknown'
 

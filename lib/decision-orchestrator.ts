@@ -19,7 +19,7 @@
  */
 
 import 'server-only'
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import { classifyIntent, type IntentResult } from './intent-classifier'
 import { classifyQuery, type QueryClassification } from './query-classifier'
 import { buildMemoryContext, formatFactsForPrompt, type MemoryContext } from './structured-memory'
@@ -50,9 +50,7 @@ import { eventStore } from './event-store'
 import { recordAIUsage } from './ai-usage'
 import { DEFAULT_CHAT_MODEL, normalizeAIModel } from './ai-models'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 // ============================================================================
 // TYPES
@@ -73,6 +71,7 @@ export interface OrchestratorContext {
     sentiment?: string
     topics?: string[]
   }
+  verifiedCommerceContext?: string
   
   // Bot configuration
   botConfig: {
@@ -588,7 +587,7 @@ async function generateResponse(params: {
   
   // === STRATEGY 1: CONVERSATIONAL (no retrieval) ===
   if (decision.responseStrategy === 'conversational') {
-    const systemPrompt = generateSystemPrompt(getPromptConfig(context))
+    const systemPrompt = generateSystemPrompt(getPromptConfig(context)) + (context.verifiedCommerceContext || '')
     const model = getModel(context)
     const aiStartedAt = Date.now()
     const completion = await openai.chat.completions.create({
@@ -615,7 +614,7 @@ async function generateResponse(params: {
   }
   
   // Build enhanced system prompt with retrieved context
-  let baseSystemPrompt = generateSystemPrompt(getPromptConfig(context))
+  let baseSystemPrompt = generateSystemPrompt(getPromptConfig(context)) + (context.verifiedCommerceContext || '')
   
   // Add business context
   const { getCachedBusinessContext, formatBusinessContextForPrompt } = await import('./business-context')
@@ -744,7 +743,7 @@ async function generateIdentityResponse(params: {
   console.log(`   [Identity Response] Building unified company identity prompt...`)
   
   // 1. Get base template (defines HOW to speak, not WHAT to say)
-  let baseTemplate = generateSystemPrompt(getPromptConfig(context))
+  let baseTemplate = generateSystemPrompt(getPromptConfig(context)) + (context.verifiedCommerceContext || '')
   
   // 2. Build identity fusion prompt
   let identityPrompt = `${baseTemplate}

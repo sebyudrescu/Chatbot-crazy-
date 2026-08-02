@@ -61,6 +61,7 @@
   const conversationStorageKey = `litx:${config.botId}:conversation`;
   const sessionStorageKey = `litx:${config.botId}:session`;
   const sessionTokenStorageKey = `litx:${config.botId}:session-token`;
+  const pageHistoryStorageKey = `litx:${config.botId}:page-history`;
   let conversationId = readStorage(conversationStorageKey);
   let userSessionId = readStorage(sessionStorageKey);
   let signedSessionToken = readStorage(sessionTokenStorageKey);
@@ -311,6 +312,99 @@
       outline: 2px solid ${config.primaryColor}55;
       outline-offset: 2px;
     }
+
+    .chatbot-product-carousel {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(210px, 82%);
+      gap: 10px;
+      margin-top: 10px;
+      padding: 2px 2px 8px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: thin;
+    }
+
+    .chatbot-product-card {
+      position: relative;
+      overflow: hidden;
+      scroll-snap-align: start;
+      border: 1px solid ${config.theme === 'dark' ? '#475569' : '#e2e8f0'};
+      border-radius: 14px;
+      background: ${config.theme === 'dark' ? '#273449' : '#ffffff'};
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+    }
+
+    .chatbot-product-image-link {
+      display: block;
+      position: relative;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      background: ${config.theme === 'dark' ? '#334155' : '#f1f5f9'};
+    }
+
+    .chatbot-product-image {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      transition: ${config.animation ? 'transform 0.25s ease' : 'none'};
+    }
+
+    .chatbot-product-image-link:hover .chatbot-product-image { transform: ${config.animation ? 'scale(1.035)' : 'none'}; }
+
+    .chatbot-product-badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      padding: 4px 7px;
+      border-radius: 999px;
+      background: ${config.primaryColor};
+      color: #ffffff;
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .chatbot-product-body { display: grid; gap: 7px; padding: 11px; }
+    .chatbot-product-title {
+      color: ${config.theme === 'dark' ? '#ffffff' : '#172033'};
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.3;
+      text-decoration: none;
+    }
+    .chatbot-product-title:hover, .chatbot-product-title:focus-visible { color: ${config.primaryColor}; outline: none; }
+    .chatbot-product-description {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'};
+      font-size: 10px;
+      line-height: 1.4;
+    }
+    .chatbot-product-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .chatbot-product-price { color: ${config.theme === 'dark' ? '#ffffff' : '#0f172a'}; font-size: 14px; font-weight: 800; }
+    .chatbot-product-compare { margin-left: 5px; color: #94a3b8; font-size: 10px; font-weight: 500; text-decoration: line-through; }
+    .chatbot-product-stock { color: #059669; font-size: 9px; font-weight: 700; }
+    .chatbot-product-stock.out { color: #dc2626; }
+    .chatbot-product-open {
+      display: flex;
+      min-height: 34px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9px;
+      background: ${config.primaryColor};
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 750;
+      text-decoration: none;
+    }
+    .chatbot-product-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; }
+    .chatbot-product-open.secondary { border: 1px solid ${config.primaryColor}; background: transparent; color: ${config.theme === 'dark' ? '#e9d5ff' : config.primaryColor}; }
+    .chatbot-product-open:hover, .chatbot-product-open:focus-visible { filter: brightness(0.94); outline: 2px solid ${config.primaryColor}55; outline-offset: 2px; }
 
     .chatbot-error {
       color: ${config.theme === 'dark' ? '#fecaca' : '#b91c1c'} !important;
@@ -618,6 +712,39 @@
     } catch {}
   }
 
+  function collectPageContext() {
+    try {
+      const currentUrl = new URL(window.location.href);
+      const utm = {};
+      ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach((key) => {
+        const value = currentUrl.searchParams.get(key);
+        if (value) utm[key] = value.slice(0, 300);
+      });
+      const productIdElement = document.querySelector('[data-product-id], meta[property="product:retailer_item_id"], meta[name="product:id"]');
+      const skuElement = document.querySelector('[data-product-sku], meta[property="product:retailer_item_id"], meta[itemprop="sku"]');
+      const productId = productIdElement && (productIdElement.getAttribute('data-product-id') || productIdElement.getAttribute('content'));
+      const sku = skuElement && (skuElement.getAttribute('data-product-sku') || skuElement.getAttribute('content'));
+      let history = [];
+      try { history = JSON.parse(window.sessionStorage.getItem(pageHistoryStorageKey) || '[]'); } catch {}
+      if (!Array.isArray(history)) history = [];
+      const currentPage = { url: currentUrl.toString(), title: String(document.title || '').slice(0, 300) };
+      history = [currentPage, ...history.filter((page) => page && page.url !== currentPage.url)].slice(0, 8);
+      try { window.sessionStorage.setItem(pageHistoryStorageKey, JSON.stringify(history)); } catch {}
+      return {
+        url: currentUrl.toString(),
+        title: currentPage.title || undefined,
+        referrer: document.referrer || undefined,
+        language: navigator.language || undefined,
+        productId: productId ? String(productId).slice(0, 200) : undefined,
+        sku: sku ? String(sku).slice(0, 200) : undefined,
+        utm: Object.keys(utm).length ? utm : undefined,
+        recentPages: history,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
   // DOM Creation
   function createWidget() {
     // Inject CSS
@@ -903,6 +1030,141 @@
     }
   }
 
+  function safeProductUrl(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' ? url.toString() : null;
+    } catch { return null; }
+  }
+
+  function formatProductPrice(price, currency) {
+    if (typeof price !== 'number' || !Number.isFinite(price)) return '';
+    try {
+      return new Intl.NumberFormat(navigator.language || 'it-IT', {
+        style: 'currency', currency: /^[A-Z]{3}$/.test(currency || '') ? currency : 'EUR',
+      }).format(price);
+    } catch { return `${price.toFixed(2)} ${currency || ''}`.trim(); }
+  }
+
+  async function trackCommerceEvent(eventType, card, messageId) {
+    if (!conversationId || !userSessionId || !card || !card.productId) return;
+    try {
+      await fetch(`${config.apiUrl}/api/embed/${config.botId}/commerce-events`, {
+        method: 'POST',
+        headers: widgetHeaders(),
+        keepalive: true,
+        body: JSON.stringify({
+          eventType,
+          conversationId,
+          messageId,
+          productId: card.productId,
+          variantId: card.variantId,
+          userSessionId,
+          pageUrl: window.location.href,
+        }),
+      });
+    } catch {}
+  }
+
+  function addProductCards(contentElement, productCards, messageId) {
+    const cards = Array.isArray(productCards) ? productCards.slice(0, 5) : [];
+    if (!cards.length) return;
+    const carousel = document.createElement('div');
+    carousel.className = 'chatbot-product-carousel';
+    carousel.setAttribute('role', 'region');
+    carousel.setAttribute('aria-label', 'Prodotti consigliati');
+
+    cards.forEach((card) => {
+      const productUrl = safeProductUrl(card && card.productUrl);
+      if (!productUrl || !card.title) return;
+      const article = document.createElement('article');
+      article.className = 'chatbot-product-card';
+      const imageLink = document.createElement('a');
+      imageLink.className = 'chatbot-product-image-link';
+      imageLink.href = productUrl;
+      imageLink.target = '_blank';
+      imageLink.rel = 'noopener noreferrer';
+      imageLink.setAttribute('aria-label', `Apri ${String(card.title).slice(0, 240)}`);
+      const imageUrl = safeProductUrl(card.imageUrl);
+      if (imageUrl) {
+        const image = document.createElement('img');
+        image.className = 'chatbot-product-image';
+        image.src = imageUrl;
+        image.alt = String(card.title).slice(0, 240);
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        image.onerror = () => imageLink.removeChild(image);
+        imageLink.appendChild(image);
+      }
+      if (card.badge) {
+        const badge = document.createElement('span');
+        badge.className = 'chatbot-product-badge';
+        badge.textContent = String(card.badge).slice(0, 40);
+        imageLink.appendChild(badge);
+      }
+      imageLink.onclick = () => { void trackCommerceEvent('click', card, messageId); };
+      article.appendChild(imageLink);
+
+      const body = document.createElement('div');
+      body.className = 'chatbot-product-body';
+      const title = document.createElement('a');
+      title.className = 'chatbot-product-title';
+      title.href = productUrl;
+      title.target = '_blank';
+      title.rel = 'noopener noreferrer';
+      title.textContent = String(card.title).slice(0, 240);
+      title.onclick = () => { void trackCommerceEvent('click', card, messageId); };
+      body.appendChild(title);
+      if (card.shortDescription) {
+        const description = document.createElement('div');
+        description.className = 'chatbot-product-description';
+        description.textContent = String(card.shortDescription).slice(0, 500);
+        body.appendChild(description);
+      }
+      const meta = document.createElement('div');
+      meta.className = 'chatbot-product-meta';
+      const price = document.createElement('div');
+      price.className = 'chatbot-product-price';
+      price.textContent = formatProductPrice(card.price, card.currency) || 'Prezzo sul sito';
+      const comparePrice = formatProductPrice(card.compareAtPrice, card.currency);
+      if (comparePrice) {
+        const compare = document.createElement('span');
+        compare.className = 'chatbot-product-compare';
+        compare.textContent = comparePrice;
+        price.appendChild(compare);
+      }
+      const stock = document.createElement('span');
+      stock.className = `chatbot-product-stock ${card.availability === 'out_of_stock' ? 'out' : ''}`;
+      stock.textContent = card.availability === 'out_of_stock' ? 'Esaurito' : card.availability === 'preorder' ? 'Preordine' : 'Disponibile';
+      meta.appendChild(price);
+      meta.appendChild(stock);
+      body.appendChild(meta);
+      const actions = document.createElement('div');
+      actions.className = 'chatbot-product-actions';
+      const cardActions = Array.isArray(card.actions) && card.actions.length
+        ? card.actions
+        : [{ type: 'view', label: 'Vedi prodotto', url: productUrl }];
+      cardActions.slice(0, 3).forEach((action) => {
+        const actionUrl = safeProductUrl(action && action.url);
+        if (!actionUrl || !action.label) return;
+        const link = document.createElement('a');
+        link.className = `chatbot-product-open ${action.type === 'view' ? '' : 'secondary'}`;
+        link.href = actionUrl;
+        link.target = action.type === 'add_to_cart' ? '_self' : '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = String(action.label).slice(0, 80);
+        link.onclick = () => { void trackCommerceEvent(action.type === 'add_to_cart' ? 'add_to_cart' : 'click', card, messageId); };
+        actions.appendChild(link);
+      });
+      body.appendChild(actions);
+      article.appendChild(body);
+      carousel.appendChild(article);
+    });
+
+    if (carousel.childElementCount) contentElement.appendChild(carousel);
+  }
+
   function addResponseExtras(contentElement, quickReplies, ctas) {
     const replies = Array.isArray(quickReplies) ? quickReplies.slice(0, 4) : [];
     const actions = Array.isArray(ctas) ? ctas.slice(0, 3) : [];
@@ -1161,6 +1423,7 @@
         const contentElement = addMessage(sender, message.content, { id: message.id });
         if (sender !== 'bot') return;
         addSources(contentElement, message.sources);
+        addProductCards(contentElement, message.productCards, message.id);
         if (!message.feedback) addFeedbackControls(contentElement, message.id);
         if (index === lastAssistantIndex) {
           addResponseExtras(contentElement, message.quickReplies, message.ctas);
@@ -1242,6 +1505,17 @@
   }
 
   // API Functions
+  function chatRequestBody(message, requestedConversationId) {
+    return JSON.stringify({
+      message,
+      botId: config.botId,
+      conversationId: requestedConversationId,
+      userSessionId,
+      source: 'widget',
+      pageContext: collectPageContext(),
+    });
+  }
+
   async function sendMessage(content) {
     const normalizedContent = typeof content === 'string' ? content.trim() : '';
     if (!normalizedContent || normalizedContent.length > 4000) return;
@@ -1264,26 +1538,14 @@
       let response = await fetch(`${config.apiUrl}/api/chat`, {
         method: 'POST',
         headers: widgetHeaders(),
-        body: JSON.stringify({
-          message: normalizedContent,
-          botId: config.botId,
-          conversationId: conversationId,
-          userSessionId,
-          source: 'widget'
-        })
+        body: chatRequestBody(normalizedContent, conversationId)
       });
       if (response.status === 401) {
         await ensureWidgetSession(true);
         response = await fetch(`${config.apiUrl}/api/chat`, {
           method: 'POST',
           headers: widgetHeaders(),
-          body: JSON.stringify({
-            message: normalizedContent,
-            botId: config.botId,
-            conversationId: null,
-            userSessionId,
-            source: 'widget'
-          })
+          body: chatRequestBody(normalizedContent, null)
         });
       } else if (response.status === 404 && conversationId) {
         conversationId = null;
@@ -1291,13 +1553,7 @@
         response = await fetch(`${config.apiUrl}/api/chat`, {
           method: 'POST',
           headers: widgetHeaders(),
-          body: JSON.stringify({
-            message: normalizedContent,
-            botId: config.botId,
-            conversationId: null,
-            userSessionId,
-            source: 'widget'
-          })
+          body: chatRequestBody(normalizedContent, null)
         });
       }
 
@@ -1315,6 +1571,7 @@
           id: data.data.assistantMessage.id,
         });
         addSources(responseContent, data.data.sources);
+        addProductCards(responseContent, data.data.productCards, data.data.assistantMessage.id);
         addFeedbackControls(responseContent, data.data.assistantMessage.id);
         addResponseExtras(responseContent, data.data.quickReplies, data.data.ctas);
         addLeadForms(responseContent, data.data.actions && data.data.actions.leadForms, data.data.conversationId);

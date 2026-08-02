@@ -45,6 +45,10 @@ model Chatbot {
   crmContacts      CRMContact[]
   promptVersions   PromptVersion[]
   aiUsageEvents    AIUsageEvent[]
+  products         Product[]
+  productSources   ProductSource[]
+  productSyncJobs  ProductSyncJob[]
+  commerceEvents   CommerceEvent[]
 
   @@index([companyName])
   @@index([isActive])
@@ -333,7 +337,7 @@ model KnowledgeSource {
   pageCount      Int? // For PDFs or crawled pages
   ingestionJobId String? // Link to async job
 
-  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  chatbot Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
   chunks  KnowledgeChunk[]
 
   @@index([botId])
@@ -364,12 +368,12 @@ model KnowledgeChunk {
 
 // ASYNC INGESTION: Job Queue
 model IngestionJob {
-  id       String @id @default(uuid())
-  botId    String
-  jobType  String // "crawl", "pdf", "url", "reindex"
+  id        String  @id @default(uuid())
+  botId     String
+  jobType   String // "crawl", "pdf", "url", "reindex"
   dedupeKey String? @unique
-  status   String @default("pending") // "pending", "running", "completed", "failed"
-  priority Int    @default(5) // 1-10, higher = more urgent
+  status    String  @default("pending") // "pending", "running", "completed", "failed"
+  priority  Int     @default(5) // 1-10, higher = more urgent
 
   // Job payload (JSON)
   params String // JSON: {url, maxPages, etc} or {fileId, etc}
@@ -407,12 +411,12 @@ model IngestionJob {
 }
 
 model Conversation {
-  id            String    @id @default(uuid())
-  botId         String
-  userSessionId String
-  startedAt     DateTime  @default(now())
-  lastMessageAt DateTime?
-  channel       String    @default("widget")
+  id               String    @id @default(uuid())
+  botId            String
+  userSessionId    String
+  startedAt        DateTime  @default(now())
+  lastMessageAt    DateTime?
+  channel          String    @default("widget")
   externalThreadId String?
 
   // Conversation metadata
@@ -443,6 +447,7 @@ model Conversation {
   structuredFacts StructuredFact[] // Cognitive memory
   events          Event[] // Event Store
 
+  @@unique([botId, channel, externalThreadId])
   @@index([botId])
   @@index([userSessionId])
   @@index([startedAt])
@@ -450,26 +455,26 @@ model Conversation {
   @@index([sentiment])
   @@index([isResolved])
   @@index([needsHumanEscalation])
-  @@unique([botId, channel, externalThreadId])
   @@map("conversations")
 }
 
 model Message {
-  id             String   @id @default(uuid())
-  conversationId String
-  role           String // "user" or "assistant"
-  content        String
-  createdAt      DateTime @default(now())
-  channel        String   @default("widget")
-  externalMessageId String? @unique
-  deliveryStatus String?
-  sourcesUsed    String? // JSON string for sources array
+  id                String   @id @default(uuid())
+  conversationId    String
+  role              String // "user" or "assistant"
+  content           String
+  createdAt         DateTime @default(now())
+  channel           String   @default("widget")
+  externalMessageId String?  @unique
+  deliveryStatus    String?
+  sourcesUsed       String? // JSON string for sources array
 
   // UX Enhancement Fields
   feedback        String? // "positive", "negative", or null
   feedbackComment String? // Optional user comment on feedback
   ctaData         String? // JSON string for contextual CTAs
   quickReplies    String? // JSON array of suggested questions
+  productCards    String? // JSON array of server-hydrated commerce cards
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -478,6 +483,159 @@ model Message {
   @@index([feedback])
   @@index([channel, createdAt])
   @@map("messages")
+}
+
+// ============================================================================
+// VERIFIED COMMERCE CATALOG
+// ============================================================================
+
+model ProductSource {
+  id          String    @id @default(uuid())
+  botId       String
+  sourceType  String // "shopify", "woocommerce", "jsonld", "merchant_feed", "sitemap", "manual"
+  name        String
+  baseUrl     String?
+  status      String    @default("active")
+  syncEnabled Boolean   @default(true)
+  lastSyncAt  DateTime?
+  lastError   String?
+  metadata    String    @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  chatbot  Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  products Product[]
+  syncJobs ProductSyncJob[]
+
+  @@index([botId, status])
+  @@index([sourceType])
+  @@map("product_sources")
+}
+
+model Product {
+  id                   String    @id @default(uuid())
+  botId                String
+  sourceId             String?
+  identityKey          String
+  externalId           String?
+  canonicalUrl         String
+  title                String
+  description          String    @default("")
+  brand                String?
+  productType          String?
+  categories           String    @default("[]")
+  tags                 String    @default("[]")
+  mainImageUrl         String?
+  imageUrls            String    @default("[]")
+  status               String    @default("active")
+  availableForSale     Boolean   @default(true)
+  recommendationStatus String    @default("normal") // "normal", "promoted", "excluded", "blocked"
+  rankingBoost         Int       @default(0)
+  merchandisingNote    String?
+  campaignStart        DateTime?
+  campaignEnd          DateTime?
+  publishedAt          DateTime?
+  lastSyncedAt         DateTime?
+  contentHash          String?
+  metadata             String    @default("{}")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  chatbot  Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  source   ProductSource?   @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  variants ProductVariant[]
+  events   CommerceEvent[]
+
+  @@unique([botId, identityKey])
+  @@unique([botId, canonicalUrl])
+  @@index([botId, status, availableForSale])
+  @@index([botId, recommendationStatus])
+  @@index([sourceId])
+  @@index([externalId])
+  @@index([brand])
+  @@map("products")
+}
+
+model ProductVariant {
+  id             String   @id @default(uuid())
+  productId      String
+  identityKey    String
+  externalId     String?
+  sku            String?
+  title          String?
+  attributes     String   @default("{}")
+  price          Float?
+  compareAtPrice Float?
+  currency       String?
+  available      Boolean  @default(true)
+  stockQuantity  Int?
+  productUrl     String?
+  imageUrl       String?
+  position       Int      @default(0)
+  metadata       String   @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  events  CommerceEvent[]
+
+  @@unique([productId, identityKey])
+  @@index([productId, available])
+  @@index([sku])
+  @@map("product_variants")
+}
+
+model ProductSyncJob {
+  id              String    @id @default(uuid())
+  botId           String
+  sourceId        String
+  status          String    @default("pending")
+  progress        Int       @default(0)
+  productsSeen    Int       @default(0)
+  productsCreated Int       @default(0)
+  productsUpdated Int       @default(0)
+  productsFailed  Int       @default(0)
+  errorMessage    String?
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(3)
+  nextRetryAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  chatbot Chatbot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  source  ProductSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([botId, status])
+  @@index([sourceId, createdAt])
+  @@index([nextRetryAt])
+  @@map("product_sync_jobs")
+}
+
+model CommerceEvent {
+  id             String   @id @default(uuid())
+  botId          String
+  conversationId String?
+  messageId      String?
+  productId      String?
+  variantId      String?
+  eventType      String // "impression", "click", "compare", "add_to_cart", "checkout", "conversion"
+  sessionId      String?
+  pageUrl        String?
+  value          Float?
+  currency       String?
+  metadata       String   @default("{}")
+  createdAt      DateTime @default(now())
+
+  chatbot Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([botId, eventType, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([productId, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("commerce_events")
 }
 
 // ============================================================================

@@ -131,6 +131,7 @@ export async function GET(
         feedback: message.feedback,
         quickReplies: parseJSON(message.quickReplies) || [],
         ctas: parseJSON(message.ctaData) || [],
+        productCards: parseJSON(message.productCards) || [],
         sources: ids
           .map((id) => sourceMap.get(id))
           .filter((source) => Boolean(source)),

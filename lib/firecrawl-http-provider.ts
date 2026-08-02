@@ -6,6 +6,7 @@
  */
 
 import type { CrawlerProvider, CrawledPage, CrawlOptions } from './crawler-provider'
+import { extractProductsFromHtml } from './product-extractor'
 
 interface FirecrawlCrawlJob {
   id: string
@@ -102,14 +103,16 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
       // Step 3: Convert to our format
       const pages: CrawledPage[] = (result.data || []).map((page) => {
         const textContent = page.markdown || this.htmlToText(page.html || '')
+        const pageUrl = page.url || startUrl
         
         return {
-          url: page.url || startUrl,
+          url: pageUrl,
           title: page.metadata?.title || this.extractTitle(page.markdown || page.html) || 'Untitled',
           textContent,
           excerpt: page.metadata?.description || textContent.substring(0, 200),
           quality: this.calculateQuality(textContent),
           markdown: page.markdown,
+          products: page.html ? extractProductsFromHtml(page.html, pageUrl) : [],
         }
       })
       
@@ -218,6 +221,7 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
         excerpt: data.metadata?.description || textContent.substring(0, 200),
         quality: this.calculateQuality(textContent),
         markdown: data.markdown,
+        products: data.html ? extractProductsFromHtml(data.html, data.url || url) : [],
       }
       
     } catch (error) {

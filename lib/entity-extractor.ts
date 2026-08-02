@@ -15,13 +15,11 @@
  */
 
 import 'server-only'
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import { upsertEntity, upsertRelation, findEntity } from './knowledge-graph'
 import { parseJSON } from './utils'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 // ============================================================================
 // TYPES

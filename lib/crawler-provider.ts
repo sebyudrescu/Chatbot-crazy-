@@ -14,6 +14,7 @@ export interface CrawledPage {
   excerpt?: string
   quality?: number
   markdown?: string
+  products?: import('./product-extractor').ExtractedProduct[]
 }
 
 export interface CrawlOptions {

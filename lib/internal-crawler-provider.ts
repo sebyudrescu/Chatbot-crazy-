@@ -33,6 +33,7 @@ export class InternalCrawlerProvider implements CrawlerProvider {
         textContent: page.textContent,
         excerpt: page.textContent?.substring(0, 200) || '',
         quality: page.quality || 50,
+        products: page.products || [],
       }))
       
       return standardPages

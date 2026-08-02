@@ -23,6 +23,7 @@ import {
   LogOut,
   Menu,
   X,
+  ShoppingBag,
 } from 'lucide-react'
 import { Sidebar, SidebarLink, SidebarSection } from './ui/Sidebar'
 import { Button } from './ui/Button'
@@ -118,6 +119,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <SidebarLink href="/chatbots" icon={Bot} label="AI Agents" />
           <SidebarLink href="/templates" icon={LayoutTemplate} label="Templates" />
           <SidebarLink href="/knowledge" icon={Database} label="Data Sources" />
+          <SidebarLink href="/commerce" icon={ShoppingBag} label="Commerce" />
           <SidebarLink href="/testing" icon={FlaskConical} label="Testing" />
           <SidebarLink href="/evaluations" icon={ShieldCheck} label="Evaluations" />
           <SidebarLink href="/workflow" icon={WorkflowIcon} label="Workflow" />
@@ -194,6 +196,7 @@ function MobileNavigation({ onNavigate }: { onNavigate: () => void }) {
         <SidebarLink href="/chatbots" icon={Bot} label="AI Agents" onClick={onNavigate} />
         <SidebarLink href="/templates" icon={LayoutTemplate} label="Templates" onClick={onNavigate} />
         <SidebarLink href="/knowledge" icon={Database} label="Data Sources" onClick={onNavigate} />
+        <SidebarLink href="/commerce" icon={ShoppingBag} label="Commerce" onClick={onNavigate} />
         <SidebarLink href="/testing" icon={FlaskConical} label="Testing" onClick={onNavigate} />
         <SidebarLink href="/evaluations" icon={ShieldCheck} label="Evaluations" onClick={onNavigate} />
         <SidebarLink href="/workflow" icon={WorkflowIcon} label="Workflow" onClick={onNavigate} />

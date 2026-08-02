@@ -12,15 +12,13 @@
  */
 
 import 'server-only'
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import { storeFact, type FactType, type FactCategory, type EntityType, type FactSource } from './structured-memory'
 import { recordAIUsage } from './ai-usage'
 import { DEFAULT_CHAT_MODEL } from './ai-models'
 import { hasUserEvidence } from './fact-evidence'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 // ============================================================================
 // TYPES

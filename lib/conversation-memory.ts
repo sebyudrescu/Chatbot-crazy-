@@ -3,12 +3,10 @@
  * Extracts structured data and manages conversation summarization
  */
 
-import OpenAI from 'openai'
+import { createLazyOpenAI } from './openai-client'
 import { DEFAULT_CHAT_MODEL } from './ai-models'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = createLazyOpenAI()
 
 export interface ExtractedUserData {
   name?: string

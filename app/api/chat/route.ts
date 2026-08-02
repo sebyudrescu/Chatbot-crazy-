@@ -33,6 +33,9 @@ import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from '@
 import { readWidgetSession, widgetSessionToken } from '@/lib/widget-session'
 import { detectSentiment } from '@/lib/sentiment'
 import { verifyOwnerSessionToken } from '@/lib/auth-token'
+import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@/lib/commerce-types'
+import { searchVerifiedProducts } from '@/lib/product-search'
+import { hydrateProductCards } from '@/lib/commerce-catalog'
 
 const ChatRequestSchema = z.object({
   botId: z.string().uuid(),
@@ -40,6 +43,7 @@ const ChatRequestSchema = z.object({
   conversationId: z.string().uuid().nullable().optional(),
   userSessionId: z.string().max(300).optional(),
   source: z.enum(['widget']).optional(),
+  pageContext: pageContextSchema.optional(),
 })
 
 export async function OPTIONS() {
@@ -80,6 +84,9 @@ export async function POST(request: NextRequest) {
     if (!requestOrigin && process.env.NODE_ENV === 'production') {
       return NextResponse.json({ success: false, error: 'origin_required' }, { status: 403 })
     }
+    const pageContext = body.pageContext && pageContextMatchesOrigin(body.pageContext, requestOrigin)
+      ? body.pageContext
+      : undefined
     if (body.source === 'widget') {
       if (!body.userSessionId) {
         return NextResponse.json({ success: false, error: 'widget_session_required' }, { status: 401 })
@@ -228,6 +235,7 @@ export async function POST(request: NextRequest) {
     console.log(`🧠 [ChatAPI] Invoking Decision Orchestrator...`)
     
     const chatbotSettings = (parseJSON(conversation.chatbot.settings) || {}) as ChatbotSettings
+    const productSearch = await searchVerifiedProducts(botId, message, pageContext)
     const orchestratorContext: OrchestratorContext = {
       botId,
       conversationId: conversation.id,
@@ -238,6 +246,7 @@ export async function POST(request: NextRequest) {
         sentiment: conversation.sentiment || undefined,
         topics: conversation.topicsDiscussed ? JSON.parse(conversation.topicsDiscussed) : undefined,
       },
+      verifiedCommerceContext: productSearch.promptContext,
       botConfig: {
         companyName: conversation.chatbot.companyName,
         promptTemplateId: conversation.chatbot.promptTemplateId,
@@ -289,6 +298,9 @@ export async function POST(request: NextRequest) {
     const outgoingPolicy = enforceOutgoingPolicy(result.response, chatbotSettings)
     const policyDecision = incomingPolicy.action !== 'allow' ? incomingPolicy : outgoingPolicy
     if (policyDecision.action !== 'allow') result.response = policyResponse(policyDecision, chatbotSettings)
+    const productCards: ProductCard[] = policyDecision.action === 'allow'
+      ? await hydrateProductCards(botId, productSearch.selections)
+      : []
     
     console.log(`✅ [ChatAPI] Orchestrator completed in ${result.metadata.processingTimeMs}ms`)
     console.log(`   Strategy: ${result.metadata.responseType}`)
@@ -363,8 +375,24 @@ export async function POST(request: NextRequest) {
         }),
         quickReplies: stringifyJSON(quickReplies),
         ctaData: stringifyJSON(contextualCTAs),
+        productCards: stringifyJSON(productCards),
       },
     })
+
+    if (productCards.length > 0) {
+      await prisma.commerceEvent.createMany({
+        data: productCards.map((card) => ({
+          botId,
+          conversationId: conversation.id,
+          messageId: savedAssistantMessage.id,
+          productId: card.productId,
+          variantId: card.variantId,
+          eventType: 'impression',
+          sessionId: conversation.userSessionId,
+          pageUrl: pageContext?.url,
+        })),
+      })
+    }
 
     // ========================================================================
     // STEP 8: UPDATE CONVERSATION METADATA
@@ -486,6 +514,7 @@ export async function POST(request: NextRequest) {
         // UX enhancements
         quickReplies: quickReplies,
         ctas: contextualCTAs,
+        productCards,
       },
     })
   } catch (error) {
