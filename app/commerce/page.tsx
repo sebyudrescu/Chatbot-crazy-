@@ -3,7 +3,7 @@
 import { memo, useCallback, useDeferredValue, useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { AlertTriangle, Box, CheckCircle2, ExternalLink, ImageOff, MousePointerClick, PackageSearch, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertTriangle, Box, CheckCircle2, Copy, ExternalLink, ImageOff, KeyRound, MousePointerClick, PackageSearch, RefreshCw, Sparkles } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -155,11 +155,12 @@ export default function CommercePage() {
         </div>
 
         {error ? <div className="mt-5 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertTriangle className="h-4 w-4" />{error}</div> : null}
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Metric label="Prodotti importati" value={summary?.total || 0} icon={<Box className="h-4 w-4" />} />
           <Metric label="Disponibili" value={summary?.active || 0} icon={<CheckCircle2 className="h-4 w-4" />} />
           <Metric label="Dati incompleti" value={summary?.incomplete || 0} icon={<AlertTriangle className="h-4 w-4" />} />
           <Metric label="Click prodotto" value={summary?.events.click || 0} icon={<MousePointerClick className="h-4 w-4" />} />
+          <Metric label="Vendite attribuite" value={summary?.events.conversion || 0} icon={<Sparkles className="h-4 w-4" />} />
         </div>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -170,11 +171,41 @@ export default function CommercePage() {
           <aside className="space-y-4">
             <Card><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-brand-600" /><h2 className="text-sm font-semibold">Fonti catalogo</h2></div><div className="mt-4 grid grid-cols-2 gap-2"><Button size="sm" variant="secondary" loading={syncing === 'shopify'} disabled={Boolean(syncing)} onClick={() => syncPlatform('shopify')}>Sync Shopify</Button><Button size="sm" variant="secondary" loading={syncing === 'woocommerce'} disabled={Boolean(syncing)} onClick={() => syncPlatform('woocommerce')}>Sync Woo</Button></div><Link href="/integrations" className="mt-2 block text-center text-[10px] font-semibold text-brand-600 hover:underline">Configura integrazioni</Link><div className="mt-4 space-y-3">{data?.sources.length ? data.sources.map(source => <div key={source.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-semibold text-gray-800">{source.name}</p><span className="text-[9px] font-bold uppercase text-emerald-600">{source.status}</span></div><p className="mt-1 text-[10px] text-gray-400">{source.sourceType} · {source._count.products} prodotti</p></div>) : <p className="text-xs leading-5 text-gray-400">Le fonti JSON-LD appariranno automaticamente dopo il crawling.</p>}</div></Card>
             <Card><h2 className="text-sm font-semibold">Come funziona il ranking</h2><ul className="mt-3 space-y-2 text-[11px] leading-5 text-gray-500"><li>• I prodotti bloccati o esclusi non vengono mostrati.</li><li>• Disponibilità e pertinenza vengono prima della promozione.</li><li>• La priorità modifica l’ordine senza inventare dati.</li><li>• La nota è contesto verificato per spiegare il consiglio.</li></ul></Card>
+            <ConversionTrackingCard botId={botId} />
           </aside>
         </div>
       </div>
     </DashboardLayout>
   )
+}
+
+function ConversionTrackingCard({ botId }: { botId: string }) {
+  const [keyId, setKeyId] = useState('')
+  const [secret, setSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!botId) return
+    let active = true
+    setSecret(''); setKeyId('')
+    fetch(`/api/commerce/tracking-key?botId=${encodeURIComponent(botId)}`).then(response => response.json()).then(result => { if (active) setKeyId(result.data?.keyId || '') })
+    return () => { active = false }
+  }, [botId])
+  const rotate = async () => {
+    if (!botId) return
+    setBusy(true)
+    try {
+      const response = await fetch('/api/commerce/tracking-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId }) })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Generazione chiave non riuscita')
+      setKeyId(result.data.keyId); setSecret(result.data.secret)
+    } finally { setBusy(false) }
+  }
+  const copy = async () => {
+    if (!secret) return
+    await navigator.clipboard.writeText(secret); setCopied(true); window.setTimeout(() => setCopied(false), 1800)
+  }
+  return <Card><div className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-brand-600" /><h2 className="text-sm font-semibold">Vendite verificate</h2></div><p className="mt-2 text-[11px] leading-5 text-gray-500">Chiave server-to-server per registrare checkout e ordini senza fidarsi del browser. Nessun dato personale è obbligatorio.</p>{keyId && <p className="mt-3 break-all rounded-lg bg-gray-50 p-2 font-mono text-[9px] text-gray-500">Key ID: {keyId}</p>}{secret && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"><p className="break-all font-mono text-[9px] text-amber-900">{secret}</p><button onClick={copy} className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800"><Copy className="h-3 w-3" />{copied ? 'Copiato' : 'Copia segreto'}</button><p className="mt-1 text-[9px] text-amber-700">Salvalo ora: dopo aver chiuso la pagina non verrà più mostrato.</p></div>}<Button size="sm" variant="secondary" className="mt-3 w-full" loading={busy} onClick={rotate}>{keyId ? 'Ruota chiave' : 'Genera chiave'}</Button></Card>
 }
 
 function Metric({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {

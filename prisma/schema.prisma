@@ -28,27 +28,29 @@ model Chatbot {
   kbTotalChunks   Int       @default(0) // Total chunks in stable KB
   kbIndexingError String? // Last indexing error if any
 
-  knowledgeSources KnowledgeSource[]
-  knowledgeChunks  KnowledgeChunk[]
-  conversations    Conversation[]
-  ingestionJobs    IngestionJob[]
-  structuredFacts  StructuredFact[] // Cognitive memory
-  entities         Entity[] // Knowledge Graph entities
-  relations        Relation[] // Knowledge Graph relations
-  events           Event[] // Event Store
-  embedSettings    EmbedSettings? // Widget embed settings
-  workflows        Workflow[]
-  evaluationCases  EvaluationCase[]
-  integrations     IntegrationConnection[]
-  actions          AgentAction[]
-  suggestions      ImprovementSuggestion[]
-  crmContacts      CRMContact[]
-  promptVersions   PromptVersion[]
-  aiUsageEvents    AIUsageEvent[]
-  products         Product[]
-  productSources   ProductSource[]
-  productSyncJobs  ProductSyncJob[]
-  commerceEvents   CommerceEvent[]
+  knowledgeSources          KnowledgeSource[]
+  knowledgeChunks           KnowledgeChunk[]
+  conversations             Conversation[]
+  ingestionJobs             IngestionJob[]
+  structuredFacts           StructuredFact[] // Cognitive memory
+  entities                  Entity[] // Knowledge Graph entities
+  relations                 Relation[] // Knowledge Graph relations
+  events                    Event[] // Event Store
+  embedSettings             EmbedSettings? // Widget embed settings
+  workflows                 Workflow[]
+  evaluationCases           EvaluationCase[]
+  integrations              IntegrationConnection[]
+  actions                   AgentAction[]
+  suggestions               ImprovementSuggestion[]
+  crmContacts               CRMContact[]
+  promptVersions            PromptVersion[]
+  aiUsageEvents             AIUsageEvent[]
+  products                  Product[]
+  productSources            ProductSource[]
+  productSyncJobs           ProductSyncJob[]
+  commerceEvents            CommerceEvent[]
+  commerceWebhookDeliveries CommerceWebhookDelivery[]
+  commerceTrackingKey       CommerceTrackingKey?
 
   @@index([companyName])
   @@index([isActive])
@@ -220,24 +222,26 @@ model ActionExecution {
 }
 
 model IntegrationConnection {
-  id           String    @id @default(uuid())
-  botId        String
-  provider     String
-  category     String
-  displayName  String
-  config       String    @default("{}")
-  status       String    @default("disconnected")
-  enabled      Boolean   @default(false)
-  lastTestedAt DateTime?
-  lastError    String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  botId             String
+  provider          String
+  category          String
+  displayName       String
+  externalAccountId String?
+  config            String    @default("{}")
+  status            String    @default("disconnected")
+  enabled           Boolean   @default(false)
+  lastTestedAt      DateTime?
+  lastError         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
   @@unique([botId, provider])
   @@index([botId, enabled])
   @@index([category])
+  @@index([provider, externalAccountId])
   @@map("integration_connections")
 }
 
@@ -613,19 +617,20 @@ model ProductSyncJob {
 }
 
 model CommerceEvent {
-  id             String   @id @default(uuid())
-  botId          String
-  conversationId String?
-  messageId      String?
-  productId      String?
-  variantId      String?
-  eventType      String // "impression", "click", "compare", "add_to_cart", "checkout", "conversion"
-  sessionId      String?
-  pageUrl        String?
-  value          Float?
-  currency       String?
-  metadata       String   @default("{}")
-  createdAt      DateTime @default(now())
+  id              String   @id @default(uuid())
+  botId           String
+  conversationId  String?
+  messageId       String?
+  productId       String?
+  variantId       String?
+  eventType       String // "impression", "click", "compare", "add_to_cart", "checkout", "conversion"
+  externalEventId String?  @unique
+  sessionId       String?
+  pageUrl         String?
+  value           Float?
+  currency        String?
+  metadata        String   @default("{}")
+  createdAt       DateTime @default(now())
 
   chatbot Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
   product Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -636,6 +641,39 @@ model CommerceEvent {
   @@index([productId, createdAt])
   @@index([sessionId, createdAt])
   @@map("commerce_events")
+}
+
+model CommerceWebhookDelivery {
+  id          String    @id @default(uuid())
+  botId       String
+  provider    String
+  externalId  String    @unique
+  topic       String
+  status      String    @default("processing")
+  error       String?
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, createdAt])
+  @@index([provider, status])
+  @@map("commerce_webhook_deliveries")
+}
+
+model CommerceTrackingKey {
+  id        String   @id @default(uuid())
+  botId     String   @unique
+  config    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([active])
+  @@map("commerce_tracking_keys")
 }
 
 // ============================================================================

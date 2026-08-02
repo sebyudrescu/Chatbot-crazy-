@@ -33,8 +33,19 @@ Il vantaggio competitivo non sarà “avere una chat”, ma offrire in un solo p
 - Sincronizzazione iniziale Shopify Admin GraphQL e WooCommerce Store API.
 - Build Next.js, TypeScript, lint, test widget desktop/mobile e contratti commerce superati.
 
-Restano nel P0 operativo: OAuth Shopify semplificato, webhook incrementali Shopify/WooCommerce,
-tracking ordine con verifica identità, checkout/conversion attribution e test database isolato nel CI.
+### Milestone Commerce P0.1 completata nel codice (2 agosto 2026)
+
+- OAuth Shopify ufficiale per applicazione standalone con state firmato, cookie anti-CSRF e verifica HMAC.
+- Token offline cifrati, a scadenza e con rotazione automatica tramite refresh token.
+- Registrazione idempotente dei webhook Shopify per create/update/delete prodotto e disinstallazione.
+- Elaborazione webhook con firma sul raw body, deduplicazione durevole e retry sicuro.
+- Chiavi commerce per agente e endpoint server-to-server firmato per checkout e conversioni verificate.
+- Idempotenza degli ordini tramite ID evento esterno e attribuzione opzionale a conversazione/prodotto/variante.
+- Pannello per generare o ruotare la chiave di conversione senza esporla nel widget.
+
+Restano nel P0 operativo: configurazione delle credenziali della Shopify App su Vercel, collegamento di
+un development store reale, onboarding e webhook incrementali WooCommerce, tracking ordine con verifica
+identità e test database isolato nel CI.
 
 ### Già disponibile
 

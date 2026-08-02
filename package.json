@@ -19,6 +19,7 @@
         "test:commerce": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-commerce-contract.ts",
         "test:product-extractor": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-product-extractor.ts",
         "test:commerce-db": "node scripts/test-commerce-database.cjs",
+        "test:commerce-security": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-commerce-security.ts",
         "test:crawler": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler.ts",
         "test:automations": "node scripts/run-automation-tests.cjs",
         "test:meta": "node scripts/test-meta-security.cjs",

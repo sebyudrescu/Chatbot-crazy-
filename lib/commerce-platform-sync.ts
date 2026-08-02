@@ -3,16 +3,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 import * as cheerio from "cheerio";
 import { prisma } from "./db";
-import { decryptConfigSecrets } from "./secret-config";
 import { assertSafeRemoteUrl } from "./url-safety";
 import { persistExtractedProducts } from "./commerce-importer";
 import { safeHttpsUrl } from "./commerce-types";
 import type { ExtractedProduct } from "./product-extractor";
-
-function parseConfig(value: string) {
-  try { return decryptConfigSecrets(JSON.parse(value)) as Record<string, string>; }
-  catch { throw new Error("Configurazione e-commerce non leggibile"); }
-}
+import { ensureShopifyAccessToken } from "./shopify-auth";
+import { decryptConfigSecrets } from "./secret-config";
 
 function identity(provider: string, value: string) {
   return `${provider}:${createHash("sha256").update(value).digest("hex")}`;
@@ -23,10 +19,12 @@ function plainText(html: unknown) {
   return cheerio.load(html).text().replace(/\s+/g, " ").trim();
 }
 
-async function syncShopify(botId: string, config: Record<string, string>) {
+async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrationConnection.findUnique>>) {
+  if (!connection) throw new Error("Connessione Shopify non trovata");
+  const botId = connection.botId;
+  const { token, config } = await ensureShopifyAccessToken(connection);
   const shop = await assertSafeRemoteUrl(config.shopUrl || "");
-  if (!config.adminAccessToken) throw new Error("Admin API access token mancante");
-  const apiVersion = /^20\d{2}-(01|04|07|10)$/.test(config.apiVersion || "") ? config.apiVersion : "2026-07";
+  const apiVersion = /^20\d{2}-(01|04|07|10)$/.test(String(config.apiVersion || "")) ? String(config.apiVersion) : "2026-07";
   const endpoint = new URL(`/admin/api/${apiVersion}/graphql.json`, shop.origin).toString();
   const query = `query Catalog($cursor: String) {
     shop { currencyCode }
@@ -47,7 +45,7 @@ async function syncShopify(botId: string, config: Record<string, string>) {
       method: "POST",
       redirect: "error",
       signal: AbortSignal.timeout(25_000),
-      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": config.adminAccessToken },
+      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
       body: JSON.stringify({ query, variables: { cursor } }),
     });
     const payload = await response.json().catch(() => null) as any;
@@ -127,9 +125,10 @@ async function syncWooCommerce(botId: string, config: Record<string, string>) {
 export async function syncCommercePlatform(botId: string, provider: "shopify" | "woocommerce") {
   const connection = await prisma.integrationConnection.findUnique({ where: { botId_provider: { botId, provider } } });
   if (!connection?.enabled) throw new Error(`${provider} non è collegato o è disattivato`);
-  const config = parseConfig(connection.config);
   try {
-    const result = provider === "shopify" ? await syncShopify(botId, config) : await syncWooCommerce(botId, config);
+    const result = provider === "shopify"
+      ? await syncShopify(connection)
+      : await syncWooCommerce(botId, decryptConfigSecrets(JSON.parse(connection.config)) as Record<string, string>);
     await prisma.integrationConnection.update({ where: { id: connection.id }, data: { status: "connected", lastTestedAt: new Date(), lastError: null } });
     return result;
   } catch (error) {
