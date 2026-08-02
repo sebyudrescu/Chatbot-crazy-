@@ -11,6 +11,7 @@ export interface ExtractedProductVariant {
   compareAtPrice?: number;
   currency?: string;
   available: boolean;
+  stockQuantity?: number;
   productUrl?: string;
   imageUrl?: string;
   attributes: Record<string, string>;

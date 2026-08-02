@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyOwnerSessionToken } from '@/lib/auth-token'
 
 const publicPaths = ['/', '/login', '/connect/meta', '/api/chat', '/api/health', '/chatbot-widget.js']
-const publicPrefixes = ['/api/auth/', '/api/embed/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/commerce/conversions']
+const publicPrefixes = ['/api/auth/', '/api/embed/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions']
 
 export async function proxy(request: NextRequest) {
   const password = process.env.APP_ACCESS_PASSWORD

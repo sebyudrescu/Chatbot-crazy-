@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
     if (!definition || definition.mode === 'planned') return NextResponse.json({ success: false, error: 'Questa integrazione richiede ancora il connettore ufficiale.' }, { status: 409 })
     if (input.provider === 'whatsapp' || input.provider === 'instagram') return NextResponse.json({ success: false, error: 'Usa il collegamento ufficiale Meta dalla schermata Canali.' }, { status: 409 })
     if (input.provider === 'shopify') return NextResponse.json({ success: false, error: 'Usa il collegamento ufficiale Shopify dalla schermata Integrazioni.' }, { status: 409 })
+    if (input.provider === 'woocommerce') return NextResponse.json({ success: false, error: 'Usa il collegamento ufficiale WooCommerce dalla schermata Integrazioni.' }, { status: 409 })
     const allowed = new Set((definition.fields || []).map(field => field.key))
     const existing = await prisma.integrationConnection.findUnique({ where: { botId_provider: { botId: input.botId, provider: input.provider } } })
     const submitted = Object.fromEntries(Object.entries(input.config).filter(([key]) => allowed.has(key)))

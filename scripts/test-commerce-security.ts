@@ -11,6 +11,11 @@ import {
   signCommerceConversion,
   verifyCommerceConversionSignature,
 } from "../lib/commerce-conversion-signatures";
+import {
+  createWooCommerceOAuthState,
+  verifyWooCommerceOAuthState,
+  verifyWooCommerceWebhookHmac,
+} from "../lib/woocommerce-signatures";
 
 const secret = "shopify-client-secret-for-security-tests";
 const now = 1_800_000_000_000;
@@ -43,5 +48,13 @@ const signature = signCommerceConversion(conversionBody, timestamp, secret);
 assert.equal(verifyCommerceConversionSignature(conversionBody, timestamp, signature, secret, now), true);
 assert.equal(verifyCommerceConversionSignature(conversionBody, timestamp, signature, "wrong-secret", now), false);
 assert.equal(verifyCommerceConversionSignature(conversionBody, timestamp, signature, secret, now + 6 * 60 * 1000), false);
+
+const wooState = createWooCommerceOAuthState("4280af74-f788-45ac-855a-feae6f899791", "https://shop.example.com", secret, now);
+assert.equal(verifyWooCommerceOAuthState(wooState, secret, now + 1_000)?.storeOrigin, "https://shop.example.com");
+assert.equal(verifyWooCommerceOAuthState(`${wooState}x`, secret, now), null);
+assert.equal(verifyWooCommerceOAuthState(wooState, secret, now + 16 * 60 * 1000), null);
+const wooWebhookSignature = createHmac("sha256", secret).update(webhookBody).digest("base64");
+assert.equal(verifyWooCommerceWebhookHmac(webhookBody, wooWebhookSignature, secret), true);
+assert.equal(verifyWooCommerceWebhookHmac(`${webhookBody} `, wooWebhookSignature, secret), false);
 
 console.log("Commerce security tests passed");

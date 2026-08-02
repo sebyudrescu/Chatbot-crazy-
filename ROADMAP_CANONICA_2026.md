@@ -40,12 +40,13 @@ Il vantaggio competitivo non sarà “avere una chat”, ma offrire in un solo p
 - Registrazione idempotente dei webhook Shopify per create/update/delete prodotto e disinstallazione.
 - Elaborazione webhook con firma sul raw body, deduplicazione durevole e retry sicuro.
 - Chiavi commerce per agente e endpoint server-to-server firmato per checkout e conversioni verificate.
+- Onboarding ufficiale WooCommerce tramite Application Authentication Endpoint, senza copia manuale di chiavi.
+- Webhook WooCommerce firmati per prodotti e ordini, con attribuzione conversioni priva di dati personali.
 - Idempotenza degli ordini tramite ID evento esterno e attribuzione opzionale a conversazione/prodotto/variante.
 - Pannello per generare o ruotare la chiave di conversione senza esporla nel widget.
 
 Restano nel P0 operativo: configurazione delle credenziali della Shopify App su Vercel, collegamento di
-un development store reale, onboarding e webhook incrementali WooCommerce, tracking ordine con verifica
-identità e test database isolato nel CI.
+development store reali Shopify/WooCommerce, tracking ordine con verifica identità e test database isolato nel CI.
 
 ### Già disponibile
 

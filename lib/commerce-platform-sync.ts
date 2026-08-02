@@ -65,6 +65,7 @@ async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrat
         compareAtPrice: variant.compareAtPrice != null && Number.isFinite(Number(variant.compareAtPrice)) ? Number(variant.compareAtPrice) : undefined,
         currency: payload.data.shop?.currencyCode || undefined,
         available: Boolean(variant.availableForSale),
+        stockQuantity: Number.isFinite(Number(variant.inventoryQuantity)) ? Number(variant.inventoryQuantity) : undefined,
         productUrl: canonicalUrl,
         imageUrl: safeHttpsUrl(variant.image?.url),
         attributes: Object.fromEntries((variant.selectedOptions || []).map((option: any) => [String(option.name), String(option.value)])),

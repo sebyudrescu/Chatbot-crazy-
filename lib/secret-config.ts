@@ -3,7 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 
 export const SECRET_MASK = "********";
 const ENCRYPTED_PREFIX = "litxenc.v1.";
-const secretKey = /secret|token|password|api[_-]?key|authorization/i;
+const secretKey = /secret|token|password|api[_-]?key|consumer[_-]?key|private[_-]?key|authorization/i;
 
 function encryptionKey(env: NodeJS.ProcessEnv = process.env) {
   const configured = env.INTEGRATION_CONFIG_ENCRYPTION_KEY || env.META_TOKEN_ENCRYPTION_KEY;
