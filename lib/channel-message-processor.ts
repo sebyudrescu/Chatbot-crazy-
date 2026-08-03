@@ -7,6 +7,8 @@ import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from "@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { detectSentiment } from "@/lib/sentiment";
 import { parseOrderLookupMessage, redactOrderLookupMessage, tryWooCommerceOrderLookup } from "@/lib/woocommerce-order-tracking";
+import { searchVerifiedProducts } from "@/lib/product-search";
+import { hydrateProductCards } from "@/lib/commerce-catalog";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -110,12 +112,14 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       response,
     };
   }
+  const productSearch = await searchVerifiedProducts(input.botId, query);
   const context: OrchestratorContext = {
     botId: input.botId,
     conversationId: conversation.id,
     query,
     conversationHistory: history,
     conversationMetadata: { userIntent: conversation.userIntent || undefined, sentiment: conversation.sentiment || undefined, topics: parseJSON<string[]>(conversation.topicsDiscussed) || undefined },
+    verifiedCommerceContext: productSearch.promptContext,
     botConfig: {
       companyName: conversation.chatbot.companyName,
       promptTemplateId: conversation.chatbot.promptTemplateId,
@@ -140,10 +144,18 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const outgoingPolicy = enforceOutgoingPolicy(result.response, settings);
   const policyDecision = outgoingPolicy;
   if (policyDecision.action !== "allow") result.response = policyResponse(policyDecision, settings);
+  const productCards = policyDecision.action === "allow"
+    ? await hydrateProductCards(input.botId, productSearch.selections)
+    : [];
 
   const assistantMessage = await prisma.message.create({
-    data: { conversationId: conversation.id, role: "assistant", content: result.response, channel: input.channel, deliveryStatus: "pending", sourcesUsed: stringifyJSON({ sources: result.sourcesUsed, metadata: { intent: result.decision.intent.intent, confidence: result.metadata.confidence, responseType: result.metadata.responseType, workflowsExecuted: workflow.executed, workflowActions: workflow.actions, actionsExecuted: actionResult.executed, actionsFailed: actionResult.failed } }) },
+    data: { conversationId: conversation.id, role: "assistant", content: result.response, channel: input.channel, deliveryStatus: "pending", sourcesUsed: stringifyJSON({ sources: result.sourcesUsed, metadata: { intent: result.decision.intent.intent, confidence: result.metadata.confidence, responseType: result.metadata.responseType, workflowsExecuted: workflow.executed, workflowActions: workflow.actions, actionsExecuted: actionResult.executed, actionsFailed: actionResult.failed } }), productCards: stringifyJSON(productCards) },
   });
+  if (productCards.length) {
+    await prisma.commerceEvent.createMany({
+      data: productCards.map(card => ({ botId: input.botId, conversationId: conversation.id, messageId: assistantMessage.id, productId: card.productId, variantId: card.variantId, eventType: "impression", sessionId: conversation.userSessionId })),
+    });
+  }
   await prisma.conversation.update({
     where: { id: conversation.id },
     data: {
@@ -154,5 +166,5 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       ...(policyDecision.action === "handoff" ? { needsHumanEscalation: true, escalatedAt: new Date(), escalationReason: `Policy agente: ${policyDecision.matchedRule}` } : {}),
     },
   });
-  return { duplicate: false as const, handoff: false as const, handoffActivated: policyDecision.action === "handoff" || actionResult.handoffActivated || workflow.actions.includes("handoff"), conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: result.response };
+  return { duplicate: false as const, handoff: false as const, handoffActivated: policyDecision.action === "handoff" || actionResult.handoffActivated || workflow.actions.includes("handoff"), conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: result.response, productCards };
 }

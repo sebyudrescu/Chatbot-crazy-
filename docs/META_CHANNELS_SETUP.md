@@ -65,6 +65,20 @@ Per collegare Business Account che non appartengono agli amministratori o tester
 
 Quando un cliente scrive, l'agente può inviare risposte libere durante la finestra di assistenza prevista da Meta. Fuori da quella finestra, un nuovo messaggio deve usare un template WhatsApp approvato. Il webhook e il motore AI non eliminano questa regola della piattaforma.
 
+## Schede prodotto native
+
+Quando una domanda trova prodotti verificati nel catalogo dell'agente:
+
+- Instagram invia un carousel nativo con foto, prezzo, disponibilità, immagine cliccabile e pulsante;
+- WhatsApp invia una scheda con foto, riepilogo e link cliccabile per ogni prodotto pertinente;
+- ogni destinazione viene reidratata dal database: il modello non può inventare URL, foto o prezzi;
+- i link passano da un redirect firmato LitX, registrano il click sulla conversazione e poi aprono
+  esclusivamente l'URL HTTPS canonico del prodotto;
+- i token scadono dopo 30 giorni e non contengono URL controllati dall'utente.
+
+Le schede sono inviate solo in risposta a un messaggio del cliente, quindi rispettano la finestra di
+assistenza del canale. Fuori finestra continuano a valere i template WhatsApp approvati.
+
 LitX applica questa regola anche alle risposte manuali dalla pagina **Chat Logs**:
 
 - durante la finestra aperta, la risposta dell'operatore viene inviata realmente al contatto tramite Cloud API;

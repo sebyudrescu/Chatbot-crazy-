@@ -47,6 +47,8 @@ Il vantaggio competitivo non sarà “avere una chat”, ma offrire in un solo p
 - Tracking ordine WooCommerce nel widget e nei canali Meta con verifica numero ordine + email.
 - Dati di verifica rimossi dalla cronologia, risposta anti-enumerazione, rate limit e handoff reale.
 - Quality gate commerce su PostgreSQL temporaneo: contratti, sicurezza, persistenza e card prodotto.
+- Catalogo verificato disponibile anche sui canali Meta: carousel Instagram e foto prodotto WhatsApp.
+- Link prodotto firmati, anti-open-redirect e click attribuiti a conversazione, messaggio e prodotto.
 
 Restano nel P0 operativo: configurazione delle credenziali della Shopify App su Vercel e collegamento di
 development store reali Shopify/WooCommerce per il collaudo end-to-end con account esterni.

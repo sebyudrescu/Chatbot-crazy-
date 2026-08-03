@@ -4,7 +4,7 @@ import { metaConfiguration } from "@/lib/meta-config";
 import { findMetaConnection, parseMetaConnection } from "@/lib/meta-connections";
 import { verifyMetaSignature } from "@/lib/meta-security";
 import { processIncomingChannelMessage } from "@/lib/channel-message-processor";
-import { sendMetaText } from "@/lib/meta-messaging";
+import { sendMetaProductCards, sendMetaText } from "@/lib/meta-messaging";
 import { instagramIncomingText, normalizeMetaDeliveryStatus, shouldAdvanceDeliveryStatus, whatsappIncomingText } from "@/lib/meta-payloads";
 import { analyzeMetaAttachment, instagramAttachmentDescriptor, unsupportedAttachment, whatsappAttachmentDescriptor, type MetaAttachmentDescriptor } from "@/lib/meta-attachments";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -121,7 +121,10 @@ async function analyzeAttachment(provider: "whatsapp" | "instagram", descriptor:
 async function respond(input: Parameters<typeof processIncomingChannelMessage>[0] & { provider: "whatsapp" | "instagram"; connectionId: string; config: NonNullable<ReturnType<typeof parseMetaConnection>>; recipientId: string }) {
   try {
     const result = await processIncomingChannelMessage(input);
-    if (!result.duplicate && !result.handoff) await sendMetaText({ provider: input.provider, config: input.config, recipientId: input.recipientId, text: result.response, messageId: result.assistantMessageId });
+    if (!result.duplicate && !result.handoff) {
+      await sendMetaText({ provider: input.provider, config: input.config, recipientId: input.recipientId, text: result.response, messageId: result.assistantMessageId });
+      if (result.productCards?.length) await sendMetaProductCards({ provider: input.provider, config: input.config, recipientId: input.recipientId, cards: result.productCards, botId: input.botId, conversationId: result.conversationId, messageId: result.assistantMessageId });
+    }
     const updated = { ...input.config, lastWebhookAt: new Date().toISOString() };
     await prisma.integrationConnection.update({ where: { id: input.connectionId }, data: { config: JSON.stringify(updated), lastError: null, lastTestedAt: new Date() } });
   } catch (error) {

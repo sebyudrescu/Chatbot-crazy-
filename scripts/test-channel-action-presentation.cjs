@@ -3,11 +3,14 @@ const path = require("node:path");
 const assert = require("node:assert/strict");
 
 const createdMessages = [];
+const commerceEvents = [];
+const productCard = { productId: "11111111-1111-4111-8111-111111111111", variantId: "22222222-2222-4222-8222-222222222222", title: "Scarpa Pro", shortDescription: "Leggera", imageUrl: "https://shop.example.com/shoe.jpg", productUrl: "https://shop.example.com/shoe", price: 89.9, currency: "EUR", availability: "in_stock", reason: "Disponibile", actions: [{ type: "view", label: "Vedi prodotto", url: "https://shop.example.com/shoe" }] };
 let policyAction = "allow";
 let actionCalls = 0;
 let lastActionMessage = "";
 let orchestratorCalls = 0;
 const prisma = {
+  commerceEvent: { createMany: async ({ data }) => { commerceEvents.push(...data); } },
   message: {
     findUnique: async () => null,
     create: async ({ data }) => {
@@ -51,6 +54,13 @@ Module._load = function patchedLoad(request, parent, isMain) {
     policyResponse: () => "Richiesta non consentita",
   };
   if (request === "@/lib/rate-limit") return { checkRateLimit: async () => ({ allowed: true, remaining: 29, resetAt: Date.now() + 60_000 }) };
+  if (request === "@/lib/product-search") return { searchVerifiedProducts: async (_botId, query) => query.includes("scarpa") ? ({ selections: [{ productId: productCard.productId, variantId: productCard.variantId, reason: "Disponibile" }], promptContext: "CATALOGO VERIFICATO" }) : ({ selections: [], promptContext: "" }) };
+  if (request === "@/lib/commerce-catalog") return { hydrateProductCards: async (_botId, selections) => selections.length ? [productCard] : [] };
+  if (request === "@/lib/woocommerce-order-tracking") return {
+    parseOrderLookupMessage: () => ({ hasIntent: false, containsCredentials: false }),
+    redactOrderLookupMessage: text => text,
+    tryWooCommerceOrderLookup: async ({ text }) => ({ handled: false, redactedUserText: text }),
+  };
   if (request === "@/lib/workflow-engine") return { runActiveWorkflows: async () => ({ executed: [], failed: [], skipped: [], actions: [] }) };
   if (request === "@/lib/action-engine") return {
     runTriggeredActions: async (input) => { actionCalls += 1; lastActionMessage = input.message; return ({
@@ -66,6 +76,7 @@ process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: "CommonJS", modu
 require("ts-node/register/transpile-only");
 
 const { processIncomingChannelMessage } = require("../lib/channel-message-processor.ts");
+const { buildMetaProductPayloads } = require("../lib/meta-payloads.ts");
 
 ;(async () => {
   const result = await processIncomingChannelMessage({
@@ -104,7 +115,19 @@ const { processIncomingChannelMessage } = require("../lib/channel-message-proces
     automationText: "📎 Immagine",
   });
   assert.equal(lastActionMessage, "📎 Immagine", "Testo AI/OCR non attendibile passato al motore azioni");
-  console.log(JSON.stringify({ success: true, checks: 8 }, null, 2));
+  const card = { title: "Scarpa Pro", shortDescription: "Leggera", imageUrl: "https://shop.example.com/shoe.jpg", productUrl: "https://shop.example.com/shoe", price: 89.9, currency: "EUR", availability: "in_stock" };
+  const whatsappCards = buildMetaProductPayloads("whatsapp", "393331234567", [card]);
+  assert.equal(whatsappCards[0].type, "image", "WhatsApp non usa la foto prodotto");
+  assert.match(whatsappCards[0].image.caption, /https:\/\/shop\.example\.com\/shoe/, "Link prodotto assente dal messaggio WhatsApp");
+  const instagramCards = buildMetaProductPayloads("instagram", "ig-user-1", [card]);
+  const element = instagramCards[0].message.attachment.payload.elements[0];
+  assert.equal(element.image_url, card.imageUrl, "Foto prodotto assente dal carousel Instagram");
+  assert.equal(element.default_action.url, card.productUrl, "La card Instagram non apre il prodotto verificato");
+  const commerceResult = await processIncomingChannelMessage({ botId: "bot-1", channel: "instagram", externalThreadId: "ig-user-1", externalMessageId: "ig-product-4", text: "Consigliami una scarpa" });
+  assert.equal(commerceResult.productCards.length, 1, "Scheda prodotto non restituita dal motore canali");
+  assert.equal(commerceEvents.length, 1, "Impression prodotto non attribuita alla conversazione");
+  assert.match(createdMessages.at(-1).productCards, /Scarpa Pro/, "Scheda prodotto non salvata nel messaggio");
+  console.log(JSON.stringify({ success: true, checks: 15 }, null, 2));
 })().catch((error) => {
   console.error(error);
   process.exit(1);

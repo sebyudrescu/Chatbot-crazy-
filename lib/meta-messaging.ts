@@ -2,7 +2,9 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { metaConfiguration, type MetaProvider } from "@/lib/meta-config";
 import { metaAccessToken, type MetaConnectionConfig } from "@/lib/meta-connections";
-import { buildMetaTextPayload, buildWhatsAppTemplatePayload, type WhatsAppTemplateDefinition } from "@/lib/meta-payloads";
+import { buildMetaProductPayloads, buildMetaTextPayload, buildWhatsAppTemplatePayload, type WhatsAppTemplateDefinition } from "@/lib/meta-payloads";
+import type { ProductCard } from "@/lib/commerce-types";
+import { trackedProductCards } from "@/lib/commerce-click-links";
 
 export async function sendMetaText(input: { provider: MetaProvider; config: MetaConnectionConfig; recipientId: string; text: string; messageId: string }) {
   const meta = metaConfiguration();
@@ -19,6 +21,25 @@ export async function sendMetaText(input: { provider: MetaProvider; config: Meta
   }
   const externalMessageId = result.messages?.[0]?.id || result.message_id;
   await prisma.message.update({ where: { id: input.messageId }, data: { deliveryStatus: "sent", ...(externalMessageId ? { externalMessageId } : {}) } });
+}
+
+export async function sendMetaProductCards(input: { provider: MetaProvider; config: MetaConnectionConfig; recipientId: string; cards: ProductCard[]; botId: string; conversationId: string; messageId: string }) {
+  if (!input.cards.length) return;
+  const meta = metaConfiguration();
+  const token = metaAccessToken(input.config);
+  const assetId = input.provider === "whatsapp" ? input.config.phoneNumberId : input.config.instagramAccountId;
+  if (!assetId) throw new Error("Asset Meta mancante");
+  const base = input.provider === "instagram" ? meta.instagramGraphBaseUrl : meta.graphBaseUrl;
+  const cards = trackedProductCards(input.cards, { botId: input.botId, conversationId: input.conversationId, messageId: input.messageId });
+  for (const payload of buildMetaProductPayloads(input.provider, input.recipientId, cards)) {
+    const response = await fetch(`${base}/${meta.graphVersion}/${assetId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    if (!response.ok) throw new Error(result.error?.message || `Invio scheda prodotto Meta fallito (${response.status})`);
+  }
 }
 
 export async function listWhatsAppTemplates(config: MetaConnectionConfig) {

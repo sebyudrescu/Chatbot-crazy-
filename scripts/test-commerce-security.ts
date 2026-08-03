@@ -21,6 +21,7 @@ import {
   presentVerifiedWooOrder,
   redactOrderLookupMessage,
 } from "../lib/woocommerce-order-tracking-contract";
+import { createCommerceClickToken, verifyCommerceClickToken } from "../lib/commerce-click-signatures";
 
 const secret = "shopify-client-secret-for-security-tests";
 const now = 1_800_000_000_000;
@@ -82,5 +83,11 @@ const presented = presentVerifiedWooOrder({
 assert.match(presented, /Ordine #WC-123/);
 assert.match(presented, /TRACK-123/);
 assert.doesNotMatch(presented, /cliente@example\.com/);
+
+const clickPayload = { v: 1 as const, b: "4280af74-f788-45ac-855a-feae6f899791", p: "11111111-1111-4111-8111-111111111111", c: "22222222-2222-4222-8222-222222222222", m: "33333333-3333-4333-8333-333333333333", exp: Math.floor(now / 1000) + 60 };
+const clickToken = createCommerceClickToken(clickPayload, secret);
+assert.deepEqual(verifyCommerceClickToken(clickToken, secret, now), clickPayload);
+assert.equal(verifyCommerceClickToken(`${clickToken}x`, secret, now), null);
+assert.equal(verifyCommerceClickToken(clickToken, secret, now + 61_000), null);
 
 console.log("Commerce security tests passed");

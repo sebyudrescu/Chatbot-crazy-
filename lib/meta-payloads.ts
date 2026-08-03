@@ -119,3 +119,58 @@ export function buildWhatsAppTemplatePayload(input: { recipientId: string; name:
     },
   };
 }
+
+type MetaProductCard = {
+  title: string;
+  shortDescription: string;
+  imageUrl?: string;
+  productUrl: string;
+  price?: number;
+  currency?: string;
+  availability: "in_stock" | "out_of_stock" | "preorder" | "unknown";
+};
+
+function cardPrice(card: MetaProductCard) {
+  if (card.price === undefined || !card.currency) return "";
+  try { return new Intl.NumberFormat("it-IT", { style: "currency", currency: card.currency }).format(card.price); }
+  catch { return `${card.price.toFixed(2)} ${card.currency}`; }
+}
+
+function productSubtitle(card: MetaProductCard) {
+  return [
+    cardPrice(card),
+    card.availability === "in_stock" ? "Disponibile" : card.availability === "out_of_stock" ? "Non disponibile" : undefined,
+    card.shortDescription.replace(/\s+/g, " ").trim().slice(0, 160),
+  ].filter(Boolean).join(" · ").slice(0, 300);
+}
+
+export function buildMetaProductPayloads(provider: "whatsapp" | "instagram", recipientId: string, cards: MetaProductCard[]) {
+  const safeCards = cards.slice(0, 5);
+  if (provider === "instagram") {
+    if (!safeCards.length) return [];
+    return [{
+      recipient: { id: recipientId },
+      message: {
+        attachment: {
+          type: "template",
+          payload: {
+            template_type: "generic",
+            elements: safeCards.map(card => ({
+              title: card.title.slice(0, 80),
+              ...(card.imageUrl ? { image_url: card.imageUrl } : {}),
+              subtitle: productSubtitle(card),
+              default_action: { type: "web_url", url: card.productUrl },
+              buttons: [{ type: "web_url", url: card.productUrl, title: "Vedi prodotto" }],
+            })),
+          },
+        },
+      },
+    }];
+  }
+  return safeCards.map(card => {
+    const caption = [card.title, productSubtitle(card), `Vedi prodotto: ${card.productUrl}`].filter(Boolean).join("\n").slice(0, 1024);
+    return card.imageUrl
+      ? { messaging_product: "whatsapp", recipient_type: "individual", to: recipientId, type: "image", image: { link: card.imageUrl, caption } }
+      : { messaging_product: "whatsapp", recipient_type: "individual", to: recipientId, type: "text", text: { preview_url: true, body: caption } };
+  });
+}
