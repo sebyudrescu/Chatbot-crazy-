@@ -21,6 +21,8 @@
         "test:commerce-db": "node scripts/test-commerce-database.cjs",
         "test:commerce-security": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-commerce-security.ts",
         "test:crawler": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler.ts",
+        "test:crawler-pages": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler-pages.ts",
+        "test:conversation-guidance": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-conversation-guidance.ts",
         "test:automations": "node scripts/run-automation-tests.cjs",
         "test:meta": "node scripts/test-meta-security.cjs",
         "test:meta-onboarding": "node scripts/test-meta-onboarding.cjs",

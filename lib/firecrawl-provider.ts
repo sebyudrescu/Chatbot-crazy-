@@ -6,6 +6,8 @@
  */
 
 import type { CrawlerProvider, CrawledPage, CrawlOptions } from './crawler-provider'
+import { extractProductsFromHtml } from './product-extractor'
+import { deduplicateCrawledPages, resolveFirecrawlPageUrl } from './crawler-pages'
 
 export class FirecrawlProvider implements CrawlerProvider {
   name = 'Firecrawl'
@@ -50,7 +52,7 @@ export class FirecrawlProvider implements CrawlerProvider {
         limit: maxPages,
         scrapeOptions: {
           formats: ['markdown', 'html'],
-          onlyMainContent: true,
+          onlyMainContent: false,
           waitFor: 1000, // Wait for JS to load
         }
       }
@@ -72,13 +74,15 @@ export class FirecrawlProvider implements CrawlerProvider {
         // Firecrawl returns markdown (clean) and/or html
         const textContent = page.markdown || this.htmlToText(page.html || '')
         
+        const pageUrl = resolveFirecrawlPageUrl(page, startUrl)
         return {
-          url: page.url || page.sourceURL || startUrl,
+          url: pageUrl,
           title: page.metadata?.title || this.extractTitle(page.markdown || page.html) || 'Untitled',
           textContent,
           excerpt: page.metadata?.description || textContent.substring(0, 200),
           quality: this.calculateQuality(textContent),
           markdown: page.markdown,
+          products: page.html ? extractProductsFromHtml(page.html, pageUrl) : [],
         }
       })
       
@@ -88,7 +92,7 @@ export class FirecrawlProvider implements CrawlerProvider {
       const qualityPages = pages.filter(p => p.quality && p.quality > 30)
       console.log(`[Firecrawl] ${qualityPages.length} pages passed quality filter`)
       
-      return qualityPages
+      return deduplicateCrawledPages(qualityPages, startUrl)
       
     } catch (error: any) {
       console.error(`[Firecrawl] Error:`, error)

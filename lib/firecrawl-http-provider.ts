@@ -7,6 +7,7 @@
 
 import type { CrawlerProvider, CrawledPage, CrawlOptions } from './crawler-provider'
 import { extractProductsFromHtml } from './product-extractor'
+import { deduplicateCrawledPages, resolveFirecrawlPageUrl } from './crawler-pages'
 
 interface FirecrawlCrawlJob {
   id: string
@@ -14,12 +15,16 @@ interface FirecrawlCrawlJob {
   completed: number
   total: number
   data?: Array<{
-    url: string
+    url?: string
+    sourceURL?: string
     markdown?: string
     html?: string
     metadata?: {
       title?: string
       description?: string
+      sourceURL?: string
+      canonicalURL?: string
+      url?: string
     }
   }>
 }
@@ -70,7 +75,7 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
           ],
           scrapeOptions: {
             formats: ['markdown', 'html'],
-            onlyMainContent: true,
+            onlyMainContent: false,
             waitFor: 1000
           }
         })
@@ -103,7 +108,7 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
       // Step 3: Convert to our format
       const pages: CrawledPage[] = (result.data || []).map((page) => {
         const textContent = page.markdown || this.htmlToText(page.html || '')
-        const pageUrl = page.url || startUrl
+        const pageUrl = resolveFirecrawlPageUrl(page, startUrl)
         
         return {
           url: pageUrl,
@@ -122,7 +127,7 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
       const qualityPages = pages.filter(p => p.quality && p.quality > 10)
       console.log(`[Firecrawl HTTP] ${qualityPages.length} pages passed quality filter (threshold: 10)`)
       
-      return qualityPages
+      return deduplicateCrawledPages(qualityPages, startUrl)
       
     } catch (error: any) {
       console.error(`[Firecrawl HTTP] Error:`, error)
@@ -197,7 +202,7 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
         body: JSON.stringify({
           url,
           formats: ['markdown', 'html'],
-          onlyMainContent: true
+          onlyMainContent: false
         })
       })
       
@@ -213,15 +218,16 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
       }
       
       const textContent = data.markdown || this.htmlToText(data.html || '')
+      const pageUrl = resolveFirecrawlPageUrl(data, url)
       
       return {
-        url: data.url || url,
+        url: pageUrl,
         title: data.metadata?.title || this.extractTitle(data.markdown) || 'Untitled',
         textContent,
         excerpt: data.metadata?.description || textContent.substring(0, 200),
         quality: this.calculateQuality(textContent),
         markdown: data.markdown,
-        products: data.html ? extractProductsFromHtml(data.html, data.url || url) : [],
+        products: data.html ? extractProductsFromHtml(data.html, pageUrl) : [],
       }
       
     } catch (error) {

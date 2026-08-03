@@ -12,9 +12,12 @@
 
 import { prisma } from './db'
 import { queryKnowledgeBase } from './rag-pipeline'
+import { detectBusinessMode, type BusinessMode } from './conversation-guidance'
+import { parseJSON } from './utils'
 
 export interface BusinessContext {
   companyName: string
+  businessMode?: BusinessMode
   companyDescription?: string
   mainServices?: string[]
   aboutUs?: string
@@ -95,8 +98,16 @@ export async function getBusinessContext(
     }
     
     // Start with database info
+    const settings = (parseJSON(chatbot.settings) || {}) as Record<string, unknown>
     const context: BusinessContext = {
-      companyName: chatbot.companyName
+      companyName: chatbot.companyName,
+      businessMode: detectBusinessMode([
+        chatbot.companyName,
+        chatbot.systemPrompt,
+        chatbot.promptTemplateId,
+        settings.role,
+        settings.objective,
+      ].filter(Boolean).join(' '))
     }
     
     // Try to get extracted context from KB (if available)

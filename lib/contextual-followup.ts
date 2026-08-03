@@ -75,6 +75,14 @@ function tryPatternBasedFollowUp(context: FollowUpContext): FollowUpResult | nul
   // IDENTITY QUESTIONS
   // ==========================================
   if (intentType === 'identity_question') {
+    if (businessContext?.businessMode === 'commerce') {
+      return {
+        question: 'Cerchi un prodotto specifico oppure informazioni su ordini, spedizioni o resi?',
+        reasoning: 'Commerce identity question - guide to relevant store tasks',
+        confidence: 0.95,
+        suggestedAction: 'explore_service'
+      }
+    }
     
     // FIRST MESSAGE → Guide to services or quote
     if (conversationStage <= 2) {

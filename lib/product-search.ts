@@ -7,7 +7,8 @@ const COMMERCE_TERMS = /\b(prodott[oi]|articol[oi]|catalogo|prezzo|cost[oa]|comp
 const STOP_WORDS = new Set([
   "che", "cosa", "come", "con", "del", "della", "delle", "dei", "degli", "per", "una", "uno", "gli", "nel", "nella",
   "vorrei", "voglio", "potresti", "puoi", "mostra", "dammi", "consiglia", "consigliami", "prodotto", "prodotti", "articolo", "articoli",
-  "avete", "vendete", "cerco", "cercando", "serve", "servirebbe",
+  "avete", "vendete", "cerco", "cercando", "serve", "servirebbe", "farmi", "vedere", "mostrami", "mostrarmi",
+  "sotto", "entro", "massimo", "euro", "eur", "prezzo",
   "the", "and", "for", "with", "show", "give", "recommend", "product", "products", "please",
 ]);
 
@@ -43,6 +44,7 @@ function jsonStrings(value: string) {
 export interface ProductSearchResult {
   selections: ProductSelection[];
   promptContext: string;
+  catalogSize: number;
 }
 
 export async function searchVerifiedProducts(
@@ -52,7 +54,7 @@ export async function searchVerifiedProducts(
 ): Promise<ProductSearchResult> {
   const queryTokens = tokens(query);
   const commerceIntent = COMMERCE_TERMS.test(query) || Boolean(pageContext?.productId || pageContext?.sku);
-  if (!commerceIntent && queryTokens.length === 0) return { selections: [], promptContext: "" };
+  if (!commerceIntent && queryTokens.length === 0) return { selections: [], promptContext: "", catalogSize: 0 };
 
   const exactSelectors = [
     pageContext?.productId ? { externalId: pageContext.productId } : undefined,
@@ -66,7 +68,7 @@ export async function searchVerifiedProducts(
     { variants: { some: { sku: { contains: token, mode: "insensitive" as const } } } },
   ]);
 
-  const products = await prisma.product.findMany({
+  const [products, catalogSize] = await Promise.all([prisma.product.findMany({
     where: {
       botId,
       status: "active",
@@ -75,7 +77,13 @@ export async function searchVerifiedProducts(
     },
     include: { variants: { orderBy: { position: "asc" } } },
     take: 50,
-  });
+  }), prisma.product.count({
+    where: {
+      botId,
+      status: "active",
+      recommendationStatus: { notIn: ["excluded", "blocked"] },
+    },
+  })]);
   const bounds = priceBounds(query);
 
   const ranked = products.flatMap((product) => {
@@ -99,12 +107,14 @@ export async function searchVerifiedProducts(
     if (pageContext?.sku && variant?.sku?.toLowerCase() === pageContext.sku.toLowerCase()) score += 200;
     let titleMatches = 0;
     let skuMatches = 0;
+    let lexicalMatches = 0;
     for (const token of queryTokens) {
-      if (product.title.toLowerCase().includes(token)) { score += 25; titleMatches++; }
-      else if (searchable.includes(token)) score += 8;
-      if (product.variants.some((item) => item.sku?.toLowerCase().includes(token))) { score += 35; skuMatches++; }
+      if (product.title.toLowerCase().includes(token)) { score += 25; titleMatches++; lexicalMatches++; }
+      else if (searchable.includes(token)) { score += 8; lexicalMatches++; }
+      if (product.variants.some((item) => item.sku?.toLowerCase().includes(token))) { score += 35; skuMatches++; lexicalMatches++; }
     }
     if (!commerceIntent && titleMatches === 0 && skuMatches === 0) return [];
+    if (commerceIntent && queryTokens.length >= 2 && lexicalMatches < 2) return [];
     const reasonParts = [
       product.brand ? `Brand: ${product.brand}` : undefined,
       variant?.price !== null && variant?.price !== undefined ? `Prezzo: ${variant.price.toFixed(2)} ${variant.currency || ""}`.trim() : undefined,
@@ -124,5 +134,5 @@ export async function searchVerifiedProducts(
     ...ranked.map(({ product, variant }, index) => `${index + 1}. ${product.title}${product.brand ? ` — ${product.brand}` : ""}${variant?.price !== null && variant?.price !== undefined ? ` — ${variant.price.toFixed(2)} ${variant.currency || ""}` : ""} — ${product.availableForSale && (variant?.available ?? true) ? "disponibile" : "non disponibile"}${product.merchandisingNote ? ` — Nota verificata: ${product.merchandisingNote}` : ""}`),
   ].join("\n");
 
-  return { selections, promptContext };
+  return { selections, promptContext, catalogSize };
 }

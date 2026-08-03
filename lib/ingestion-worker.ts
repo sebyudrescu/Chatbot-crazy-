@@ -20,6 +20,7 @@ import { prisma } from './db'
 import fs from 'fs/promises'
 import path from 'path'
 import { spawn } from 'child_process'
+import { deduplicateCrawledPages } from './crawler-pages'
 
 /**
  * Call Firecrawl via external script
@@ -224,6 +225,8 @@ async function processCrawlJob(job: any, params: any) {
   
   console.log(`[Worker] ✅ Crawled ${pages.length} pages using ${usedCrawler}`)
   
+  pages = deduplicateCrawledPages(pages, url)
+
   if (pages.length === 0) {
     throw new Error(`No pages could be crawled from ${url}. The site may be blocking requests or the URL is invalid.`)
   }
@@ -269,6 +272,12 @@ async function processCrawlJob(job: any, params: any) {
       // Use sanitized content
       page.textContent = validation.sanitized!
       
+      // Keep the last working version until this replacement is indexed.
+      const previousSources = await prisma.knowledgeSource.findMany({
+        where: { botId, sourceType: SourceType.URL, sourceUrl: page.url },
+        select: { id: true },
+      })
+
       // Create knowledge source
       const source = await prisma.knowledgeSource.create({
         data: {
@@ -293,6 +302,17 @@ async function processCrawlJob(job: any, params: any) {
       if (result.success) {
         sourcesCreated++
         totalChunks += result.chunkCount
+        if (previousSources.length > 0) {
+          const { deleteVectorsForSource, isPineconeConfigured } = await import('./pinecone-vector-store')
+          if (isPineconeConfigured()) {
+            for (const previous of previousSources) {
+              await deleteVectorsForSource(botId, previous.id)
+            }
+          }
+          await prisma.knowledgeSource.deleteMany({
+            where: { id: { in: previousSources.map(previous => previous.id) }, botId },
+          })
+        }
       }
       
       const progress = 40 + Math.floor((sourcesCreated / pages.length) * 50)

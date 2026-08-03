@@ -33,7 +33,9 @@ async function crawl() {
       limit: parseInt(maxPages),
       scrapeOptions: {
         formats: ['markdown', 'html'],
-        onlyMainContent: true,
+        // Keep the document head: JSON-LD Product/Offer data usually lives
+        // there and is required for verified product cards.
+        onlyMainContent: false,
         waitFor: 1000,
       }
     }

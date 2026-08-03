@@ -10,6 +10,7 @@ import { parseOrderLookupMessage, redactOrderLookupMessage, tryWooCommerceOrderL
 import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
+import { catalogUnavailableResponse, detectBusinessMode, requiresVerifiedCatalog } from "@/lib/conversation-guidance";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -126,6 +127,41 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     };
   }
   const productSearch = await searchVerifiedProducts(input.botId, query);
+  const businessMode = detectBusinessMode([
+    conversation.chatbot.companyName,
+    conversation.chatbot.systemPrompt,
+    conversation.chatbot.promptTemplateId,
+    settings.role,
+    settings.objective,
+  ].filter(Boolean).join(" "));
+  if (requiresVerifiedCatalog(query, businessMode) && productSearch.selections.length === 0) {
+    const response = catalogUnavailableResponse(productSearch.catalogSize);
+    const responseType = productSearch.catalogSize === 0 ? "verified_catalog_unavailable" : "verified_catalog_no_match";
+    const assistantMessage = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: "assistant",
+        content: response,
+        channel: input.channel,
+        deliveryStatus: "pending",
+        sourcesUsed: stringifyJSON({ sources: [], metadata: { responseType, verified: true } }),
+        productCards: stringifyJSON([]),
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date(), userIntent: "product_search", sentiment: detectSentiment(automationMessage) },
+    });
+    return {
+      duplicate: false as const,
+      handoff: false as const,
+      handoffActivated: false,
+      conversationId: conversation.id,
+      assistantMessageId: assistantMessage.id,
+      response,
+      productCards: [],
+    };
+  }
   const context: OrchestratorContext = {
     botId: input.botId,
     conversationId: conversation.id,

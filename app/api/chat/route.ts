@@ -24,7 +24,6 @@ import {
 } from '@/lib/decision-orchestrator'
 import { getOptimizedContext } from '@/lib/conversation-memory'
 import { formatTokenUsage } from '@/lib/token-counter'
-import { generateQuickReplies } from '@/lib/quick-replies-generator'
 import { configuredCtasOnly } from '@/lib/cta-policy'
 import { isAllowedWidgetOrigin } from '@/lib/widget-origin'
 import { z } from 'zod'
@@ -38,6 +37,12 @@ import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { tryWooCommerceOrderLookup } from '@/lib/woocommerce-order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
+import {
+  buildContextualQuickReplies,
+  catalogUnavailableResponse,
+  detectBusinessMode,
+  requiresVerifiedCatalog,
+} from '@/lib/conversation-guidance'
 
 const ChatRequestSchema = z.object({
   botId: z.string().uuid(),
@@ -306,6 +311,70 @@ export async function POST(request: NextRequest) {
     
     const chatbotSettings = (parseJSON(conversation.chatbot.settings) || {}) as ChatbotSettings
     const productSearch = await searchVerifiedProducts(botId, message, pageContext)
+    const businessMode = detectBusinessMode([
+      conversation.chatbot.companyName,
+      conversation.chatbot.systemPrompt,
+      conversation.chatbot.promptTemplateId,
+      chatbotSettings.role,
+      chatbotSettings.objective,
+    ].filter(Boolean).join(' '))
+    const currentSentiment = detectSentiment(message)
+    const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
+
+    if (
+      incomingPolicy.action === 'allow'
+      && requiresVerifiedCatalog(message, businessMode)
+      && productSearch.selections.length === 0
+    ) {
+      const response = catalogUnavailableResponse(productSearch.catalogSize)
+      const quickReplies = buildContextualQuickReplies({
+        mode: businessMode,
+        userMessage: message,
+        assistantMessage: response,
+        productCount: 0,
+        catalogBlocked: true,
+      })
+      const responseType = productSearch.catalogSize === 0
+        ? 'verified_catalog_unavailable'
+        : 'verified_catalog_no_match'
+      const assistantMessage = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          role: MessageRole.ASSISTANT,
+          content: response,
+          sourcesUsed: stringifyJSON({ sources: [], metadata: { responseType, verified: true } }),
+          quickReplies: stringifyJSON(quickReplies),
+          ctaData: stringifyJSON([]),
+          productCards: stringifyJSON([]),
+        },
+      })
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date(), userIntent: 'product_search', sentiment: currentSentiment },
+      })
+      return NextResponse.json({
+        success: true,
+        data: {
+          conversationId: conversation.id,
+          userMessage: { id: userMessage.id, content: userMessage.content, createdAt: userMessage.createdAt },
+          assistantMessage: { id: assistantMessage.id, content: assistantMessage.content, createdAt: assistantMessage.createdAt },
+          sources: [],
+          intent: { type: 'product_search', confidence: 1, reasoning: 'Richiesta prodotto vincolata al catalogo verificato' },
+          queryClassification: { type: 'transactional', complexity: 'simple' },
+          decision: { strategy: 'verified_catalog_guard', sources: ['product_catalog'], reasoning: 'Nessun prodotto verificato corrispondente' },
+          confidence: { score: 1, isCoherent: true },
+          handoffRequested: false,
+          memory: { persistentFactsUsed: 0, knowledgeChunksUsed: 0, factsExtracted: 0 },
+          responseType,
+          processingTimeMs: 0,
+          workflow: { executed: [], failed: [], skipped: [], actions: [] },
+          actions: { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: false },
+          quickReplies,
+          ctas: [],
+          productCards: [],
+        },
+      })
+    }
     const orchestratorContext: OrchestratorContext = {
       botId,
       conversationId: conversation.id,
@@ -343,8 +412,6 @@ export async function POST(request: NextRequest) {
     
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything
     const result = await orchestrateResponse(orchestratorContext)
-    const currentSentiment = detectSentiment(message)
-    const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
     const workflowResult = incomingPolicy.action === 'allow'
       ? await import('@/lib/workflow-engine').then(({ runActiveWorkflows }) => runActiveWorkflows({
         botId,
@@ -382,14 +449,11 @@ export async function POST(request: NextRequest) {
     // STEP 6: EXTRACT UX ENHANCEMENTS FROM ORCHESTRATOR
     // ========================================================================
     
-    // Use quick replies from orchestrator if available (NEW cognitive system)
-    // Otherwise fallback to old generators for backward compatibility
-    const quickReplies = result.quickReplies || generateQuickReplies({
-      lastUserMessage: message,
-      lastAssistantMessage: result.response,
-      conversationLength: conversation.messages.length + 2,
-      topics: conversation.topicsDiscussed ? JSON.parse(conversation.topicsDiscussed) : undefined,
-      userIntent: result.decision.intent.intent,
+    const quickReplies = buildContextualQuickReplies({
+      mode: businessMode,
+      userMessage: message,
+      assistantMessage: result.response,
+      productCount: productCards.length,
     })
 
     // Never invent navigation targets from words in the answer. Every CTA must

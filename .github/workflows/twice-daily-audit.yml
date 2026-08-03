@@ -110,7 +110,9 @@ jobs:
       - name: Website crawler behavior tests
         id: crawler
         continue-on-error: true
-        run: npm run test:crawler
+        run: |
+          npm run test:crawler
+          npm run test:crawler-pages
 
       - name: Commerce contracts, security and isolated database tests
         id: commerce
@@ -143,6 +145,7 @@ jobs:
           npm run test:prompt
           npm run test:memory
           npm run test:quality
+          npm run test:conversation-guidance
 
       - name: Meta and channel security tests
         id: channels

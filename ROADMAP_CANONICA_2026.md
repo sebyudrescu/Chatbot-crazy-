@@ -1,6 +1,6 @@
 # LitX AI — Roadmap canonica di prodotto
 
-Aggiornata il 2 agosto 2026. Questo è il documento di riferimento per i prossimi lavori.
+Aggiornata il 3 agosto 2026. Questo è il documento di riferimento per i prossimi lavori.
 Le roadmap precedenti restano come archivio storico, ma possono contenere attività già completate.
 
 ## Visione
@@ -20,6 +20,17 @@ Il vantaggio competitivo non sarà “avere una chat”, ma offrire in un solo p
 6. azioni esterne controllate, senza URL, prezzi o dati inventati dal modello.
 
 ## Stato verificato del progetto
+
+### Milestone Commerce P0.2 completata nel codice (3 agosto 2026)
+
+- Guard deterministico: richieste di prodotti, foto, prezzi o disponibilità non possono più produrre articoli inventati.
+- Risposte distinte tra catalogo non collegato e nessuna corrispondenza nel catalogo verificato.
+- Suggerimenti rapidi contestuali per e-commerce, servizi e supporto; rimossi preventivi e frasi generiche fuori contesto.
+- Follow-up retail coerenti con prodotti, ordini, spedizioni e resi.
+- URL Firecrawl risolti dai metadati reali, canonicalizzati e deduplicati; mantenuto il JSON-LD necessario ai prodotti.
+- Re-crawl sicuro con sostituzione delle vecchie fonti duplicate solo dopo l'indicizzazione riuscita.
+- Card prodotto complete anche nella preview privata, con foto, prezzo, disponibilità e link esatto cliccabile.
+- Quality gate esteso con test automatici per suggerimenti contestuali e URL del crawler.
 
 ### Milestone Commerce P0 completata nel codice (2 agosto 2026)
 
