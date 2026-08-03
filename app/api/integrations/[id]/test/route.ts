@@ -4,12 +4,25 @@ import { safeHttpsUrl } from '@/lib/integration-catalog'
 import { deliverWebhook } from '@/lib/webhook-delivery'
 import { assertSafeRemoteUrl } from '@/lib/url-safety'
 import { decryptConfigSecrets } from '@/lib/secret-config'
+import { deliverEmailNotification } from '@/lib/email-notifications'
 
 export async function POST(_: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const connection = await prisma.integrationConnection.findUnique({ where: { id: params.id } })
   if (!connection) return NextResponse.json({ success: false, error: 'Connessione non trovata' }, { status: 404 })
   const config = decryptConfigSecrets(JSON.parse(connection.config || '{}')) as Record<string, string>
+  if (connection.provider === 'email-alerts') {
+    const bot = await prisma.chatbot.findUnique({ where: { id: connection.botId }, select: { companyName: true } })
+    const result = await deliverEmailNotification({
+      to: config.recipientEmail || '',
+      event: 'integration.test',
+      agentName: bot?.companyName || 'Agente LitX',
+      payload: { conversationId: '', reason: 'Messaggio di prova della configurazione email.' },
+      idempotencyKey: `email-test:${connection.id}:${Date.now()}`,
+    }).catch(error => ({ success: false, status: null, error: error instanceof Error ? error.message : 'Invio email non riuscito' }))
+    await prisma.integrationConnection.update({ where: { id: params.id }, data: { status: result.success ? 'connected' : 'error', lastTestedAt: new Date(), lastError: result.success ? null : result.error } })
+    return NextResponse.json({ success: result.success, status: result.status, error: result.success ? undefined : result.error }, { status: result.success ? 200 : 502 })
+  }
   const candidate = connection.provider === 'webhook' ? config.endpoint : connection.provider === 'calendly' ? config.bookingUrl : null
   if (!candidate || !safeHttpsUrl(candidate)) return NextResponse.json({ success: false, error: 'Configurazione HTTPS non valida' }, { status: 400 })
   try {

@@ -9,6 +9,7 @@ import { detectSentiment } from "@/lib/sentiment";
 import { parseOrderLookupMessage, redactOrderLookupMessage, tryWooCommerceOrderLookup } from "@/lib/woocommerce-order-tracking";
 import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
+import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -72,6 +73,12 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
         } : {}),
       },
     });
+    if (orderLookup.handoff) await emitIntegrationWebhook({
+      botId: input.botId,
+      event: "conversation.handoff_requested",
+      idempotencyKey: `order-lookup-handoff:${userMessage.id}`,
+      payload: { conversationId: conversation.id, messageId: userMessage.id, reason: "Tracking ordine non disponibile sul canale automatico" },
+    });
     return { duplicate: false as const, handoff: false as const, handoffActivated: Boolean(orderLookup.handoff), conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: orderLookup.response };
   }
 
@@ -102,6 +109,12 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
           escalationReason: `Policy agente: ${incomingPolicy.matchedRule}`,
         } : {}),
       },
+    });
+    if (incomingPolicy.action === "handoff") await emitIntegrationWebhook({
+      botId: input.botId,
+      event: "conversation.handoff_requested",
+      idempotencyKey: `channel-policy-handoff:${userMessage.id}`,
+      payload: { conversationId: conversation.id, messageId: userMessage.id, reason: `Policy agente: ${incomingPolicy.matchedRule}` },
     });
     return {
       duplicate: false as const,
@@ -166,5 +179,13 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       ...(policyDecision.action === "handoff" ? { needsHumanEscalation: true, escalatedAt: new Date(), escalationReason: `Policy agente: ${policyDecision.matchedRule}` } : {}),
     },
   });
+  if (policyDecision.action === "handoff" && !actionResult.handoffActivated && !workflow.actions.includes("handoff")) {
+    await emitIntegrationWebhook({
+      botId: input.botId,
+      event: "conversation.handoff_requested",
+      idempotencyKey: `channel-outgoing-policy-handoff:${userMessage.id}`,
+      payload: { conversationId: conversation.id, messageId: userMessage.id, reason: `Policy agente: ${policyDecision.matchedRule}` },
+    });
+  }
   return { duplicate: false as const, handoff: false as const, handoffActivated: policyDecision.action === "handoff" || actionResult.handoffActivated || workflow.actions.includes("handoff"), conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: result.response, productCards };
 }

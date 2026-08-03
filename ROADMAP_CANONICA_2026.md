@@ -49,6 +49,11 @@ Il vantaggio competitivo non sarà “avere una chat”, ma offrire in un solo p
 - Quality gate commerce su PostgreSQL temporaneo: contratti, sicurezza, persistenza e card prodotto.
 - Catalogo verificato disponibile anche sui canali Meta: carousel Instagram e foto prodotto WhatsApp.
 - Link prodotto firmati, anti-open-redirect e click attribuiti a conversazione, messaggio e prodotto.
+- Calendly crea e mantiene automaticamente l'azione di prenotazione dell'agente.
+- Avvisi email Resend per lead e handoff, con template sicuro, idempotenza e test dalla dashboard.
+- Raccolta lead stateful sui canali: consenso esplicito, risposta successiva riconosciuta e CRM aggiornato.
+- Suggerimenti continui basati su confidenza reale, errori integrazione, completezza catalogo e product CTR.
+- Suggerimenti obsoleti rimossi automaticamente quando il problema risulta risolto.
 
 Restano nel P0 operativo: configurazione delle credenziali della Shopify App su Vercel e collegamento di
 development store reali Shopify/WooCommerce per il collaudo end-to-end con account esterni.

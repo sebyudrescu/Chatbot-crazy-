@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/Button'
 
 interface Agent { id: string; companyName: string }
 interface Suggestion { id: string; botId: string; category: string; title: string; description: string; impact: 'high' | 'medium' | 'low'; status: string; actionType: string; evidence: Record<string, unknown>; chatbot?: { companyName: string } }
-const categoryIcons: Record<string, typeof Bot> = { knowledge: Database, prompt: BrainCircuit, testing: FlaskConical, conversations: MessageSquareWarning, workflow: GitBranch, automation: Sparkles, channels: Plug }
-const destinations: Record<string, string> = { open_knowledge: '/knowledge', open_evaluations: '/evaluations', open_negative_feedback: '/analytics', open_actions: '/actions', open_channels: '/channels' }
+const categoryIcons: Record<string, typeof Bot> = { knowledge: Database, prompt: BrainCircuit, testing: FlaskConical, conversations: MessageSquareWarning, workflow: GitBranch, automation: Sparkles, channels: Plug, commerce: Sparkles }
+const destinations: Record<string, string> = { open_knowledge: '/knowledge', open_evaluations: '/evaluations', open_negative_feedback: '/analytics', open_actions: '/actions', open_channels: '/channels', open_integrations: '/integrations', open_commerce: '/commerce' }
 export default function SuggestionsPage() {
   const router = useRouter()
   const [agents, setAgents] = useState<Agent[]>([]), [botId, setBotId] = useState('all'), [status, setStatus] = useState('pending'), [items, setItems] = useState<Suggestion[]>([]), [loading, setLoading] = useState(true), [busy, setBusy] = useState('')

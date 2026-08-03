@@ -35,7 +35,7 @@ export async function getOperationalHealth() {
     prisma.chatbot.count({ where: { kbStatus: "indexing" } }),
     prisma.event.count({
       where: {
-        eventType: "integration.webhook.failed",
+        eventType: { in: ["integration.webhook.failed", "integration.email.failed"] },
         timestamp: { gte: last24Hours },
       },
     }),
@@ -43,7 +43,7 @@ export async function getOperationalHealth() {
       where: {
         success: false,
         timestamp: { gte: last24Hours },
-        eventType: { not: "integration.webhook.failed" },
+        eventType: { notIn: ["integration.webhook.failed", "integration.email.failed"] },
       },
     }),
     prisma.ingestionJob.findFirst({
@@ -91,7 +91,7 @@ export async function getOperationalHealth() {
       failedAgents,
       indexingAgents,
     },
-    integrations: { webhookFailuresLast24Hours: webhookFailures },
+    integrations: { deliveryFailuresLast24Hours: webhookFailures },
     events: { errorsLast24Hours: recentErrors },
     incidents: incidents.map((job) => ({
       id: job.id,

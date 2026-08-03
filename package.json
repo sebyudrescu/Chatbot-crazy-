@@ -28,6 +28,7 @@
         "test:meta-attachments": "node scripts/test-meta-attachments.cjs",
         "test:channel-rate-limit": "node scripts/test-channel-rate-limit.cjs",
         "test:channel-actions": "node scripts/test-channel-action-presentation.cjs",
+        "test:email": "node scripts/test-email-notifications.cjs",
         "test:memory": "node scripts/test-memory-retrieval.cjs",
         "test:auth": "node scripts/test-owner-session.cjs",
         "test:prompt": "node scripts/test-agent-instructions.cjs",

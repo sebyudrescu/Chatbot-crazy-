@@ -14,7 +14,7 @@
  * @module chat-api-v2
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { MessageRole, type ChatbotSettings } from '@/lib/types'
 import { stringifyJSON, parseJSON } from '@/lib/utils'
@@ -37,6 +37,7 @@ import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { tryWooCommerceOrderLookup } from '@/lib/woocommerce-order-tracking'
+import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 
 const ChatRequestSchema = z.object({
   botId: z.string().uuid(),
@@ -197,6 +198,12 @@ export async function POST(request: NextRequest) {
           },
         }),
       ])
+      if (orderLookup.handoff) after(() => emitIntegrationWebhook({
+        botId,
+        event: 'conversation.handoff_requested',
+        idempotencyKey: `order-lookup-handoff:${userMessage.id}`,
+        payload: { conversationId: conversation.id, messageId: userMessage.id, reason: 'Tracking ordine non disponibile sul canale automatico' },
+      }))
       return NextResponse.json({
         success: true,
         data: {
@@ -483,6 +490,14 @@ export async function POST(request: NextRequest) {
         } : {}),
       },
     })
+    if (policyDecision.action === 'handoff' && !actionResult.handoffActivated && !workflowResult.actions.includes('handoff')) {
+      after(() => emitIntegrationWebhook({
+        botId,
+        event: 'conversation.handoff_requested',
+        idempotencyKey: `chat-policy-handoff:${userMessage.id}`,
+        payload: { conversationId: conversation.id, messageId: userMessage.id, reason: `Policy agente: ${policyDecision.matchedRule}` },
+      }))
+    }
 
     // ========================================================================
     // STEP 9: GET SOURCE DETAILS

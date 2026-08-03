@@ -154,6 +154,7 @@ jobs:
           npm run test:meta-attachments
           npm run test:channel-rate-limit
           npm run test:channel-actions
+          npm run test:email
 
       - name: Automation engine safety tests
         id: automations

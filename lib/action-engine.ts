@@ -48,6 +48,10 @@ export async function runTriggeredActions(
   const actions = await prisma.agentAction.findMany({
     where: { botId: context.botId, enabled: true },
   });
+  const previousAssistant = actions.some(action => action.type === "collect_lead")
+    ? await prisma.message.findFirst({ where: { conversationId: context.conversationId, role: "assistant" }, orderBy: { createdAt: "desc" }, select: { content: true } })
+    : null;
+  const pendingLeadConsent = /acconsent[io].*ricontatt|se acconsenti.*(?:email|telefono)|indicami.*(?:email|telefono)/i.test(previousAssistant?.content || "");
   const result: ActionResult = {
       executed: [],
       failed: [],
@@ -60,12 +64,9 @@ export async function runTriggeredActions(
     normalized = context.message.toLocaleLowerCase("it");
   for (const action of actions) {
     const keywords = parse<string[]>(action.triggerKeywords, []);
-    if (
-      !keywords.length ||
-      !keywords.some((keyword) =>
-        normalized.includes(keyword.toLocaleLowerCase("it")),
-      )
-    )
+    const keywordTriggered = keywords.some((keyword) => normalized.includes(keyword.toLocaleLowerCase("it")));
+    const pendingLeadReply = action.type === "collect_lead" && pendingLeadConsent && /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:\+?\d[\d\s().-]{7,}\d)/.test(context.message);
+    if (!keywords.length || (!keywordTriggered && !pendingLeadReply))
       continue;
     const config = decryptConfigSecrets(parse<Record<string, string>>(action.config, {})),
       started = Date.now();
@@ -158,7 +159,7 @@ export async function runTriggeredActions(
           result.channelMessages.push([
             config.title || "Lascia i tuoi contatti",
             config.description || "Ti ricontatteremo per aiutarti con la tua richiesta.",
-            "Indicami il tuo nome e almeno un indirizzo email o un numero di telefono.",
+            "Se acconsenti a essere ricontattato per questa richiesta, indicami il tuo nome e almeno un indirizzo email o un numero di telefono.",
           ].join("\n"));
           output = "Modulo contatto mostrato";
         } else {
@@ -169,7 +170,7 @@ export async function runTriggeredActions(
               ...(phone ? { userPhone: phone.trim() } : {}),
             },
           });
-          await syncCRMContactFromConversation(context.conversationId);
+          await syncCRMContactFromConversation(context.conversationId, { consentStatus: "granted" });
           await emitIntegrationWebhook({
             botId: context.botId,
             event: "lead.captured",
@@ -179,6 +180,7 @@ export async function runTriggeredActions(
               messageId: context.messageId,
               email: email || null,
               phone: phone?.trim() || null,
+              consent: true,
             },
           });
           output = email ? "Email raccolta" : "Telefono raccolto";

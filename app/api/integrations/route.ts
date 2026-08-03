@@ -8,6 +8,7 @@ import { metaTokenExpired, parseMetaConnection } from '@/lib/meta-connections'
 
 const Schema = z.object({ botId: z.string().uuid(), provider: z.string(), config: z.record(z.string()).default({}), enabled: z.boolean().default(true) })
 const parse = (value: string) => { try { return JSON.parse(value) } catch { return {} } }
+const CALENDLY_ACTION_NAME = 'Prenotazione Calendly (automatica)'
 
 export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')
@@ -41,11 +42,25 @@ export async function POST(request: NextRequest) {
     const config = restoreMaskedSecrets(submitted, existingConfig)
     const encryptedConfig = encryptConfigSecrets(config)
     for (const field of definition.fields || []) if ((field.required !== false && !config[field.key]) || (field.type === 'url' && config[field.key] && !safeHttpsUrl(config[field.key]))) return NextResponse.json({ success: false, error: `${field.label} non valido: usa un URL HTTPS pubblico.` }, { status: 400 })
+    for (const field of definition.fields || []) if (field.type === 'email' && config[field.key] && !z.string().email().safeParse(config[field.key]).success) return NextResponse.json({ success: false, error: `${field.label} non valida.` }, { status: 400 })
     for (const field of definition.fields || []) if (field.type === 'url' && config[field.key]) await assertSafeRemoteUrl(config[field.key])
     if (input.provider === 'webhook' && config.secret && config.secret.length < 16) return NextResponse.json({ success: false, error: 'Il segreto webhook deve contenere almeno 16 caratteri.' }, { status: 400 })
     const connection = await prisma.$transaction(async tx => {
       if (input.provider === 'widget') await tx.embedSettings.upsert({ where: { chatbotId: input.botId }, create: { chatbotId: input.botId, enabled: input.enabled, title: 'Assistente AI', primaryColor: '#633cff' }, update: { enabled: input.enabled } })
-      return tx.integrationConnection.upsert({ where: { botId_provider: { botId: input.botId, provider: input.provider } }, create: { botId: input.botId, provider: input.provider, category: definition.category, displayName: definition.name, config: JSON.stringify(encryptedConfig), status: definition.mode === 'native' ? 'connected' : 'configured', enabled: input.enabled }, update: { config: JSON.stringify(encryptedConfig), enabled: input.enabled, status: definition.mode === 'native' ? 'connected' : 'configured', lastError: null } })
+      const saved = await tx.integrationConnection.upsert({ where: { botId_provider: { botId: input.botId, provider: input.provider } }, create: { botId: input.botId, provider: input.provider, category: definition.category, displayName: definition.name, config: JSON.stringify(encryptedConfig), status: definition.mode === 'native' ? 'connected' : 'configured', enabled: input.enabled }, update: { config: JSON.stringify(encryptedConfig), enabled: input.enabled, status: definition.mode === 'native' ? 'connected' : 'configured', lastError: null } })
+      if (input.provider === 'calendly') {
+        const action = await tx.agentAction.findFirst({ where: { botId: input.botId, name: CALENDLY_ACTION_NAME } })
+        const data = {
+          type: 'booking_link',
+          description: 'Creata e mantenuta automaticamente dall’integrazione Calendly.',
+          triggerKeywords: JSON.stringify(['prenota', 'prenotare', 'appuntamento', 'consulenza', 'disponibilità', 'call', 'meeting']),
+          config: JSON.stringify({ url: config.bookingUrl, label: 'Prenota appuntamento', integrationId: saved.id }),
+          enabled: input.enabled,
+        }
+        if (action) await tx.agentAction.update({ where: { id: action.id }, data })
+        else await tx.agentAction.create({ data: { botId: input.botId, name: CALENDLY_ACTION_NAME, ...data } })
+      }
+      return saved
     })
     return NextResponse.json({ success: true, data: { ...connection, config: redactSecrets(config) } })
   } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Configurazione non valida' }, { status: 400 }) }

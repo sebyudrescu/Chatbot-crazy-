@@ -79,6 +79,9 @@ Quando una domanda trova prodotti verificati nel catalogo dell'agente:
 Le schede sono inviate solo in risposta a un messaggio del cliente, quindi rispettano la finestra di
 assistenza del canale. Fuori finestra continuano a valere i template WhatsApp approvati.
 
+Le richieste di operatore generate dalle policy, dai workflow o dal tracking ordine alimentano anche
+gli avvisi email configurati per l'agente.
+
 LitX applica questa regola anche alle risposte manuali dalla pagina **Chat Logs**:
 
 - durante la finestra aperta, la risposta dell'operatore viene inviata realmente al contatto tramite Cloud API;
