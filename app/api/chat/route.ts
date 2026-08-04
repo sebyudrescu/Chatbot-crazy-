@@ -35,6 +35,7 @@ import { verifyOwnerSessionToken } from '@/lib/auth-token'
 import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@/lib/commerce-types'
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
+import { buildVerifiedProductResponse } from '@/lib/verified-product-response'
 import { tryWooCommerceOrderLookup } from '@/lib/woocommerce-order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import {
@@ -438,6 +439,11 @@ export async function POST(request: NextRequest) {
     const productCards: ProductCard[] = policyDecision.action === 'allow'
       ? await hydrateProductCards(botId, productSearch.selections)
       : []
+    if (requiresVerifiedCatalog(message, businessMode) && productCards.length > 0) {
+      result.response = buildVerifiedProductResponse(productCards)
+      result.metadata.responseType = 'verified_product_catalog'
+      result.metadata.confidence = 1
+    }
     
     console.log(`✅ [ChatAPI] Orchestrator completed in ${result.metadata.processingTimeMs}ms`)
     console.log(`   Strategy: ${result.metadata.responseType}`)

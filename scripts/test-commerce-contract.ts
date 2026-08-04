@@ -5,6 +5,7 @@ import {
   productCardsSchema,
   safeHttpsUrl,
 } from "../lib/commerce-types";
+import { buildVerifiedProductResponse } from "../lib/verified-product-response";
 
 const card = productCardsSchema.parse([{
   productId: "1ea40bf7-05da-4d6c-b7a8-0e919dc6c2ee",
@@ -29,6 +30,12 @@ const context = pageContextSchema.parse({
 });
 assert.equal(pageContextMatchesOrigin(context, "https://shop.example.com"), true);
 assert.equal(pageContextMatchesOrigin(context, "https://evil.example"), false);
+
+const verifiedResponse = buildVerifiedProductResponse(card);
+assert.match(verifiedResponse, /Scarpa verificata/);
+assert.match(verifiedResponse, /89,90\s€/);
+assert.match(verifiedResponse, /https:\/\/shop\.example\.com\/products\/shoe/);
+assert.doesNotMatch(verifiedResponse, /collection/i);
 
 assert.throws(() => productCardsSchema.parse([{
   productId: "1ea40bf7-05da-4d6c-b7a8-0e919dc6c2ee",

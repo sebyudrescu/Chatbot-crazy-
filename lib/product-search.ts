@@ -8,9 +8,30 @@ const STOP_WORDS = new Set([
   "che", "cosa", "come", "con", "del", "della", "delle", "dei", "degli", "per", "una", "uno", "gli", "nel", "nella",
   "vorrei", "voglio", "potresti", "puoi", "mostra", "dammi", "consiglia", "consigliami", "prodotto", "prodotti", "articolo", "articoli",
   "avete", "vendete", "cerco", "cercando", "serve", "servirebbe", "farmi", "vedere", "mostrami", "mostrarmi",
-  "sotto", "entro", "massimo", "euro", "eur", "prezzo",
+  "sotto", "entro", "massimo", "euro", "eur", "prezzo", "prezzi",
+  "reale", "reali", "disponibile", "disponibili", "link", "pagina", "pagine", "esatto", "esatta", "esatti", "esatte",
+  "fammi", "dettaglio", "dettagli", "scheda", "schede",
   "the", "and", "for", "with", "show", "give", "recommend", "product", "products", "please",
 ]);
+
+const PRODUCT_KIND_STEMS = [
+  "pantalon", "jean", "short", "camici", "magli", "shirt", "polo", "giacc", "cappott", "felp",
+  "scarp", "sneaker", "bors", "zain", "vestit", "gilet", "costum", "intim", "accessor",
+];
+
+function tokenForms(token: string) {
+  const forms = new Set([token]);
+  if (token.length >= 5 && /[aeio]$/.test(token)) forms.add(token.slice(0, -1));
+  return [...forms];
+}
+
+function containsToken(text: string, token: string) {
+  return tokenForms(token).some((form) => text.includes(form));
+}
+
+function isProductKindToken(token: string) {
+  return tokenForms(token).some((form) => PRODUCT_KIND_STEMS.some((stem) => form.startsWith(stem) || stem.startsWith(form)));
+}
 
 function tokens(query: string) {
   return [...new Set(query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -53,6 +74,7 @@ export async function searchVerifiedProducts(
   pageContext?: PageContext,
 ): Promise<ProductSearchResult> {
   const queryTokens = tokens(query);
+  const queryForms = [...new Set(queryTokens.flatMap(tokenForms))];
   const commerceIntent = COMMERCE_TERMS.test(query) || Boolean(pageContext?.productId || pageContext?.sku);
   if (!commerceIntent && queryTokens.length === 0) return { selections: [], promptContext: "", catalogSize: 0 };
 
@@ -60,7 +82,7 @@ export async function searchVerifiedProducts(
     pageContext?.productId ? { externalId: pageContext.productId } : undefined,
     pageContext?.sku ? { variants: { some: { sku: { equals: pageContext.sku, mode: "insensitive" as const } } } } : undefined,
   ].filter(Boolean);
-  const textSelectors = queryTokens.flatMap((token) => [
+  const textSelectors = queryForms.flatMap((token) => [
     { title: { contains: token, mode: "insensitive" as const } },
     { description: { contains: token, mode: "insensitive" as const } },
     { brand: { contains: token, mode: "insensitive" as const } },
@@ -76,7 +98,9 @@ export async function searchVerifiedProducts(
       OR: [...exactSelectors, ...textSelectors].length ? [...exactSelectors, ...textSelectors] as any : undefined,
     },
     include: { variants: { orderBy: { position: "asc" } } },
-    take: 50,
+    // Keep a broad candidate window: a small unordered slice can exclude the
+    // exact category requested and retain only incidental description matches.
+    take: 500,
   }), prisma.product.count({
     where: {
       botId,
@@ -87,8 +111,10 @@ export async function searchVerifiedProducts(
   const bounds = priceBounds(query);
 
   const ranked = products.flatMap((product) => {
-    const searchable = [product.title, product.description, product.brand, product.productType, ...jsonStrings(product.categories), ...jsonStrings(product.tags)]
+    const title = product.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const structured = [product.title, product.brand, product.productType, ...jsonStrings(product.categories), ...jsonStrings(product.tags)]
       .filter(Boolean).join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const description = product.description.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     let variant = pageContext?.sku
       ? product.variants.find((item) => item.sku?.toLowerCase() === pageContext.sku?.toLowerCase())
       : product.variants.find((item) => item.available) ?? product.variants[0];
@@ -109,10 +135,13 @@ export async function searchVerifiedProducts(
     let skuMatches = 0;
     let lexicalMatches = 0;
     for (const token of queryTokens) {
-      if (product.title.toLowerCase().includes(token)) { score += 25; titleMatches++; lexicalMatches++; }
-      else if (searchable.includes(token)) { score += 8; lexicalMatches++; }
-      if (product.variants.some((item) => item.sku?.toLowerCase().includes(token))) { score += 35; skuMatches++; lexicalMatches++; }
+      if (containsToken(title, token)) { score += 35; titleMatches++; lexicalMatches++; }
+      else if (containsToken(structured, token)) { score += 18; lexicalMatches++; }
+      else if (containsToken(description, token)) { score += 5; lexicalMatches++; }
+      if (product.variants.some((item) => item.sku && containsToken(item.sku.toLowerCase(), token))) { score += 35; skuMatches++; lexicalMatches++; }
     }
+    const requestedKinds = queryTokens.filter(isProductKindToken);
+    if (requestedKinds.length > 0 && !requestedKinds.some((token) => containsToken(structured, token))) return [];
     if (!commerceIntent && titleMatches === 0 && skuMatches === 0) return [];
     if (commerceIntent && queryTokens.length >= 2 && lexicalMatches < 2) return [];
     const reasonParts = [
@@ -121,7 +150,7 @@ export async function searchVerifiedProducts(
       product.availableForSale && (variant?.available ?? true) ? "Disponibile" : "Non disponibile",
     ].filter(Boolean);
     return [{ product, variant, score, reason: reasonParts.join(" · ") }];
-  }).sort((a, b) => b.score - a.score).slice(0, 5);
+  }).sort((a, b) => b.score - a.score || a.product.title.localeCompare(b.product.title, "it")).slice(0, 5);
 
   const selections = ranked.map(({ product, variant, reason }) => ({
     productId: product.id,
@@ -130,7 +159,7 @@ export async function searchVerifiedProducts(
   }));
   const promptContext = ranked.length === 0 ? "" : [
     "\n\n## CATALOGO COMMERCIALE VERIFICATO",
-    "Usa esclusivamente i dati seguenti per parlare dei prodotti. Non inventare prezzo, stock, immagini, URL o varianti. Le relative card saranno mostrate separatamente.",
+    "Usa esclusivamente i dati seguenti per parlare dei prodotti. Ignora prodotti o link presenti nelle fonti RAG generiche. Non inventare prezzo, stock, immagini, URL o varianti. Le relative card saranno mostrate separatamente.",
     ...ranked.map(({ product, variant }, index) => `${index + 1}. ${product.title}${product.brand ? ` — ${product.brand}` : ""}${variant?.price !== null && variant?.price !== undefined ? ` — ${variant.price.toFixed(2)} ${variant.currency || ""}` : ""} — ${product.availableForSale && (variant?.available ?? true) ? "disponibile" : "non disponibile"}${product.merchandisingNote ? ` — Nota verificata: ${product.merchandisingNote}` : ""}`),
   ].join("\n");
 

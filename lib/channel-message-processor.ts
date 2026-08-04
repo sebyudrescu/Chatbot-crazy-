@@ -9,6 +9,7 @@ import { detectSentiment } from "@/lib/sentiment";
 import { parseOrderLookupMessage, redactOrderLookupMessage, tryWooCommerceOrderLookup } from "@/lib/woocommerce-order-tracking";
 import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
+import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
 import { catalogUnavailableResponse, detectBusinessMode, requiresVerifiedCatalog } from "@/lib/conversation-guidance";
 
@@ -196,6 +197,11 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const productCards = policyDecision.action === "allow"
     ? await hydrateProductCards(input.botId, productSearch.selections)
     : [];
+  if (requiresVerifiedCatalog(query, businessMode) && productCards.length > 0) {
+    result.response = buildVerifiedProductResponse(productCards);
+    result.metadata.responseType = "verified_product_catalog";
+    result.metadata.confidence = 1;
+  }
 
   const assistantMessage = await prisma.message.create({
     data: { conversationId: conversation.id, role: "assistant", content: result.response, channel: input.channel, deliveryStatus: "pending", sourcesUsed: stringifyJSON({ sources: result.sourcesUsed, metadata: { intent: result.decision.intent.intent, confidence: result.metadata.confidence, responseType: result.metadata.responseType, workflowsExecuted: workflow.executed, workflowActions: workflow.actions, actionsExecuted: actionResult.executed, actionsFailed: actionResult.failed } }), productCards: stringifyJSON(productCards) },
