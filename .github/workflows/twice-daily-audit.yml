@@ -119,6 +119,7 @@ jobs:
         continue-on-error: true
         run: |
           npm run test:commerce
+          npm run test:commerce-intelligence
           npm run test:product-extractor
           npm run test:commerce-security
           npm run test:commerce-db

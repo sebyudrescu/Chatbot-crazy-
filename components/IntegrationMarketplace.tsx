@@ -83,12 +83,14 @@ export function IntegrationMarketplace({ initialCategory = 'all' }: { initialCat
   const connectShopify = () => {
     if (!botId || !config.shopUrl) { setMessage('Inserisci il dominio nome-negozio.myshopify.com.'); return }
     if (!shopifyStatus?.configured) { setMessage('Configurazione Shopify della piattaforma incompleta: aggiungi Client ID e Client Secret nelle variabili protette di Vercel.'); return }
-    window.location.assign(`/api/shopify/oauth/start?botId=${encodeURIComponent(botId)}&shop=${encodeURIComponent(config.shopUrl)}`)
+    const path = `/api/shopify/oauth/start?botId=${encodeURIComponent(botId)}&shop=${encodeURIComponent(config.shopUrl)}`
+    window.location.assign(new URL(path, window.location.origin).toString())
   }
   const connectWooCommerce = () => {
     if (!botId || !config.storeUrl) { setMessage('Inserisci l’URL HTTPS del negozio WooCommerce.'); return }
     if (!wooStatus?.configured) { setMessage('Configura NEXT_PUBLIC_APP_URL prima di collegare WooCommerce.'); return }
-    window.location.assign(`/api/woocommerce/oauth/start?botId=${encodeURIComponent(botId)}&store=${encodeURIComponent(config.storeUrl)}`)
+    const path = `/api/woocommerce/oauth/start?botId=${encodeURIComponent(botId)}&store=${encodeURIComponent(config.storeUrl)}`
+    window.location.assign(new URL(path, window.location.origin).toString())
   }
 
   return <div className="mx-auto max-w-[1500px] p-4 lg:p-7">

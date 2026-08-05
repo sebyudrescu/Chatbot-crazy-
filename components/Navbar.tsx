@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Bot, LayoutDashboard, Plus } from 'lucide-react'
 
 export default function Navbar() {
   const pathname = usePathname()
+  const router = useRouter()
   
   const isActive = (path: string) => {
     return pathname === path || pathname.startsWith(path)
@@ -74,7 +75,7 @@ export default function Navbar() {
                     const newBotId = data.data.id
                     
                     // Vai alla pagina setup del nuovo chatbot
-                    window.location.href = `/chatbot/${newBotId}/setup`
+                    router.push(`/chatbot/${newBotId}/setup`)
                   } else {
                     alert('Errore nella creazione del chatbot')
                   }
