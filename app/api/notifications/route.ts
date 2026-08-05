@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, Number(request.nextUrl.searchParams.get('limit')) || 30)
   const staleCutoff = new Date(Date.now() - 20 * 60 * 1000)
   const incidentCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const [handoffs, failedSources, failedRuns, failedActions, failedIntegrations, ingestionIncidents] = await Promise.all([
+  const [handoffs, failedSources, failedRuns, failedActions, failedIntegrations, ingestionIncidents, systemErrors] = await Promise.all([
     prisma.conversation.findMany({ where: { needsHumanEscalation: true, isResolved: false }, include: { chatbot: { select: { companyName: true } } }, orderBy: { escalatedAt: 'desc' }, take: 30 }),
     prisma.knowledgeSource.findMany({ where: { status: 'failed' }, include: { chatbot: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' }, take: 20 }),
     prisma.evaluationRun.findMany({ where: { passed: false }, include: { evaluationCase: { include: { chatbot: { select: { companyName: true } } } } }, orderBy: { createdAt: 'desc' }, take: 20 }),
@@ -21,6 +21,15 @@ export async function GET(request: NextRequest) {
       },
       include: { chatbot: { select: { companyName: true } } },
       orderBy: { createdAt: 'desc' },
+      take: 20,
+    }),
+    prisma.event.findMany({
+      where: {
+        eventType: 'system.request.unhandled',
+        severity: { in: ['error', 'critical'] },
+        timestamp: { gte: incidentCutoff },
+      },
+      orderBy: { timestamp: 'desc' },
       take: 20,
     }),
   ])
@@ -42,6 +51,15 @@ export async function GET(request: NextRequest) {
         createdAt: item.completedAt || item.startedAt || item.createdAt,
       }
     }),
+    ...systemErrors.map(item => ({
+      key: `system-error:${item.id}`,
+      type: 'system',
+      severity: 'critical' as const,
+      title: 'Errore server rilevato',
+      description: item.errorMessage || 'Una richiesta server non gestita ha generato un errore.',
+      href: '/settings',
+      createdAt: item.timestamp,
+    })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit)
   const states = await prisma.notificationState.findMany({ where: { key: { in: notifications.map(item => item.key) } } }), stateMap = new Map(states.map(item => [item.key, item]))
   const data = notifications.filter(item => !stateMap.get(item.key)?.dismissed).map(item => ({ ...item, read: Boolean(stateMap.get(item.key)?.readAt) }))

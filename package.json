@@ -37,6 +37,7 @@
         "test:prompt": "node scripts/test-agent-instructions.cjs",
         "test:evaluations": "node scripts/evaluate-agents.mjs",
         "test:quality": "node scripts/test-quality-signals.cjs",
+        "test:observability": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-operational-observability.ts",
         "postinstall": "prisma generate",
         "db:push": "prisma db push",
         "db:studio": "prisma studio",

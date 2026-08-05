@@ -148,6 +148,11 @@ jobs:
           npm run test:quality
           npm run test:conversation-guidance
 
+      - name: Operational observability safety tests
+        id: observability
+        continue-on-error: true
+        run: npm run test:observability
+
       - name: Meta and channel security tests
         id: channels
         continue-on-error: true
@@ -202,6 +207,7 @@ jobs:
             echo "| Embeddable widget interactions | ${{ steps.widget.outcome }} |"
             echo "| UI content and action safety | ${{ steps.ui_safety.outcome }} |"
             echo "| Authentication, prompt and memory | ${{ steps.agent_core.outcome }} |"
+            echo "| Operational observability | ${{ steps.observability.outcome }} |"
             echo "| Meta and channel security | ${{ steps.channels.outcome }} |"
             echo "| Automation idempotency | ${{ steps.automations.outcome }} |"
             echo
@@ -233,6 +239,7 @@ jobs:
              [ "${{ steps.widget.outcome }}" != "success" ] ||
              [ "${{ steps.ui_safety.outcome }}" != "success" ] ||
              [ "${{ steps.agent_core.outcome }}" != "success" ] ||
+             [ "${{ steps.observability.outcome }}" != "success" ] ||
              [ "${{ steps.channels.outcome }}" != "success" ] ||
              [ "${{ steps.automations.outcome }}" != "success" ]; then
             exit 1
