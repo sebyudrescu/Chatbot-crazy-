@@ -6,12 +6,11 @@ export interface SuggestedReply {
   category?: "faq" | "product" | "support" | "general";
 }
 
+import { classifyCommerceIntent, type CommerceIntent } from "./commerce-query";
+
 const COMMERCE_CONTEXT = /\b(e-?commerce|negozio|shop|shopify|woocommerce|catalogo|abbigliamento|moda|scarpe|accessori|prodotti?|ordini?|spedizioni?|resi?)\b/i;
 const SERVICE_CONTEXT = /\b(servizi?|consulenz|preventiv|appuntament|agenzia|professionist|studio)\b/i;
 const SUPPORT_CONTEXT = /\b(supporto|assistenza|help desk|ticket|problemi? tecnic)\b/i;
-const PRODUCT_NOUN = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon[ei]|jeans|shorts?|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarpe?|sneakers?|bors[ae]|accessori?|intimo|costum[ei]|uomo|donna|bambin[oi]|tagli[ae]|color[ei]|material[ei]|lino|cotone)\b/i;
-const CATALOG_ACTION = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|cosa avete|quali avete|avete|vendete|quali prodotti|consigliami|consigli|raccomand|prezzo|cost[oa]|disponibil|in stock|taglia disponibile|foto|immagine|link|scheda prodotto|comprare|acquistare|ordina)\b/i;
-
 export function detectBusinessMode(input: string): BusinessMode {
   if (COMMERCE_CONTEXT.test(input)) return "commerce";
   if (SUPPORT_CONTEXT.test(input)) return "support";
@@ -20,8 +19,8 @@ export function detectBusinessMode(input: string): BusinessMode {
 }
 
 export function requiresVerifiedCatalog(message: string, mode: BusinessMode): boolean {
-  if (mode !== "commerce") return false;
-  return PRODUCT_NOUN.test(message) && CATALOG_ACTION.test(message);
+  return ["product_discovery", "product_detail", "variant_availability", "product_comparison", "fit_advice"]
+    .includes(classifyCommerceIntent(message, mode === "commerce"));
 }
 
 export function buildInitialQuickReplies(mode: BusinessMode): SuggestedReply[] {
@@ -64,12 +63,25 @@ export function buildContextualQuickReplies(input: {
   assistantMessage: string;
   productCount: number;
   catalogBlocked?: boolean;
+  commerceIntent?: CommerceIntent;
 }): SuggestedReply[] {
   const user = input.userMessage.toLowerCase();
   const assistant = input.assistantMessage.toLowerCase();
 
   if (input.catalogBlocked) {
     return [{ id: "catalog-human", text: "Vorrei parlare con una persona", category: "support" }];
+  }
+  if (input.productCount > 0 && input.commerceIntent === "variant_availability") {
+    return [
+      { id: "product-other-size", text: "Controlla un'altra taglia", category: "product" },
+      { id: "product-details", text: "Mostrami i dettagli del prodotto", category: "product" },
+    ];
+  }
+  if (input.productCount > 0 && input.commerceIntent === "fit_advice") {
+    return [
+      { id: "product-size-help", text: "Aiutami con le misure", category: "product" },
+      { id: "product-human", text: "Vorrei parlare con una persona", category: "support" },
+    ];
   }
   if (input.productCount > 0) {
     return [

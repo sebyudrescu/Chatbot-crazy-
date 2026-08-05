@@ -36,6 +36,7 @@ import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { buildVerifiedProductResponse } from '@/lib/verified-product-response'
+import { classifyCommerceIntent } from '@/lib/commerce-query'
 import { tryWooCommerceOrderLookup } from '@/lib/woocommerce-order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import {
@@ -53,6 +54,20 @@ const ChatRequestSchema = z.object({
   source: z.enum(['widget']).optional(),
   pageContext: pageContextSchema.optional(),
 })
+
+function latestActiveProductIds(messages: Array<{ role: string; sourcesUsed: string | null; productCards: string | null }>) {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== MessageRole.ASSISTANT) continue
+    const sourceMetadata = (parseJSON(message.sourcesUsed) as { metadata?: { activeProductIds?: unknown } } | null)?.metadata
+    if (Array.isArray(sourceMetadata?.activeProductIds)) {
+      const ids = sourceMetadata.activeProductIds.filter((id): id is string => typeof id === 'string')
+      if (ids.length === 1) return ids
+    }
+    const cards = parseJSON(message.productCards)
+    if (Array.isArray(cards) && cards.length === 1 && typeof cards[0]?.productId === 'string') return [cards[0].productId]
+  }
+  return []
+}
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204 })
@@ -311,7 +326,6 @@ export async function POST(request: NextRequest) {
     console.log(`🧠 [ChatAPI] Invoking Decision Orchestrator...`)
     
     const chatbotSettings = (parseJSON(conversation.chatbot.settings) || {}) as ChatbotSettings
-    const productSearch = await searchVerifiedProducts(botId, message, pageContext)
     const businessMode = detectBusinessMode([
       conversation.chatbot.companyName,
       conversation.chatbot.systemPrompt,
@@ -319,6 +333,12 @@ export async function POST(request: NextRequest) {
       chatbotSettings.role,
       chatbotSettings.objective,
     ].filter(Boolean).join(' '))
+    const commerceIntent = classifyCommerceIntent(message, businessMode === 'commerce')
+    const activeProductIds = latestActiveProductIds(conversation.messages)
+    const productSearch = await searchVerifiedProducts(botId, message, pageContext, {
+      intent: commerceIntent,
+      activeProductIds,
+    })
     const currentSentiment = detectSentiment(message)
     const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
 
@@ -334,6 +354,7 @@ export async function POST(request: NextRequest) {
         assistantMessage: response,
         productCount: 0,
         catalogBlocked: true,
+        commerceIntent,
       })
       const responseType = productSearch.catalogSize === 0
         ? 'verified_catalog_unavailable'
@@ -413,13 +434,14 @@ export async function POST(request: NextRequest) {
     
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything
     const result = await orchestrateResponse(orchestratorContext)
+    const effectiveIntent = commerceIntent !== 'none' ? commerceIntent : result.decision.intent.intent
     const workflowResult = incomingPolicy.action === 'allow'
       ? await import('@/lib/workflow-engine').then(({ runActiveWorkflows }) => runActiveWorkflows({
         botId,
         conversationId: conversation.id,
         messageId: userMessage.id,
         message,
-        intent: result.decision.intent.intent,
+        intent: effectiveIntent,
         sentiment: currentSentiment,
       }))
       : { executed: [], failed: [], skipped: [], actions: [] }
@@ -430,19 +452,22 @@ export async function POST(request: NextRequest) {
         conversationId: conversation.id,
         messageId: userMessage.id,
         message,
-        intent: result.decision.intent.intent,
+        intent: effectiveIntent,
       }))
       : { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: false }
     const outgoingPolicy = enforceOutgoingPolicy(result.response, chatbotSettings)
     const policyDecision = incomingPolicy.action !== 'allow' ? incomingPolicy : outgoingPolicy
     if (policyDecision.action !== 'allow') result.response = policyResponse(policyDecision, chatbotSettings)
-    const productCards: ProductCard[] = policyDecision.action === 'allow'
+    const resolvedProductCards: ProductCard[] = policyDecision.action === 'allow'
       ? await hydrateProductCards(botId, productSearch.selections)
       : []
-    if (requiresVerifiedCatalog(message, businessMode) && productCards.length > 0) {
-      result.response = buildVerifiedProductResponse(productCards)
-      result.metadata.responseType = 'verified_product_catalog'
-      result.metadata.confidence = 1
+    const productCards = productSearch.query.wantsCards
+      ? resolvedProductCards.slice(0, productSearch.query.maxCards)
+      : []
+    if (requiresVerifiedCatalog(message, businessMode) && resolvedProductCards.length > 0) {
+      result.response = buildVerifiedProductResponse(resolvedProductCards, commerceIntent, message)
+      result.metadata.responseType = `verified_${commerceIntent}`
+      result.metadata.confidence = commerceIntent === 'fit_advice' ? 0.85 : 1
     }
     
     console.log(`✅ [ChatAPI] Orchestrator completed in ${result.metadata.processingTimeMs}ms`)
@@ -459,7 +484,8 @@ export async function POST(request: NextRequest) {
       mode: businessMode,
       userMessage: message,
       assistantMessage: result.response,
-      productCount: productCards.length,
+      productCount: resolvedProductCards.length,
+      commerceIntent,
     })
 
     // Never invent navigation targets from words in the answer. Every CTA must
@@ -473,8 +499,8 @@ export async function POST(request: NextRequest) {
     // ========================================================================
     
     const messageMetadata = {
-      intent: result.decision.intent.intent,
-      intentConfidence: result.decision.intent.confidence,
+      intent: effectiveIntent,
+      intentConfidence: commerceIntent !== 'none' ? 1 : result.decision.intent.confidence,
       responseType: result.metadata.responseType,
       confidence: result.metadata.confidence,
       responseStrategy: result.decision.responseStrategy,
@@ -490,6 +516,7 @@ export async function POST(request: NextRequest) {
       actionsSkipped: actionResult.skipped,
       policyAction: policyDecision.action,
       policyCategory: policyDecision.category,
+      activeProductIds: resolvedProductCards.map((card) => card.productId),
       // Validation metadata
       ...(result.validationResult && {
         coherenceScore: result.validationResult.coherenceScore,
@@ -550,7 +577,7 @@ export async function POST(request: NextRequest) {
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
-        userIntent: result.decision.intent.intent,
+        userIntent: effectiveIntent,
         sentiment: currentSentiment,
         topicsDiscussed: topics.length > 0 ? JSON.stringify(topics) : null,
         ...(policyDecision.action === 'handoff' ? {
@@ -613,9 +640,9 @@ export async function POST(request: NextRequest) {
         
         // Intent & Classification
         intent: {
-          type: result.decision.intent.intent,
-          confidence: result.decision.intent.confidence,
-          reasoning: result.decision.intent.reasoning,
+          type: effectiveIntent,
+          confidence: commerceIntent !== 'none' ? 1 : result.decision.intent.confidence,
+          reasoning: commerceIntent !== 'none' ? 'Intento commerce deterministico' : result.decision.intent.reasoning,
         },
         queryClassification: {
           type: result.decision.queryClassification.type,

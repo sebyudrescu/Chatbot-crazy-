@@ -24,6 +24,11 @@ export const productCardSchema = z.object({
   availability: z.enum(["in_stock", "out_of_stock", "preorder", "unknown"]),
   badge: z.string().trim().max(40).optional(),
   reason: z.string().trim().max(300).default(""),
+  options: z.array(z.object({
+    name: z.string().trim().min(1).max(80),
+    availableValues: z.array(z.string().trim().min(1).max(100)).max(100),
+    unavailableValues: z.array(z.string().trim().min(1).max(100)).max(100),
+  })).max(10).default([]),
   actions: z.array(productCardActionSchema).max(3).default([]),
 });
 

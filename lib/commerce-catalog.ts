@@ -18,6 +18,31 @@ function parseStringArray(value: string) {
   }
 }
 
+function parseAttributes(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, string> : {};
+  } catch {
+    return {};
+  }
+}
+
+function optionAvailability(variants: Array<{ attributes: string; available: boolean }>) {
+  const options = new Map<string, { available: Set<string>; unavailable: Set<string> }>();
+  for (const variant of variants) {
+    for (const [name, value] of Object.entries(parseAttributes(variant.attributes))) {
+      const option = options.get(name) ?? { available: new Set<string>(), unavailable: new Set<string>() };
+      (variant.available ? option.available : option.unavailable).add(value);
+      options.set(name, option);
+    }
+  }
+  return [...options.entries()].map(([name, values]) => ({
+    name,
+    availableValues: [...values.available],
+    unavailableValues: [...values.unavailable].filter((value) => !values.available.has(value)),
+  }));
+}
+
 function availability(available: boolean, stockQuantity: number | null) {
   if (!available || stockQuantity === 0) return "out_of_stock" as const;
   return "in_stock" as const;
@@ -86,6 +111,7 @@ export async function hydrateProductCards(
       availability: availability(isAvailable, selectedVariant?.stockQuantity ?? null),
       badge: onSale ? "In offerta" : undefined,
       reason: selection.reason,
+      options: optionAvailability(product.variants),
       actions: [
         { type: "view" as const, label: "Vedi prodotto", url: productUrl },
         ...(addToCartUrl ? [{ type: "add_to_cart" as const, label: "Aggiungi al carrello", url: addToCartUrl, variantId: selectedVariant?.id }] : []),
