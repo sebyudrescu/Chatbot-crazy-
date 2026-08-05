@@ -23,6 +23,13 @@ function requestedOptions(card: ProductCard, userMessage: string) {
   return card.options;
 }
 
+function pluralOptionName(name: string) {
+  if (/^(taglia|size)$/i.test(name)) return "Taglie";
+  if (/^numero$/i.test(name)) return "Numeri";
+  if (/^(colore|color|colour)$/i.test(name)) return "Colori";
+  return name;
+}
+
 /** Builds text exclusively from server-hydrated catalog records. */
 export function buildVerifiedProductResponse(cards: ProductCard[], intent: CommerceIntent = "product_discovery", userMessage = "") {
   const available = cards.filter((card) => card.availability === "in_stock" || card.availability === "preorder");
@@ -36,8 +43,8 @@ export function buildVerifiedProductResponse(cards: ProductCard[], intent: Comme
       return `Per [${card.title}](${card.productUrl}) non risultano varianti verificate sufficienti per rispondere con precisione. Posso aiutarti a contattare il negozio senza inventare informazioni.`;
     }
     const optionLines = options.flatMap((option) => [
-      option.availableValues.length ? `${option.name} disponibili: **${option.availableValues.join(", ")}**.` : "",
-      option.unavailableValues.length ? `${option.name} non disponibili: ${option.unavailableValues.join(", ")}.` : "",
+      option.availableValues.length ? `${pluralOptionName(option.name)} disponibili: **${option.availableValues.join(", ")}**.` : "",
+      option.unavailableValues.length ? `${pluralOptionName(option.name)} non disponibili: ${option.unavailableValues.join(", ")}.` : "",
     ]).filter(Boolean);
     return [
       `Disponibilità verificata per [${card.title}](${card.productUrl}):`,

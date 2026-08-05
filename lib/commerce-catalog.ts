@@ -27,6 +27,13 @@ function parseAttributes(value: string) {
   }
 }
 
+function sortOptionValues(values: Iterable<string>) {
+  return [...values].sort((left, right) => left.localeCompare(right, "it", {
+    numeric: true,
+    sensitivity: "base",
+  }));
+}
+
 function optionAvailability(variants: Array<{ attributes: string; available: boolean }>) {
   const options = new Map<string, { available: Set<string>; unavailable: Set<string> }>();
   for (const variant of variants) {
@@ -38,8 +45,10 @@ function optionAvailability(variants: Array<{ attributes: string; available: boo
   }
   return [...options.entries()].map(([name, values]) => ({
     name,
-    availableValues: [...values.available],
-    unavailableValues: [...values.unavailable].filter((value) => !values.available.has(value)),
+    availableValues: sortOptionValues(values.available),
+    unavailableValues: sortOptionValues(
+      [...values.unavailable].filter((value) => !values.available.has(value)),
+    ),
   }));
 }
 
