@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 
 const scriptPath = resolve(process.cwd(), "scripts/database-recovery.mjs");
 const script = readFileSync(scriptPath, "utf8");
+const seedScript = readFileSync(resolve(process.cwd(), "scripts/seed-database-recovery.mjs"), "utf8");
 
 function execute(args, env) {
   return spawnSync(process.execPath, [scriptPath, ...args], {
@@ -55,5 +56,14 @@ assert.equal(script.includes("--no-owner"), true);
 assert.equal(script.includes("--no-privileges"), true);
 assert.equal(script.includes("--exit-on-error"), true);
 assert.equal(script.includes("DR_OVERWRITE_ARCHIVE"), true);
+assert.match(seedScript, /process\.env\.CI !== "true"/);
+assert.match(seedScript, /DR_RECOVERY_SEED !== "true"/);
+const guardedSeed = spawnSync(process.execPath, [resolve(process.cwd(), "scripts/seed-database-recovery.mjs")], {
+  env: { ...process.env, CI: "", DR_RECOVERY_SEED: "" },
+  encoding: "utf8",
+  windowsHide: true,
+});
+assert.notEqual(guardedSeed.status, 0);
+assert.match(guardedSeed.stderr, /solo nella CI isolata/);
 
-console.log(JSON.stringify({ success: true, checks: 14 }));
+console.log(JSON.stringify({ success: true, checks: 18 }));

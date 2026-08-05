@@ -67,6 +67,11 @@ jobs:
       - name: Install PostgreSQL recovery tools
         run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
 
+      - name: Seed relational recovery evidence
+        env:
+          DR_RECOVERY_SEED: true
+        run: node scripts/seed-database-recovery.mjs
+
       - name: Create isolated recovery target
         run: psql "postgresql://litx:litx_ci_password@localhost:5432/postgres" --set ON_ERROR_STOP=1 --command "CREATE DATABASE litx_restore OWNER litx"
 
