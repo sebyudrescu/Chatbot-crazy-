@@ -8,7 +8,16 @@ const script = readFileSync(scriptPath, "utf8");
 
 function execute(args, env) {
   return spawnSync(process.execPath, [scriptPath, ...args], {
-    env: { ...process.env, DATABASE_URL: "", DIRECT_URL: "", ...env },
+    env: {
+      ...process.env,
+      DATABASE_URL: "",
+      DIRECT_URL: "",
+      DR_SOURCE_DATABASE_URL: "",
+      DR_TARGET_DATABASE_URL: "",
+      DR_CONFIRM_TARGET_DATABASE: "",
+      DR_ARCHIVE_PATH: "",
+      ...env,
+    },
     encoding: "utf8",
     windowsHide: true,
   });
