@@ -32,10 +32,16 @@ assert.notEqual(
 
 const instrumentation = readFileSync(resolve(process.cwd(), "instrumentation.ts"), "utf8");
 assert.match(instrumentation, /Instrumentation\.onRequestError/);
-assert.match(instrumentation, /recordUnhandledRequestError/);
+assert.match(instrumentation, /\/api\/internal\/observability/);
+assert.doesNotMatch(instrumentation, /error-observability|from ["']\.\/lib\/db/);
+
+const collector = readFileSync(resolve(process.cwd(), "app/api/internal/observability/route.ts"), "utf8");
+assert.match(collector, /constantTimeEqual/);
+assert.match(collector, /system\.request\.unhandled/);
+assert.match(collector, /redactOperationalText/);
 
 const notifications = readFileSync(resolve(process.cwd(), "app/api/notifications/route.ts"), "utf8");
 assert.match(notifications, /system\.request\.unhandled/);
 assert.match(notifications, /system-error:/);
 
-console.log(JSON.stringify({ success: true, checks: 16 }));
+console.log(JSON.stringify({ success: true, checks: 20 }));
