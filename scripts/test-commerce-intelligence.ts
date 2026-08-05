@@ -44,6 +44,11 @@ const constrained = parseCommerceQuery("Voglio pantaloni neri da uomo sotto 50 e
 assert.equal(constrained.maxPrice, 50);
 assert.deepEqual(constrained.excludedCategories.sort(), ["accessory", "shorts"]);
 
+const singularShoe = parseCommerceQuery("Consigliami una scarpa running sotto 100 euro");
+assert.equal(singularShoe.intent, "product_discovery");
+assert.equal(singularShoe.category, "shoes");
+assert.equal(singularShoe.maxPrice, 100);
+
 const incidental = parseCommerceQuery("Cerco una polo bianca da abbinare ai pantaloni neri. Mostrami solo polo da uomo disponibili.");
 assert.equal(incidental.category, "polo");
 assert.deepEqual(incidental.colors, ["bianco"]);

@@ -41,7 +41,7 @@ export interface ParsedCommerceQuery {
   maxCards: number;
 }
 
-const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarpe?|sneakers?|bors[ae]|accessori?|intimo|costum[ei]|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
+const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarp[ae]|sneakers?|bors[ae]|accessori?|intimo|costum[ei]|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
 const DISCOVERY_ACTION = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|cosa avete|quali avete|avete|vendete|cerco|cercando|vorrei|voglio|volevo|desidero|mi serve|consigliami|consiglia|raccomand|alternative?|foto|immagin[ei]|link|comprare|acquistare)\b/i;
 const DETAIL_ACTION = /\b(prezzo|cost[oa]|materiale|composizione|descrizione|dettagli[oi]|caratteristiche|scheda prodotto|disponibil)\b/i;
 const VARIANT_ACTION = /\b(tagli[ae]|misur[ae]|variant[ei]|numero|color[ei])\b/i;
@@ -56,7 +56,7 @@ const CATEGORY_PATTERNS: Array<[ProductCategory, RegExp]> = [
   ["coat", /\b(cappott[oi]|trench)\b/i],
   ["sweatshirt", /\b(felp[ae]|hoodie)\b/i],
   ["dress", /\b(abit[oi]|vestit[oi])\b/i],
-  ["shoes", /\b(scarpe?|sneakers?|stival[ei]|sandali?)\b/i],
+  ["shoes", /\b(scarp[ae]|sneakers?|stival[ei]|sandali?)\b/i],
   ["bag", /\b(bors[ae]|zain[oi])\b/i],
   ["accessory", /\b(accessori?|caten[ae]|cintur[ae])\b/i],
   ["swimwear", /\b(costum[ei]|swimwear)\b/i],
@@ -72,7 +72,7 @@ const CATEGORY_MATCHERS: Record<ProductCategory, RegExp> = {
   coat: /\b(cappott[oi]|trench)\b/i,
   sweatshirt: /\b(felp[ae]|hoodie)\b/i,
   dress: /\b(abit[oi]|vestit[oi])\b/i,
-  shoes: /\b(scarpe?|sneakers?|stival[ei]|sandali?)\b/i,
+  shoes: /\b(scarp[ae]|sneakers?|stival[ei]|sandali?)\b/i,
   bag: /\b(bors[ae]|zain[oi])\b/i,
   accessory: /\b(accessori?|caten[ae]|cintur[ae])\b/i,
   swimwear: /\b(costum[ei]|swimwear)\b/i,
