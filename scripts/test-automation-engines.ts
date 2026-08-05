@@ -105,7 +105,11 @@ async function testAgentPublicationReadiness() {
   });
   try {
     await prisma.embedSettings.create({
-      data: { chatbotId: bot.id, enabled: true },
+      data: {
+        chatbotId: bot.id,
+        enabled: true,
+        allowedDomains: "cliente.example",
+      },
     });
     await prisma.knowledgeSource.create({
       data: {
@@ -158,6 +162,10 @@ async function testAgentPublicationReadiness() {
 
     const stale = await getAgentReadiness(bot.id);
     assert(
+      stale?.status === "attention" && stale.attentionRequired === true,
+      "An active agent with stale checks was presented as safely published",
+    );
+    assert(
       stale?.checks.find((check) => check.key === "conversation")?.done ===
         false,
       "Readiness accepted a conversation without an assistant response",
@@ -183,8 +191,68 @@ async function testAgentPublicationReadiness() {
         createdAt: new Date(configurationChangedAt.getTime() + 1_000),
       },
     });
+    await prisma.embedSettings.update({
+      where: { chatbotId: bot.id },
+      data: { allowedDomains: "*" },
+    });
+    const unsafeWidget = await getAgentReadiness(bot.id);
+    assert(
+      unsafeWidget?.checks.find((check) => check.key === "channel")?.done ===
+        false,
+      "Readiness accepted an unrestricted production widget",
+    );
+    await prisma.embedSettings.update({
+      where: { chatbotId: bot.id },
+      data: { allowedDomains: "cliente.example" },
+    });
     const ready = await getAgentReadiness(bot.id);
     assert(ready?.ready === true, "Valid agent was not publication-ready");
+    assert(
+      ready?.status === "published" && ready.attentionRequired === false,
+      "A fully verified active agent has the wrong release status",
+    );
+
+    const productSource = await prisma.productSource.create({
+      data: {
+        botId: bot.id,
+        sourceType: "shopify",
+        name: "Readiness catalog",
+        baseUrl: "https://shop.example",
+        status: "error",
+        lastError: "Controlled sync failure",
+      },
+    });
+    const product = await prisma.product.create({
+      data: {
+        botId: bot.id,
+        sourceId: productSource.id,
+        identityKey: "readiness-product",
+        canonicalUrl: "https://shop.example/products/readiness",
+        title: "Prodotto readiness",
+      },
+    });
+    const brokenCommerce = await getAgentReadiness(bot.id);
+    assert(
+      brokenCommerce?.checks.find((check) => check.key === "commerce")
+        ?.done === false &&
+        brokenCommerce.status === "attention",
+      "Readiness ignored a broken commerce synchronization",
+    );
+    await prisma.productSource.update({
+      where: { id: productSource.id },
+      data: { status: "active", lastError: null },
+    });
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { mainImageUrl: "https://shop.example/images/readiness.jpg" },
+    });
+    const readyCommerce = await getAgentReadiness(bot.id);
+    assert(
+      readyCommerce?.ready === true &&
+        readyCommerce.checks.find((check) => check.key === "commerce")
+          ?.done === true,
+      "A healthy commerce catalog did not pass publication readiness",
+    );
   } finally {
     await prisma.chatbot.delete({ where: { id: bot.id } });
   }

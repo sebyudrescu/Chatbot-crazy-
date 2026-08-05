@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { Bot, Check, ChevronRight, Database, FlaskConical, Loader2, MessageSquare, Palette, Rocket, Settings2 } from 'lucide-react'
+import { Bot, Check, ChevronRight, Database, FlaskConical, Loader2, MessageSquare, Palette, Rocket, Settings2, ShoppingBag, ShieldAlert } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/ui/Button'
 import type { AgentReadinessCheck, ReadinessCheckKey } from '@/lib/agent-readiness'
@@ -13,6 +13,8 @@ interface Readiness {
   companyName: string
   isActive: boolean
   ready: boolean
+  status: 'draft' | 'ready' | 'published' | 'attention'
+  attentionRequired: boolean
   completed: number
   total: number
   configurationChangedAt: string | null
@@ -25,6 +27,7 @@ const checkIcons: Record<ReadinessCheckKey, typeof Settings2> = {
   conversation: MessageSquare,
   evaluations: FlaskConical,
   channel: Palette,
+  commerce: ShoppingBag,
 }
 
 export default function AgentOnboardingPage() {
@@ -73,14 +76,16 @@ export default function AgentOnboardingPage() {
   return (
     <DashboardLayout>
       <div className="mx-auto max-w-5xl p-4 lg:p-8">
-        <div className={`overflow-hidden rounded-2xl p-6 text-white ${readiness.isActive ? 'bg-gradient-to-r from-emerald-600 to-teal-500' : 'bg-gradient-to-r from-gray-950 to-brand-800'}`}>
+        <div className={`overflow-hidden rounded-2xl p-6 text-white ${readiness.status === 'published' ? 'bg-gradient-to-r from-emerald-600 to-teal-500' : readiness.status === 'attention' ? 'bg-gradient-to-r from-amber-600 to-orange-500' : 'bg-gradient-to-r from-gray-950 to-brand-800'}`}>
           <div className="flex flex-wrap items-center justify-between gap-5">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-white/60">{readiness.isActive ? 'Pubblicato' : readiness.ready ? 'Pronto per la pubblicazione' : 'Configurazione guidata'}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-white/60">{readiness.status === 'published' ? 'Pubblicato e verificato' : readiness.status === 'attention' ? 'Attivo · controlli richiesti' : readiness.ready ? 'Pronto per la pubblicazione' : 'Configurazione guidata'}</p>
               <h1 className="mt-2 text-2xl font-bold">{readiness.companyName}</h1>
               <p className="mt-2 max-w-xl text-xs leading-5 text-white/70">
-                {readiness.isActive
-                  ? 'L’agente è attivo. Continua a monitorare conversazioni, valutazioni e qualità delle fonti.'
+                {readiness.status === 'published'
+                  ? 'L’agente è attivo e tutti i controlli correnti risultano superati.'
+                  : readiness.status === 'attention'
+                    ? 'L’agente è ancora attivo, ma uno o più controlli non sono aggiornati. Completa la checklist prima della consegna al cliente.'
                   : readiness.ready
                     ? 'Tutti i controlli obbligatori sono superati. Puoi pubblicare l’agente per il cliente.'
                     : 'Completa ogni controllo per consegnare un agente affidabile, misurabile e pubblicabile.'}
@@ -113,7 +118,7 @@ export default function AgentOnboardingPage() {
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           <Link href="/chatbots" className="btn btn-secondary"><Bot className="h-4 w-4" />Tutti gli agenti</Link>
           {readiness.isActive
-            ? <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700"><Check className="h-4 w-4" />Agente pubblicato</div>
+            ? <div className={`flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-semibold ${readiness.attentionRequired ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>{readiness.attentionRequired ? <ShieldAlert className="h-4 w-4" /> : <Check className="h-4 w-4" />}{readiness.attentionRequired ? `Completa ${readiness.total - readiness.completed} controlli` : 'Agente pubblicato e verificato'}</div>
             : <Button onClick={publish} disabled={!readiness.ready || publishing} loading={publishing} icon={!publishing ? <Rocket className="h-4 w-4" /> : undefined}>{readiness.ready ? 'Pubblica agente' : `Completa ${readiness.total - readiness.completed} controlli`}</Button>}
         </div>
       </div>
