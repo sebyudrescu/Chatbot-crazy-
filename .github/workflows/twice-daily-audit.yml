@@ -161,6 +161,7 @@ jobs:
         run: |
           npm run test:rich-text
           npm run test:cta
+          npm run test:http-security
 
       - name: Authentication, prompt and memory tests
         id: agent_core

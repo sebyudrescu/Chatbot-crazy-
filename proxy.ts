@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyOwnerSessionToken } from '@/lib/auth-token'
+import { httpSecurityHeaders } from '@/lib/http-security'
 
 const publicPaths = ['/', '/login', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/chatbot-widget.js']
 const publicPrefixes = ['/api/auth/', '/api/embed/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions', '/api/commerce/click']
@@ -30,10 +31,7 @@ export async function proxy(request: NextRequest) {
 export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'] }
 
 function withSecurityHeaders(response: NextResponse, request: NextRequest) {
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
-  response.headers.set('X-Frame-Options', 'DENY')
+  for (const [key, value] of Object.entries(httpSecurityHeaders())) response.headers.set(key, value)
   const widgetApi = request.nextUrl.pathname === '/api/chat'
     || request.nextUrl.pathname.startsWith('/api/embed/')
   const origin = request.headers.get('origin')
