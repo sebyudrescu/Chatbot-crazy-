@@ -1,17 +1,17 @@
 # 🤖 Chatbot RAG MVP - Next.js Edition
 
-Un sistema di chatbot intelligente con **Retrieval-Augmented Generation (RAG)** costruito con Next.js 14, TypeScript, Prisma e OpenAI.
+Una piattaforma privata per creare e gestire chatbot professionali con **Retrieval-Augmented Generation (RAG)**, costruita con Next.js 16, TypeScript, PostgreSQL, Prisma e OpenAI.
 
 ## ✨ Caratteristiche
 
-- 🚀 **Next.js 14** con App Router
+- 🚀 **Next.js 16** con App Router
 - 🎨 **TypeScript** per type safety
-- 💾 **Prisma ORM** con SQLite (locale) / PostgreSQL (produzione)
+- 💾 **Prisma ORM** con PostgreSQL
 - 🤖 **OpenAI GPT-3.5** per risposte intelligenti
 - 🧠 **Sistema RAG completo** - Retrieval-Augmented Generation
 - 📄 **Upload PDF** con estrazione testo automatica
 - 🌐 **Web Scraping** per URL
-- 🔍 **FAISS Vector Store** per semantic search
+- 🔍 **Ricerca semantica persistente** con PostgreSQL e Pinecone opzionale
 - 📚 **Knowledge Base** separata per ogni bot
 - 🎯 **API RESTful** complete
 - 🌐 **Vercel-ready** per deploy immediato
@@ -50,8 +50,9 @@ cp .env.example .env
 Modifica `.env`:
 ```env
 OPENAI_API_KEY=sk-your-api-key-here
-DATABASE_URL="file:./dev.db"
-ADMIN_SECRET=your-secret-here
+DATABASE_URL="postgresql://user:password@localhost:5432/litx"
+APP_ACCESS_PASSWORD=choose-at-least-16-random-characters
+APP_AUTH_SALT=replace-with-at-least-32-random-characters
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
@@ -233,10 +234,12 @@ Apri http://localhost:5555 per visualizzare e modificare i dati del database.
 2. Vai su [vercel.com](https://vercel.com)
 3. Clicca "Import Project"
 4. Seleziona il repository
-5. Configura le variabili d'ambiente:
+5. Configura almeno le variabili richieste documentate in `.env.example`:
    - `OPENAI_API_KEY`
-   - `DATABASE_URL` (PostgreSQL su Vercel Postgres)
-   - `ADMIN_SECRET`
+   - `DATABASE_URL` (PostgreSQL di produzione)
+   - `APP_ACCESS_PASSWORD` e `APP_AUTH_SALT`
+   - `CRON_SECRET`
+   - `NEXT_PUBLIC_APP_URL`
 6. Deploy! 🎉
 
 ### Deploy da CLI
@@ -254,18 +257,14 @@ vercel --prod
 
 ### Database in Produzione
 
-Per produzione, usa PostgreSQL (Vercel Postgres):
+LitX usa PostgreSQL in ogni ambiente. La produzione corrente usa Neon:
 
-1. Crea un database Vercel Postgres
+1. Crea un database PostgreSQL Neon
 2. Copia la `DATABASE_URL`
-3. Aggiorna `prisma/schema.prisma`:
-   ```prisma
-   datasource db {
-     provider = "postgresql"  // cambia da "sqlite"
-     url      = env("DATABASE_URL")
-   }
-   ```
-4. Push schema: `npx prisma db push`
+3. Configura una connessione diretta non pooled come `DIRECT_URL` per gli strumenti di backup
+4. Applica le migration con `npx prisma migrate deploy`
+
+Per snapshot Neon, backup portabile e prova di ripristino seguire [la procedura di disaster recovery](docs/DISASTER_RECOVERY.md).
 
 ## 🛠️ Comandi Utili
 
@@ -280,7 +279,10 @@ npm run lint             # Linting
 npm run db:push          # Push schema al database
 npm run db:studio        # Apri Prisma Studio
 npx prisma generate      # Genera Prisma Client
-npx prisma migrate dev   # Crea migration (produzione)
+npx prisma migrate dev   # Crea migration in sviluppo
+npx prisma migrate deploy # Applica migration in produzione
+npm run db:backup        # Backup PostgreSQL portabile (richiede le variabili DR)
+npm run db:restore-drill # Prova di ripristino su database isolato
 
 # Deploy
 vercel                   # Deploy preview

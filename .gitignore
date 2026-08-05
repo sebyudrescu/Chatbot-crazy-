@@ -40,6 +40,8 @@ next-env.d.ts
 # Database
 *.db
 *.db-journal
+*.dump
+*.dump.manifest.json
 
 # Local vector data and uploads
 /data/vector-stores/

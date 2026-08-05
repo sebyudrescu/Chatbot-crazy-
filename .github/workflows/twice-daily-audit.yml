@@ -60,7 +60,26 @@ jobs:
         run: npx prisma generate
 
       - name: Create ephemeral CI database
-        run: npx prisma db push --skip-generate
+        run: |
+          npx prisma migrate deploy
+          npx prisma db push --skip-generate
+
+      - name: Install PostgreSQL recovery tools
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+
+      - name: Create isolated recovery target
+        run: psql "postgresql://litx:litx_ci_password@localhost:5432/postgres" --set ON_ERROR_STOP=1 --command "CREATE DATABASE litx_restore OWNER litx"
+
+      - name: Database backup and restore drill
+        id: recovery
+        continue-on-error: true
+        env:
+          DR_SOURCE_DATABASE_URL: postgresql://litx:litx_ci_password@localhost:5432/litx_ci
+          DR_TARGET_DATABASE_URL: postgresql://litx:litx_ci_password@localhost:5432/litx_restore
+          DR_CONFIRM_TARGET_DATABASE: litx_restore
+        run: |
+          npm run test:recovery-safety
+          npm run db:restore-drill
 
       - name: Dependency security audit
         id: dependencies
@@ -208,6 +227,7 @@ jobs:
             echo "| UI content and action safety | ${{ steps.ui_safety.outcome }} |"
             echo "| Authentication, prompt and memory | ${{ steps.agent_core.outcome }} |"
             echo "| Operational observability | ${{ steps.observability.outcome }} |"
+            echo "| Database backup/restore drill | ${{ steps.recovery.outcome }} |"
             echo "| Meta and channel security | ${{ steps.channels.outcome }} |"
             echo "| Automation idempotency | ${{ steps.automations.outcome }} |"
             echo
@@ -240,6 +260,7 @@ jobs:
              [ "${{ steps.ui_safety.outcome }}" != "success" ] ||
              [ "${{ steps.agent_core.outcome }}" != "success" ] ||
              [ "${{ steps.observability.outcome }}" != "success" ] ||
+             [ "${{ steps.recovery.outcome }}" != "success" ] ||
              [ "${{ steps.channels.outcome }}" != "success" ] ||
              [ "${{ steps.automations.outcome }}" != "success" ]; then
             exit 1
