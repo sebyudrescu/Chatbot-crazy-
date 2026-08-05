@@ -42,6 +42,7 @@ export function getDeploymentReadiness(env: Environment = process.env) {
     { key: "INTEGRATION_CONFIG_ENCRYPTION_KEY", label: "Cifratura credenziali integrazioni", ready: Boolean((env.INTEGRATION_CONFIG_ENCRYPTION_KEY || env.META_TOKEN_ENCRYPTION_KEY) && Buffer.from((env.INTEGRATION_CONFIG_ENCRYPTION_KEY || env.META_TOKEN_ENCRYPTION_KEY)!, "base64").length === 32) || (strongSecret(env.APP_AUTH_SALT, 32) && strongSecret(env.APP_ACCESS_PASSWORD, 16)), required: true },
     { key: "FIRECRAWL_API_KEY", label: "Crawler avanzato Firecrawl", ready: strongSecret(env.FIRECRAWL_API_KEY, 16), required: false },
     { key: "RESEND_API_KEY", label: "Avvisi email Resend", ready: strongSecret(env.RESEND_API_KEY, 16) && Boolean(env.RESEND_FROM_EMAIL?.includes("@")), required: false },
+    { key: "OPERATIONS_ALERT_EMAIL", label: "Destinatario errori critici", ready: Boolean(env.OPERATIONS_ALERT_EMAIL?.includes("@")), required: false },
     { key: "COMMERCE_CLICK_SECRET", label: "Firma link commerce", ready: strongSecret(env.COMMERCE_CLICK_SECRET, 32) || strongSecret(env.APP_AUTH_SALT, 32), required: false },
     { key: "META_APP_ID", label: "Meta App per WhatsApp e Instagram", ready: strongSecret(env.META_APP_ID, 5), required: false },
     { key: "META_APP_SECRET", label: "Segreto Meta server-side", ready: strongSecret(env.META_APP_SECRET, 16), required: false },

@@ -14,6 +14,7 @@ function escapeHtml(value: unknown) {
 function eventTitle(event: string) {
   if (event === "lead.captured") return "Nuovo lead acquisito";
   if (event === "conversation.handoff_requested") return "Conversazione da gestire";
+  if (event === "system.request.unhandled") return "Errore server critico";
   return "Nuovo evento LitX";
 }
 
@@ -45,8 +46,10 @@ export async function deliverEmailNotification(input: {
     catch { return ""; }
   })();
   const conversationId = typeof input.payload.conversationId === "string" ? input.payload.conversationId : "";
-  const detailUrl = appUrl && conversationId ? `${appUrl}/conversations?conversation=${encodeURIComponent(conversationId)}` : "";
-  const visibleKeys = ["name", "email", "phone", "company", "reason", "assignedAgent", "conversationId"];
+  const detailUrl = appUrl && conversationId
+    ? `${appUrl}/conversations?conversation=${encodeURIComponent(conversationId)}`
+    : appUrl && input.event === "system.request.unhandled" ? `${appUrl}/settings` : "";
+  const visibleKeys = ["name", "email", "phone", "company", "reason", "assignedAgent", "conversationId", "message", "method", "requestPath", "routePath", "fingerprint", "deployment"];
   const rows = visibleKeys.flatMap(key => input.payload[key] === null || input.payload[key] === undefined || input.payload[key] === "" ? [] : [
     `<tr><td style="padding:8px 12px;color:#667085;border-bottom:1px solid #eef0f4">${escapeHtml(key)}</td><td style="padding:8px 12px;color:#101828;border-bottom:1px solid #eef0f4">${escapeHtml(input.payload[key])}</td></tr>`,
   ]).join("");

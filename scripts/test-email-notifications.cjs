@@ -35,9 +35,20 @@ const { deliverEmailNotification } = require("../lib/email-notifications.ts");
   assert.match(request.body.html, /&lt;script&gt;/);
   assert.doesNotMatch(request.body.html, /<script>/);
   assert.match(request.body.html, /conversations\?conversation=/);
+  const systemResult = await deliverEmailNotification({
+    to: "owner@example.com",
+    event: "system.request.unhandled",
+    agentName: "Piattaforma LitX",
+    payload: { message: "Errore <critico>", method: "POST", routePath: "/api/chat", fingerprint: "err-123" },
+    idempotencyKey: "system-email:err-123:1",
+  });
+  assert.equal(systemResult.success, true);
+  assert.equal(request.body.subject.includes("Errore server critico"), true);
+  assert.match(request.body.html, /Errore &lt;critico&gt;/);
+  assert.match(request.body.html, /\/settings/);
   delete process.env.RESEND_API_KEY;
   const missing = await deliverEmailNotification({ to: "owner@example.com", event: "lead.captured", agentName: "Test", payload: {}, idempotencyKey: "lead:222" });
   assert.equal(missing.success, false);
   assert.match(missing.error, /RESEND_API_KEY/);
-  console.log(JSON.stringify({ success: true, checks: 9 }, null, 2));
+  console.log(JSON.stringify({ success: true, checks: 13 }, null, 2));
 })().catch(error => { console.error(error); process.exit(1); });

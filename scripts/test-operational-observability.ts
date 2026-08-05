@@ -6,6 +6,7 @@ import {
   redactOperationalText,
   sanitizeRequestPath,
 } from "../lib/operational-error-safety";
+import { systemErrorAlertKey } from "../lib/system-error-alert-policy";
 
 assert.equal(sanitizeRequestPath("/api/chat?token=private&email=user@example.com"), "/api/chat");
 assert.equal(sanitizeRequestPath("api/health\nignored"), "/api/healthignored");
@@ -29,6 +30,9 @@ assert.notEqual(
   operationalErrorFingerprint("boom", "/api/chat", "digest-1"),
   operationalErrorFingerprint("boom", "/api/commerce", "digest-1"),
 );
+assert.equal(systemErrorAlertKey("ERR:123", 3_600_000), "system-email:err123:1");
+assert.equal(systemErrorAlertKey("ERR:123", 7_199_999), "system-email:err123:1");
+assert.equal(systemErrorAlertKey("ERR:123", 7_200_000), "system-email:err123:2");
 
 const instrumentation = readFileSync(resolve(process.cwd(), "instrumentation.ts"), "utf8");
 assert.match(instrumentation, /Instrumentation\.onRequestError/);
@@ -39,9 +43,15 @@ const collector = readFileSync(resolve(process.cwd(), "app/api/internal/observab
 assert.match(collector, /constantTimeEqual/);
 assert.match(collector, /system\.request\.unhandled/);
 assert.match(collector, /redactOperationalText/);
+assert.match(collector, /after\(async/);
+assert.match(collector, /deliverSystemErrorAlert/);
+
+const alertPolicy = readFileSync(resolve(process.cwd(), "lib/system-error-alert-policy.ts"), "utf8");
+assert.match(alertPolicy, /60 \* 60 \* 1000/);
+assert.match(alertPolicy, /system-email:/);
 
 const notifications = readFileSync(resolve(process.cwd(), "app/api/notifications/route.ts"), "utf8");
 assert.match(notifications, /system\.request\.unhandled/);
 assert.match(notifications, /system-error:/);
 
-console.log(JSON.stringify({ success: true, checks: 20 }));
+console.log(JSON.stringify({ success: true, checks: 27 }));

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { constantTimeEqual } from "@/lib/auth-token";
 import { prisma } from "@/lib/db";
@@ -7,6 +7,7 @@ import {
   redactOperationalText,
   sanitizeRequestPath,
 } from "@/lib/operational-error-safety";
+import { deliverSystemErrorAlert } from "@/lib/system-error-alerts";
 
 const ReportSchema = z.object({
   message: z.string().max(500),
@@ -63,6 +64,17 @@ export async function POST(request: NextRequest) {
         }),
       },
       select: { id: true },
+    });
+    after(async () => {
+      const result = await deliverSystemErrorAlert({
+        fingerprint,
+        message,
+        method: input.method.slice(0, 12).toUpperCase(),
+        requestPath,
+        routePath,
+        deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12),
+      });
+      if (!result.success && !result.skipped) console.error("[Observability] Critical email alert failed");
     });
     return noStore({ success: true, id: event.id }, 201);
   } catch (error) {
