@@ -87,13 +87,23 @@ async function completeShopifyVariants(
   return nodes;
 }
 
-async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrationConnection.findUnique>>) {
+interface CommerceSyncOptions {
+  jobId?: string;
+  jobAttempt?: number;
+  onProgress?: (progress: number, message: string) => Promise<void>;
+}
+
+async function syncShopify(
+  connection: Awaited<ReturnType<typeof prisma.integrationConnection.findUnique>>,
+  options: CommerceSyncOptions,
+) {
   if (!connection) throw new Error("Connessione Shopify non trovata");
   const botId = connection.botId;
   const { token, config } = await ensureShopifyAccessToken(connection);
   const shop = await assertSafeRemoteUrl(config.shopUrl || "");
   const apiVersion = /^20\d{2}-(01|04|07|10)$/.test(String(config.apiVersion || "")) ? String(config.apiVersion) : "2026-07";
   const endpoint = new URL(`/admin/api/${apiVersion}/graphql.json`, shop.origin).toString();
+  await options.onProgress?.(8, "Connessione Shopify verificata");
   const query = `query Catalog($cursor: String) {
     shop { currencyCode }
     products(first: 100, after: $cursor, query: "status:active") {
@@ -143,6 +153,7 @@ async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrat
         metadata: { source: "shopify", tags: item.tags || [] },
       });
     }
+    await options.onProgress?.(Math.min(45, 15 + ((page + 1) * 3)), `Letti ${products.length} prodotti da Shopify`);
     if (!data.products.pageInfo.hasNextPage) {
       completedSnapshot = true;
       break;
@@ -157,10 +168,13 @@ async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrat
     sourceName: `Shopify: ${shop.hostname}`,
     reconcileVariants: true,
     authoritativeSnapshot: true,
+    jobId: options.jobId,
+    jobAttempt: options.jobAttempt,
+    onProgress: options.onProgress,
   });
 }
 
-async function syncWooCommerce(botId: string, config: Record<string, string>) {
+async function syncWooCommerce(botId: string, config: Record<string, string>, options: CommerceSyncOptions) {
   const store = await assertSafeRemoteUrl(config.storeUrl || "");
   const products: ExtractedProduct[] = [];
   for (let page = 1; page <= 10; page += 1) {
@@ -193,18 +207,30 @@ async function syncWooCommerce(botId: string, config: Record<string, string>) {
       });
     }
     const totalPages = Number(response.headers.get("x-wp-totalpages") || page);
+    await options.onProgress?.(Math.min(45, 15 + (page * 3)), `Letti ${products.length} prodotti da WooCommerce`);
     if (page >= totalPages || items.length === 0) break;
   }
-  return persistExtractedProducts(botId, store.origin, products, { sourceType: "woocommerce", sourceName: `WooCommerce: ${store.hostname}` });
+  return persistExtractedProducts(botId, store.origin, products, {
+    sourceType: "woocommerce",
+    sourceName: `WooCommerce: ${store.hostname}`,
+    authoritativeSnapshot: true,
+    jobId: options.jobId,
+    jobAttempt: options.jobAttempt,
+    onProgress: options.onProgress,
+  });
 }
 
-export async function syncCommercePlatform(botId: string, provider: "shopify" | "woocommerce") {
+export async function syncCommercePlatform(
+  botId: string,
+  provider: "shopify" | "woocommerce",
+  options: CommerceSyncOptions = {},
+) {
   const connection = await prisma.integrationConnection.findUnique({ where: { botId_provider: { botId, provider } } });
   if (!connection?.enabled) throw new Error(`${provider} non è collegato o è disattivato`);
   try {
     const result = provider === "shopify"
-      ? await syncShopify(connection)
-      : await syncWooCommerce(botId, decryptConfigSecrets(JSON.parse(connection.config)) as Record<string, string>);
+      ? await syncShopify(connection, options)
+      : await syncWooCommerce(botId, decryptConfigSecrets(JSON.parse(connection.config)) as Record<string, string>, options);
     await prisma.integrationConnection.update({ where: { id: connection.id }, data: { status: "connected", lastTestedAt: new Date(), lastError: null } });
     return result;
   } catch (error) {

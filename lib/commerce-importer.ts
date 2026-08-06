@@ -3,10 +3,16 @@ import "server-only";
 import { prisma } from "./db";
 import type { ExtractedProduct } from "./product-extractor";
 
-async function mapInBatches<T, R>(items: T[], size: number, worker: (item: T) => Promise<R>) {
+async function mapInBatches<T, R>(
+  items: T[],
+  size: number,
+  worker: (item: T) => Promise<R>,
+  afterBatch?: (processed: number, total: number) => Promise<void>,
+) {
   const results: R[] = [];
   for (let index = 0; index < items.length; index += size) {
     results.push(...await Promise.all(items.slice(index, index + size).map(worker)));
+    await afterBatch?.(Math.min(index + size, items.length), items.length);
   }
   return results;
 }
@@ -20,6 +26,9 @@ export async function persistExtractedProducts(
     sourceName?: string;
     reconcileVariants?: boolean;
     authoritativeSnapshot?: boolean;
+    jobId?: string;
+    jobAttempt?: number;
+    onProgress?: (progress: number, message: string) => Promise<void>;
   } = {},
 ) {
   const products = [...new Map(rawProducts.map((product) => [product.identityKey, product])).values()];
@@ -31,17 +40,38 @@ export async function persistExtractedProducts(
   source ??= await prisma.productSource.create({
     data: { botId, sourceType: options.sourceType || "jsonld", name: options.sourceName || `Crawler: ${new URL(baseUrl).hostname}`, baseUrl },
   });
-  const job = await prisma.productSyncJob.create({
-    data: {
-      botId,
-      sourceId: source.id,
-      status: "running",
-      productsSeen: products.length,
-      startedAt: new Date(),
-      attempts: 1,
-    },
-  });
+  const job = options.jobId
+    ? await prisma.productSyncJob.findFirst({ where: {
+        id: options.jobId,
+        botId,
+        sourceId: source.id,
+        status: "running",
+        ...(options.jobAttempt !== undefined ? { attempts: options.jobAttempt } : {}),
+      } })
+    : await prisma.productSyncJob.create({
+        data: {
+          botId,
+          sourceId: source.id,
+          status: "running",
+          productsSeen: products.length,
+          startedAt: new Date(),
+          attempts: 1,
+        },
+      });
+  if (!job) throw new Error("Job commerce non valido per la fonte selezionata");
+  if (options.jobId) {
+    const updatedJob = await prisma.productSyncJob.updateMany({
+      where: {
+        id: job.id,
+        status: "running",
+        ...(options.jobAttempt !== undefined ? { attempts: options.jobAttempt } : {}),
+      },
+      data: { productsSeen: products.length, progress: 50 },
+    });
+    if (updatedJob.count !== 1) throw new Error("Lease del job commerce non più valida");
+  }
 
+  let lastReportedProgress = 50;
   const outcomes = await mapInBatches(products, 6, async (candidate) => {
     try {
       const existing = await prisma.product.findUnique({
@@ -134,6 +164,13 @@ export async function persistExtractedProducts(
       console.error(`[Commerce] Failed to import ${candidate.canonicalUrl}:`, error);
       return "failed" as const;
     }
+  }, async (processed, total) => {
+    if (!options.onProgress || total === 0) return;
+    const progress = 50 + Math.floor((processed / total) * 40);
+    if (progress >= lastReportedProgress + 5 || processed === total) {
+      lastReportedProgress = progress;
+      await options.onProgress(progress, `Aggiornati ${processed}/${total} prodotti`);
+    }
   });
   const created = outcomes.filter((outcome) => outcome === "created").length;
   const updated = outcomes.filter((outcome) => outcome === "updated").length;
@@ -154,28 +191,55 @@ export async function persistExtractedProducts(
   }
 
   const status = failed > 0 && failed === products.length ? "failed" : "completed";
-  await prisma.$transaction([
-    prisma.productSyncJob.update({
-      where: { id: job.id },
+  if (options.jobId) {
+    const fencedUpdate = await prisma.productSyncJob.updateMany({
+      where: {
+        id: job.id,
+        status: "running",
+        ...(options.jobAttempt !== undefined ? { attempts: options.jobAttempt } : {}),
+      },
       data: {
-        status,
-        progress: 100,
+        progress: 95,
         productsCreated: created,
         productsUpdated: updated,
         productsFailed: failed,
-        completedAt: new Date(),
         errorMessage: failed ? `${failed} prodotti non importati` : null,
       },
-    }),
-    prisma.productSource.update({
+    });
+    if (fencedUpdate.count !== 1) throw new Error("Lease del job commerce persa durante la riconciliazione");
+    await prisma.productSource.update({
       where: { id: source.id },
       data: {
         status: status === "failed" ? "error" : "active",
         lastSyncAt: new Date(),
         lastError: failed ? `${failed} prodotti non importati` : null,
       },
-    }),
-  ]);
+    });
+    if (status === "failed") throw new Error(`${failed} prodotti non importati`);
+  } else {
+    await prisma.$transaction([
+      prisma.productSyncJob.update({
+        where: { id: job.id },
+        data: {
+          status,
+          progress: 100,
+          productsCreated: created,
+          productsUpdated: updated,
+          productsFailed: failed,
+          completedAt: new Date(),
+          errorMessage: failed ? `${failed} prodotti non importati` : null,
+        },
+      }),
+      prisma.productSource.update({
+        where: { id: source.id },
+        data: {
+          status: status === "failed" ? "error" : "active",
+          lastSyncAt: new Date(),
+          lastError: failed ? `${failed} prodotti non importati` : null,
+        },
+      }),
+    ]);
+  }
 
   return { created, updated, failed };
 }

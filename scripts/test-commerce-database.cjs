@@ -13,6 +13,11 @@ const { prisma } = require("../lib/db.ts");
 const { searchVerifiedProducts } = require("../lib/product-search.ts");
 const { hydrateProductCards } = require("../lib/commerce-catalog.ts");
 const { persistExtractedProducts } = require("../lib/commerce-importer.ts");
+const {
+  enqueueCommerceSync,
+  processCommerceSyncJob,
+  recoverStaleCommerceSyncJobs,
+} = require("../lib/commerce-sync-queue.ts");
 
 async function main() {
   const bot = await prisma.chatbot.create({ data: { companyName: "Commerce E2E Test", kbStatus: "ready" } });
@@ -135,7 +140,54 @@ async function main() {
     const latestJob = await prisma.productSyncJob.findFirstOrThrow({ where: { botId: bot.id, sourceId: importedBag.sourceId }, orderBy: { createdAt: "desc" } });
     assert.equal(latestJob.status, "completed", "Uno snapshot vuoto valido non deve essere classificato come errore");
 
-    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot"] }));
+    await prisma.integrationConnection.create({
+      data: {
+        botId: bot.id,
+        provider: "shopify",
+        category: "commerce",
+        displayName: "Shopify",
+        externalAccountId: "queue-test.myshopify.com",
+        config: "{}",
+        status: "connected",
+        enabled: true,
+      },
+    });
+    const [firstQueued, duplicateQueued] = await Promise.all([
+      enqueueCommerceSync(bot.id, "shopify"),
+      enqueueCommerceSync(bot.id, "shopify"),
+    ]);
+    assert.equal(firstQueued.job.id, duplicateQueued.job.id, "Due enqueue concorrenti devono riutilizzare lo stesso job");
+    assert.equal(Number(firstQueued.reused) + Number(duplicateQueued.reused), 1);
+    let runnerCalls = 0;
+    const completedQueueJob = await processCommerceSyncJob(firstQueued.job.id, async (botId, provider, options) => {
+      runnerCalls += 1;
+      assert.equal(botId, bot.id);
+      assert.equal(provider, "shopify");
+      assert.equal(options.jobAttempt, 1);
+      await options.onProgress(60, "Catalogo di test");
+      return { created: 2, updated: 3, failed: 0 };
+    });
+    assert.equal(runnerCalls, 1);
+    assert.equal(completedQueueJob.status, "completed");
+    assert.equal(completedQueueJob.progress, 100);
+    assert.equal(completedQueueJob.productsCreated, 2);
+    assert.equal(completedQueueJob.productsUpdated, 3);
+
+    const retryQueued = await enqueueCommerceSync(bot.id, "shopify");
+    assert.notEqual(retryQueued.job.id, firstQueued.job.id, "Un job completato non deve bloccare una nuova sincronizzazione");
+    const retried = await processCommerceSyncJob(retryQueued.job.id, async () => { throw new Error("Errore temporaneo test"); });
+    assert.equal(retried.status, "pending");
+    assert.equal(retried.attempts, 1);
+    assert.ok(retried.nextRetryAt instanceof Date);
+    await prisma.productSyncJob.update({
+      where: { id: retryQueued.job.id },
+      data: { status: "running", startedAt: new Date(Date.now() - 10 * 60 * 1_000), nextRetryAt: null },
+    });
+    assert.ok(await recoverStaleCommerceSyncJobs() >= 1);
+    const recovered = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: retryQueued.job.id } });
+    assert.equal(recovered.status, "pending", "Un worker interrotto deve tornare automaticamente in coda");
+
+    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot", "queue-deduplication", "lease-fencing", "queue-progress", "queue-retry", "stale-worker-recovery"] }));
   } finally {
     await prisma.chatbot.delete({ where: { id: bot.id } }).catch(() => {});
     await prisma.$disconnect();

@@ -33,6 +33,21 @@ interface CommerceData {
   products: Product[]
   pagination: { page: number; pageSize: number; total: number; totalPages: number }
 }
+interface CommerceSyncState {
+  id: string
+  provider: 'shopify' | 'woocommerce'
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: number
+  productsSeen: number
+  productsCreated: number
+  productsUpdated: number
+  productsFailed: number
+  error?: string | null
+  attempts: number
+  maxAttempts: number
+  nextRetryAt?: string | null
+  createdAt: string
+}
 
 const STATUS_LABELS: Record<RecommendationStatus, string> = {
   normal: 'Normale', promoted: 'Promosso', excluded: 'Escluso', blocked: 'Bloccato',
@@ -107,6 +122,10 @@ export default function CommercePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
   const [syncing, setSyncing] = useState<string | null>(null)
+  const [syncJob, setSyncJob] = useState<CommerceSyncState | null>(null)
+  const syncJobId = syncJob?.id
+  const syncJobProvider = syncJob?.provider
+  const syncJobStatus = syncJob?.status
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setSearchQuery(search.trim()), 300)
@@ -140,6 +159,59 @@ export default function CommercePage() {
 
   useEffect(() => { void loadCatalog() }, [loadCatalog])
 
+  useEffect(() => {
+    if (!botId) return
+    let active = true
+    setSyncJob(null)
+    setSyncing(null)
+    Promise.all((['shopify', 'woocommerce'] as const).map(async provider => {
+      const response = await fetch(`/api/commerce/sync?botId=${encodeURIComponent(botId)}&provider=${provider}`, { cache: 'no-store' })
+      const result = await response.json()
+      return result.success && result.data ? { ...result.data, provider } as CommerceSyncState : null
+    })).then(jobs => {
+      if (!active) return
+      const current = jobs
+        .filter((job): job is CommerceSyncState => Boolean(job && (job.status === 'pending' || job.status === 'running')))
+        .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
+      if (current) { setSyncJob(current); setSyncing(current.provider) }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [botId])
+
+  useEffect(() => {
+    if (!syncJobId || !syncJobProvider || (syncJobStatus !== 'pending' && syncJobStatus !== 'running')) return
+    let active = true
+    let timeout: number | undefined
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/commerce/sync?jobId=${encodeURIComponent(syncJobId)}`, { cache: 'no-store' })
+        const result = await response.json()
+        if (!active) return
+        if (!response.ok || !result.success || !result.data) throw new Error(result.error || 'Stato sincronizzazione non disponibile')
+        const next = { ...result.data, provider: syncJobProvider } as CommerceSyncState
+        setSyncJob(next)
+        if (next.status === 'completed') {
+          setSyncing(null)
+          setPage(1)
+          await loadCatalog()
+          return
+        }
+        if (next.status === 'failed') {
+          setSyncing(null)
+          setError(next.error || 'Sincronizzazione non riuscita dopo i tentativi automatici')
+          return
+        }
+        timeout = window.setTimeout(poll, 2_000)
+      } catch (cause) {
+        if (!active) return
+        setError(cause instanceof Error ? cause.message : 'Stato sincronizzazione non disponibile')
+        timeout = window.setTimeout(poll, 5_000)
+      }
+    }
+    timeout = window.setTimeout(poll, 800)
+    return () => { active = false; if (timeout) window.clearTimeout(timeout) }
+  }, [syncJobId, syncJobProvider, syncJobStatus, loadCatalog])
+
   const syncPlatform = async (provider: 'shopify' | 'woocommerce') => {
     if (!botId) return
     setSyncing(provider); setError('')
@@ -147,9 +219,11 @@ export default function CommercePage() {
       const response = await fetch('/api/commerce/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId, provider }) })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.error || 'Sincronizzazione non riuscita')
-      await loadCatalog()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Sincronizzazione non riuscita') }
-    finally { setSyncing(null) }
+      setSyncJob({ ...result.data, provider })
+    } catch (cause) {
+      setSyncing(null)
+      setError(cause instanceof Error ? cause.message : 'Sincronizzazione non riuscita')
+    }
   }
 
   const products = data?.products || []
@@ -164,6 +238,11 @@ export default function CommercePage() {
         </div>
 
         {error ? <div className="mt-5 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertTriangle className="h-4 w-4" />{error}</div> : null}
+        {syncJob ? <div className={`mt-5 rounded-xl border p-4 ${syncJob.status === 'failed' ? 'border-red-200 bg-red-50' : syncJob.status === 'completed' ? 'border-emerald-200 bg-emerald-50' : 'border-brand-200 bg-brand-50'}`}>
+          <div className="flex items-center justify-between gap-3 text-xs font-semibold"><span>{syncJob.status === 'completed' ? 'Catalogo aggiornato' : syncJob.status === 'failed' ? 'Sincronizzazione non riuscita' : `Sincronizzazione ${syncJob.provider === 'shopify' ? 'Shopify' : 'WooCommerce'} in background`}</span><span>{syncJob.progress}%</span></div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80"><div className={`h-full rounded-full transition-all ${syncJob.status === 'failed' ? 'bg-red-500' : syncJob.status === 'completed' ? 'bg-emerald-500' : 'bg-brand-600'}`} style={{ width: `${syncJob.progress}%` }} /></div>
+          <p className="mt-2 text-[10px] text-gray-600">{syncJob.status === 'pending' && syncJob.attempts > 0 ? `Nuovo tentativo automatico ${syncJob.attempts + 1}/${syncJob.maxAttempts}.` : syncJob.status === 'running' ? `${syncJob.productsSeen || 'Catalogo'} prodotti rilevati. Puoi continuare a usare l’app.` : syncJob.status === 'completed' ? `${syncJob.productsCreated} creati, ${syncJob.productsUpdated} aggiornati, ${syncJob.productsFailed} non importati.` : syncJob.error}</p>
+        </div> : null}
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Metric label="Prodotti importati" value={summary?.total || 0} icon={<Box className="h-4 w-4" />} />
           <Metric label="Disponibili" value={summary?.active || 0} icon={<CheckCircle2 className="h-4 w-4" />} />
