@@ -3,7 +3,9 @@ import "server-only";
 import { drainCommerceSyncJob } from "./commerce-sync-queue";
 
 function appOrigin() {
-  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  const configured = process.env.NEXT_PUBLIC_APP_URL
+    || process.env.VERCEL_PROJECT_PRODUCTION_URL
+    || process.env.VERCEL_URL;
   if (!configured) return null;
   const value = configured.startsWith("http") ? configured : `https://${configured}`;
   try { return new URL(value).origin; } catch { return null; }
