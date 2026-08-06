@@ -7,10 +7,15 @@ export async function persistExtractedProducts(
   botId: string,
   baseUrl: string,
   rawProducts: ExtractedProduct[],
-  options: { sourceType?: string; sourceName?: string } = {},
+  options: {
+    sourceType?: string;
+    sourceName?: string;
+    reconcileVariants?: boolean;
+    authoritativeSnapshot?: boolean;
+  } = {},
 ) {
   const products = [...new Map(rawProducts.map((product) => [product.identityKey, product])).values()];
-  if (products.length === 0) return { created: 0, updated: 0, failed: 0 };
+  if (products.length === 0 && !options.authoritativeSnapshot) return { created: 0, updated: 0, failed: 0 };
 
   let source = await prisma.productSource.findFirst({
     where: { botId, sourceType: options.sourceType || "jsonld", baseUrl },
@@ -71,6 +76,7 @@ export async function persistExtractedProducts(
           mainImageUrl: candidate.mainImageUrl,
           imageUrls: JSON.stringify(candidate.imageUrls),
           availableForSale: candidate.availableForSale,
+          status: "active",
           lastSyncedAt: new Date(),
           metadata: JSON.stringify(candidate.metadata),
         },
@@ -94,6 +100,7 @@ export async function persistExtractedProducts(
             stockQuantity: variant.stockQuantity,
             productUrl: variant.productUrl,
             imageUrl: variant.imageUrl,
+            position: variant.position,
           },
           update: {
             externalId: variant.externalId,
@@ -107,6 +114,17 @@ export async function persistExtractedProducts(
             stockQuantity: variant.stockQuantity,
             productUrl: variant.productUrl,
             imageUrl: variant.imageUrl,
+            position: variant.position,
+          },
+        });
+      }
+      if (options.reconcileVariants) {
+        await prisma.productVariant.deleteMany({
+          where: {
+            productId: product.id,
+            ...(candidate.variants.length > 0
+              ? { identityKey: { notIn: candidate.variants.map((variant) => variant.identityKey) } }
+              : {}),
           },
         });
       }
@@ -116,7 +134,21 @@ export async function persistExtractedProducts(
     }
   }
 
-  const status = failed === products.length ? "failed" : "completed";
+  if (options.authoritativeSnapshot && failed === 0) {
+    await prisma.product.updateMany({
+      where: {
+        botId,
+        sourceId: source.id,
+        status: "active",
+        ...(products.length > 0
+          ? { identityKey: { notIn: products.map((product) => product.identityKey) } }
+          : {}),
+      },
+      data: { status: "deleted", availableForSale: false, lastSyncedAt: new Date() },
+    });
+  }
+
+  const status = failed > 0 && failed === products.length ? "failed" : "completed";
   await prisma.$transaction([
     prisma.productSyncJob.update({
       where: { id: job.id },

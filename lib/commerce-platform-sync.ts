@@ -19,6 +19,74 @@ function plainText(html: unknown) {
   return cheerio.load(html).text().replace(/\s+/g, " ").trim();
 }
 
+const SHOPIFY_VARIANT_FIELDS = `
+  id title sku price compareAtPrice availableForSale inventoryQuantity
+  selectedOptions { name value }
+  image { url }
+`;
+
+async function shopifyGraphql(
+  endpoint: string,
+  token: string,
+  query: string,
+  variables: Record<string, unknown>,
+) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(25_000),
+      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
+      body: JSON.stringify({ query, variables }),
+    });
+    const payload = await response.json().catch(() => null) as any;
+    const throttled = response.status === 429 || payload?.errors?.some((error: any) => error?.extensions?.code === "THROTTLED");
+    if (throttled && attempt < 2) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1_000, 2_000)
+        : 500 * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+    if (!response.ok || payload?.errors?.length || !payload?.data) {
+      throw new Error(payload?.errors?.[0]?.message || `Shopify API HTTP ${response.status}`);
+    }
+    return payload.data;
+  }
+  throw new Error("Shopify API non disponibile dopo i tentativi previsti");
+}
+
+async function completeShopifyVariants(
+  endpoint: string,
+  token: string,
+  productId: string,
+  initial: { nodes?: any[]; pageInfo?: { hasNextPage?: boolean; endCursor?: string | null } },
+) {
+  const nodes = [...(initial?.nodes || [])];
+  let pageInfo = initial?.pageInfo;
+  const query = `query ProductVariants($id: ID!, $cursor: String) {
+    product(id: $id) {
+      variants(first: 100, after: $cursor) {
+        nodes { ${SHOPIFY_VARIANT_FIELDS} }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }`;
+  for (let page = 1; page < 21 && pageInfo?.hasNextPage; page += 1) {
+    if (!pageInfo.endCursor) throw new Error(`Paginazione varianti Shopify non valida per ${productId}`);
+    const data = await shopifyGraphql(endpoint, token, query, { id: productId, cursor: pageInfo.endCursor });
+    const variants = data.product?.variants;
+    if (!variants) throw new Error(`Prodotto Shopify ${productId} non disponibile durante la sincronizzazione`);
+    nodes.push(...(variants.nodes || []));
+    pageInfo = variants.pageInfo;
+  }
+  if (pageInfo?.hasNextPage) {
+    throw new Error(`Il prodotto Shopify ${productId} supera il limite supportato di 2.100 varianti`);
+  }
+  return nodes;
+}
+
 async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrationConnection.findUnique>>) {
   if (!connection) throw new Error("Connessione Shopify non trovata");
   const botId = connection.botId;
@@ -28,42 +96,38 @@ async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrat
   const endpoint = new URL(`/admin/api/${apiVersion}/graphql.json`, shop.origin).toString();
   const query = `query Catalog($cursor: String) {
     shop { currencyCode }
-    products(first: 100, after: $cursor) {
+    products(first: 100, after: $cursor, query: "status:active") {
       nodes {
         id title description vendor productType tags handle status onlineStoreUrl
         featuredMedia { preview { image { url } } }
         media(first: 10) { nodes { preview { image { url } } } }
-        variants(first: 100) { nodes { id title sku price compareAtPrice availableForSale inventoryQuantity selectedOptions { name value } image { url } } }
+        variants(first: 100) {
+          nodes { ${SHOPIFY_VARIANT_FIELDS} }
+          pageInfo { hasNextPage endCursor }
+        }
       }
       pageInfo { hasNextPage endCursor }
     }
   }`;
   const products: ExtractedProduct[] = [];
   let cursor: string | null = null;
+  let completedSnapshot = false;
   for (let page = 0; page < 10; page += 1) {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      redirect: "error",
-      signal: AbortSignal.timeout(25_000),
-      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
-      body: JSON.stringify({ query, variables: { cursor } }),
-    });
-    const payload = await response.json().catch(() => null) as any;
-    if (!response.ok || payload?.errors?.length || !payload?.data?.products) {
-      throw new Error(payload?.errors?.[0]?.message || `Shopify API HTTP ${response.status}`);
-    }
-    for (const item of payload.data.products.nodes as any[]) {
-      const canonicalUrl = safeHttpsUrl(item.onlineStoreUrl) ?? safeHttpsUrl(new URL(`/products/${item.handle}`, shop.origin).toString());
+    const data = await shopifyGraphql(endpoint, token, query, { cursor });
+    if (!data.products) throw new Error("Shopify API non ha restituito il catalogo prodotti");
+    for (const item of data.products.nodes as any[]) {
+      const canonicalUrl = safeHttpsUrl(item.onlineStoreUrl);
       if (!canonicalUrl) continue;
       const images = (item.media?.nodes || []).map((node: any) => safeHttpsUrl(node?.preview?.image?.url)).filter(Boolean);
-      const variants = (item.variants?.nodes || []).map((variant: any, index: number) => ({
+      const variantNodes = await completeShopifyVariants(endpoint, token, item.id, item.variants || {});
+      const variants = variantNodes.map((variant: any, index: number) => ({
         identityKey: identity("shopify-variant", variant.id),
         externalId: variant.id,
         sku: variant.sku || undefined,
         title: variant.title || undefined,
         price: Number.isFinite(Number(variant.price)) ? Number(variant.price) : undefined,
         compareAtPrice: variant.compareAtPrice != null && Number.isFinite(Number(variant.compareAtPrice)) ? Number(variant.compareAtPrice) : undefined,
-        currency: payload.data.shop?.currencyCode || undefined,
+        currency: data.shop?.currencyCode || undefined,
         available: Boolean(variant.availableForSale),
         stockQuantity: Number.isFinite(Number(variant.inventoryQuantity)) ? Number(variant.inventoryQuantity) : undefined,
         productUrl: canonicalUrl,
@@ -79,10 +143,21 @@ async function syncShopify(connection: Awaited<ReturnType<typeof prisma.integrat
         metadata: { source: "shopify", tags: item.tags || [] },
       });
     }
-    if (!payload.data.products.pageInfo.hasNextPage) break;
-    cursor = payload.data.products.pageInfo.endCursor;
+    if (!data.products.pageInfo.hasNextPage) {
+      completedSnapshot = true;
+      break;
+    }
+    cursor = data.products.pageInfo.endCursor;
   }
-  return persistExtractedProducts(botId, shop.origin, products, { sourceType: "shopify", sourceName: `Shopify: ${shop.hostname}` });
+  if (!completedSnapshot) {
+    throw new Error("Catalogo Shopify oltre 1.000 prodotti: sincronizzazione interrotta per evitare uno snapshot parziale");
+  }
+  return persistExtractedProducts(botId, shop.origin, products, {
+    sourceType: "shopify",
+    sourceName: `Shopify: ${shop.hostname}`,
+    reconcileVariants: true,
+    authoritativeSnapshot: true,
+  });
 }
 
 async function syncWooCommerce(botId: string, config: Record<string, string>) {

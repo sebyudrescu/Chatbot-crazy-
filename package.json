@@ -20,6 +20,7 @@
         "test:product-extractor": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-product-extractor.ts",
         "test:commerce-db": "node scripts/test-commerce-database.cjs",
         "test:commerce-security": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-commerce-security.ts",
+        "test:shopify-sync": "node scripts/test-shopify-sync.cjs",
         "test:crawler": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler.ts",
         "test:crawler-pages": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler-pages.ts",
         "test:conversation-guidance": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-conversation-guidance.ts",

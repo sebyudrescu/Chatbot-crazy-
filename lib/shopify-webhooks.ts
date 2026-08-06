@@ -65,7 +65,7 @@ export async function registerShopifyWebhooks(connection: IntegrationConnection)
 function webhookProduct(payload: any, shop: string): ExtractedProduct | null {
   const rawId = payload?.admin_graphql_api_id || (payload?.id ? `gid://shopify/Product/${payload.id}` : "");
   const canonicalUrl = safeHttpsUrl(payload?.online_store_url)
-    ?? safeHttpsUrl(payload?.handle ? `https://${shop}/products/${payload.handle}` : undefined);
+    ?? safeHttpsUrl(payload?.published_at && payload?.handle ? `https://${shop}/products/${payload.handle}` : undefined);
   if (!rawId || !canonicalUrl || !payload?.title) return null;
   const rawTags = Array.isArray(payload.tags)
     ? payload.tags
@@ -136,11 +136,25 @@ export async function processShopifyWebhook(
     return { deleted: result.count };
   }
   if (topic === "products/create" || topic === "products/update") {
+    const externalId = payload?.admin_graphql_api_id || (payload?.id ? `gid://shopify/Product/${payload.id}` : "");
+    const published = Boolean(payload?.online_store_url || payload?.published_at);
+    if (String(payload?.status || "").toLowerCase() !== "active" || !published) {
+      if (!externalId) return { retired: 0 };
+      const result = await prisma.product.updateMany({
+        where: { botId: connection.botId, externalId },
+        data: { status: "deleted", availableForSale: false, lastSyncedAt: new Date() },
+      });
+      return { retired: result.count };
+    }
     const product = webhookProduct(payload, shop);
     if (!product) throw new Error("Payload prodotto Shopify incompleto");
+    const announcedVariantIds = Array.isArray(payload?.variant_gids) ? payload.variant_gids : [];
+    const completeVariantSnapshot = announcedVariantIds.length > 0
+      && announcedVariantIds.length === (Array.isArray(payload?.variants) ? payload.variants.length : 0);
     return persistExtractedProducts(connection.botId, `https://${shop}`, [product], {
       sourceType: "shopify",
       sourceName: `Shopify: ${shop}`,
+      reconcileVariants: completeVariantSnapshot,
     });
   }
   return { ignored: true };

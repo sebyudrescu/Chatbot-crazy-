@@ -71,7 +71,7 @@ async function main() {
     const blocked = await searchVerifiedProducts(bot.id, "Mostrami la scarpa Running Pro");
     assert.equal(blocked.selections.length, 0);
 
-    const imported = await persistExtractedProducts(bot.id, "https://catalog.example.com", [{
+    const bagCandidate = {
       identityKey: "jsonld:bag-1",
       externalId: "bag-1",
       canonicalUrl: "https://catalog.example.com/products/bag",
@@ -84,12 +84,58 @@ async function main() {
       availableForSale: true,
       variants: [{ identityKey: "jsonld:bag-default", sku: "BAG-1", price: 49, currency: "EUR", available: true, productUrl: "https://catalog.example.com/products/bag", attributes: {} }],
       metadata: { source: "jsonld" },
-    }]);
+    };
+    const imported = await persistExtractedProducts(bot.id, "https://catalog.example.com", [bagCandidate]);
     assert.deepEqual(imported, { created: 1, updated: 0, failed: 0 });
     assert.equal(await prisma.product.count({ where: { botId: bot.id } }), 2);
     assert.equal(await prisma.productSyncJob.count({ where: { botId: bot.id, status: "completed" } }), 1);
 
-    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job"] }));
+    const importedBag = await prisma.product.findUniqueOrThrow({
+      where: { botId_identityKey: { botId: bot.id, identityKey: bagCandidate.identityKey } },
+    });
+    await prisma.productVariant.create({
+      data: {
+        productId: importedBag.id,
+        identityKey: "jsonld:bag-stale",
+        sku: "BAG-OLD",
+        price: 59,
+        currency: "EUR",
+        available: true,
+      },
+    });
+    await prisma.product.create({
+      data: {
+        botId: bot.id,
+        sourceId: importedBag.sourceId,
+        identityKey: "jsonld:obsolete-product",
+        canonicalUrl: "https://catalog.example.com/products/obsolete",
+        title: "Prodotto non piu presente",
+      },
+    });
+    await prisma.product.update({ where: { id: importedBag.id }, data: { status: "deleted", availableForSale: false } });
+
+    await persistExtractedProducts(bot.id, "https://catalog.example.com", [bagCandidate], {
+      sourceType: "jsonld",
+      reconcileVariants: true,
+      authoritativeSnapshot: true,
+    });
+    assert.equal(await prisma.productVariant.count({ where: { productId: importedBag.id } }), 1, "Le varianti assenti dallo snapshot devono essere eliminate");
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: importedBag.id } })).status, "active", "Un prodotto riapparso deve essere riattivato");
+    const obsolete = await prisma.product.findUniqueOrThrow({ where: { botId_identityKey: { botId: bot.id, identityKey: "jsonld:obsolete-product" } } });
+    assert.equal(obsolete.status, "deleted", "I prodotti assenti dallo snapshot autorevole devono essere ritirati");
+    assert.equal(obsolete.availableForSale, false);
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).status, "active", "Lo snapshot non deve toccare altre fonti catalogo");
+
+    await persistExtractedProducts(bot.id, "https://catalog.example.com", [], {
+      sourceType: "jsonld",
+      reconcileVariants: true,
+      authoritativeSnapshot: true,
+    });
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: importedBag.id } })).status, "deleted", "Uno snapshot autorevole vuoto deve ritirare l'intera fonte");
+    const latestJob = await prisma.productSyncJob.findFirstOrThrow({ where: { botId: bot.id, sourceId: importedBag.sourceId }, orderBy: { createdAt: "desc" } });
+    assert.equal(latestJob.status, "completed", "Uno snapshot vuoto valido non deve essere classificato come errore");
+
+    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot"] }));
   } finally {
     await prisma.chatbot.delete({ where: { id: bot.id } }).catch(() => {});
     await prisma.$disconnect();

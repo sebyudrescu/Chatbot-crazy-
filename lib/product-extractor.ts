@@ -15,6 +15,7 @@ export interface ExtractedProductVariant {
   productUrl?: string;
   imageUrl?: string;
   attributes: Record<string, string>;
+  position?: number;
 }
 
 export interface ExtractedProduct {
