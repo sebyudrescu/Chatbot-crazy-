@@ -3,6 +3,14 @@ import "server-only";
 import { prisma } from "./db";
 import type { ExtractedProduct } from "./product-extractor";
 
+async function mapInBatches<T, R>(items: T[], size: number, worker: (item: T) => Promise<R>) {
+  const results: R[] = [];
+  for (let index = 0; index < items.length; index += size) {
+    results.push(...await Promise.all(items.slice(index, index + size).map(worker)));
+  }
+  return results;
+}
+
 export async function persistExtractedProducts(
   botId: string,
   baseUrl: string,
@@ -34,10 +42,7 @@ export async function persistExtractedProducts(
     },
   });
 
-  let created = 0;
-  let updated = 0;
-  let failed = 0;
-  for (const candidate of products) {
+  const outcomes = await mapInBatches(products, 6, async (candidate) => {
     try {
       const existing = await prisma.product.findUnique({
         where: { botId_canonicalUrl: { botId, canonicalUrl: candidate.canonicalUrl } },
@@ -81,10 +86,7 @@ export async function persistExtractedProducts(
           metadata: JSON.stringify(candidate.metadata),
         },
       });
-      existing ? updated++ : created++;
-
-      for (const variant of candidate.variants) {
-        await prisma.productVariant.upsert({
+      await mapInBatches(candidate.variants, 12, (variant) => prisma.productVariant.upsert({
           where: { productId_identityKey: { productId: product.id, identityKey: variant.identityKey } },
           create: {
             productId: product.id,
@@ -116,8 +118,7 @@ export async function persistExtractedProducts(
             imageUrl: variant.imageUrl,
             position: variant.position,
           },
-        });
-      }
+        }));
       if (options.reconcileVariants) {
         await prisma.productVariant.deleteMany({
           where: {
@@ -128,11 +129,15 @@ export async function persistExtractedProducts(
           },
         });
       }
+      return existing ? "updated" as const : "created" as const;
     } catch (error) {
-      failed++;
       console.error(`[Commerce] Failed to import ${candidate.canonicalUrl}:`, error);
+      return "failed" as const;
     }
-  }
+  });
+  const created = outcomes.filter((outcome) => outcome === "created").length;
+  const updated = outcomes.filter((outcome) => outcome === "updated").length;
+  const failed = outcomes.filter((outcome) => outcome === "failed").length;
 
   if (options.authoritativeSnapshot && failed === 0) {
     await prisma.product.updateMany({
