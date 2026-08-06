@@ -776,7 +776,9 @@ try {
       publicChatResponse.ok &&
         publicChat.success === true &&
         publicChat.data?.assistantMessage?.content?.length > 10 &&
-        publicChat.data?.sources?.length > 0,
+        publicChat.data?.sources?.length > 0 &&
+        publicChat.data?.grounding?.action !== "fallback" &&
+        publicChat.data?.grounding?.evidenceCount > 0,
       `Published agent did not answer from its knowledge base: ${publicChat.error || publicChatResponse.status}`,
     );
     const widgetHeaders = {

@@ -49,6 +49,7 @@ import { extractEntityMentions } from './entity-extractor'
 import { eventStore } from './event-store'
 import { recordAIUsage } from './ai-usage'
 import { DEFAULT_CHAT_MODEL, normalizeAIModel } from './ai-models'
+import { addGroundingCaution, evaluateGroundingPolicy, groundingFallbackMessage, type GroundingPolicyDecision } from './grounding-policy'
 
 const openai = createLazyOpenAI()
 
@@ -160,6 +161,7 @@ export interface OrchestratorResult {
     responseType: string
     confidence: number
     processingTimeMs: number
+    grounding: GroundingPolicyDecision
   }
   
   // Learning
@@ -320,7 +322,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   
   console.log(`\n💬 [Orchestrator] PHASE 5: GENERATION`)
   
-  const generationResult = process.env.CI_MOCK_AI === 'true'
+  let generationResult = process.env.CI_MOCK_AI === 'true'
     ? {
         response: retrievalResult?.knowledgeChunks[0]?.text
           ? `Risposta verificata dalla knowledge base: ${retrievalResult.knowledgeChunks[0].text.slice(0, 500)}`
@@ -341,6 +343,29 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
         graphResult,
         validationResult
       })
+
+  const grounding = evaluateGroundingPolicy({
+    requiresGrounding: decision.shouldUseRAG,
+    confidence: generationResult.confidence,
+    threshold: decision.confidenceThreshold,
+    knowledgeChunks: retrievalResult?.knowledgeChunks.length || 0,
+    persistentFacts: retrievalResult?.persistentFacts.length || 0,
+    graphEntities: graphResult?.entities.length || 0,
+    hasVerifiedCommerceContext: Boolean(context.verifiedCommerceContext?.trim()),
+    coherenceScore: validationResult?.coherenceScore,
+  })
+  if (grounding.action === 'fallback') {
+    generationResult = {
+      response: groundingFallbackMessage(context.botConfig.fallbackMessage, context.botConfig.language),
+      sourcesUsed: [],
+      confidence: grounding.confidence,
+      quickReplies: [],
+    }
+  } else if (grounding.action === 'caution') {
+    generationResult.response = addGroundingCaution(generationResult.response, context.botConfig.language)
+  } else if (grounding.reason === 'verified_commerce') {
+    generationResult.confidence = grounding.confidence
+  }
   
   console.log(`   Response generated (${generationResult.response.length} chars)`)
   console.log(`   Sources used: ${generationResult.sourcesUsed.length}`)
@@ -356,7 +381,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   // Extract facts only if this was a meaningful exchange
   if (process.env.CI_MOCK_AI === 'true') {
     console.log(`   Skipped fact extraction (CI mock)`)
-  } else if (decision.shouldUseRAG || intent.intent === 'question') {
+  } else if (grounding.action !== 'fallback' && (decision.shouldUseRAG || intent.intent === 'question')) {
     try {
       extractedFacts = await extractFactsIncremental({
         conversationId: context.conversationId,
@@ -391,6 +416,9 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
     strategy: decision.responseStrategy,
     factsLearned: extractedFacts.length,
     confidence: generationResult.confidence,
+    groundingAction: grounding.action,
+    groundingReason: grounding.reason,
+    groundingEvidenceCount: grounding.evidenceCount,
   })
   
   return {
@@ -402,9 +430,14 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
     sourcesUsed: generationResult.sourcesUsed,
     quickReplies: generationResult.quickReplies,  // NEW: Pass through quick replies
     metadata: {
-      responseType: decision.responseStrategy,
+      responseType: grounding.action === 'fallback'
+        ? 'grounding_fallback'
+        : grounding.action === 'caution'
+          ? 'grounded_cautious'
+          : decision.responseStrategy,
       confidence: generationResult.confidence,
-      processingTimeMs
+      processingTimeMs,
+      grounding,
     },
     extractedFacts
   }
@@ -679,7 +712,7 @@ async function generateResponse(params: {
   const confidence = calculateResponseConfidence({
     retrievalResult,
     validationResult,
-    decision
+    graphEntities: graphResult?.entities.length || 0,
   })
   
   return {
@@ -695,9 +728,9 @@ async function generateResponse(params: {
 function calculateResponseConfidence(params: {
   retrievalResult: RetrievalResult
   validationResult?: ValidationResult
-  decision: OrchestratorDecision
+  graphEntities?: number
 }): number {
-  const { retrievalResult, validationResult, decision } = params
+  const { retrievalResult, validationResult, graphEntities = 0 } = params
   
   let confidence = 0.5
   
@@ -710,6 +743,10 @@ function calculateResponseConfidence(params: {
     const avgKBScore = retrievalResult.knowledgeChunks.reduce((sum, c) => sum + c.score, 0) / 
                        retrievalResult.knowledgeChunks.length
     confidence += avgKBScore * 0.3
+  }
+
+  if (graphEntities > 0) {
+    confidence += Math.min(0.1, graphEntities * 0.025)
   }
   
   // Adjust for coherence

@@ -434,8 +434,9 @@ export async function POST(request: NextRequest) {
     
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything
     const result = await orchestrateResponse(orchestratorContext)
+    const groundingBlocked = result.metadata.grounding.action === 'fallback'
     const effectiveIntent = commerceIntent !== 'none' ? commerceIntent : result.decision.intent.intent
-    const workflowResult = incomingPolicy.action === 'allow'
+    const workflowResult = incomingPolicy.action === 'allow' && !groundingBlocked
       ? await import('@/lib/workflow-engine').then(({ runActiveWorkflows }) => runActiveWorkflows({
         botId,
         conversationId: conversation.id,
@@ -446,7 +447,7 @@ export async function POST(request: NextRequest) {
       }))
       : { executed: [], failed: [], skipped: [], actions: [] }
     if (workflowResult.responseOverride) result.response = workflowResult.responseOverride
-    const actionResult = incomingPolicy.action === 'allow'
+    const actionResult = incomingPolicy.action === 'allow' && !groundingBlocked
       ? await import('@/lib/action-engine').then(({ runTriggeredActions }) => runTriggeredActions({
         botId,
         conversationId: conversation.id,
@@ -458,7 +459,7 @@ export async function POST(request: NextRequest) {
     const outgoingPolicy = enforceOutgoingPolicy(result.response, chatbotSettings)
     const policyDecision = incomingPolicy.action !== 'allow' ? incomingPolicy : outgoingPolicy
     if (policyDecision.action !== 'allow') result.response = policyResponse(policyDecision, chatbotSettings)
-    const resolvedProductCards: ProductCard[] = policyDecision.action === 'allow'
+    const resolvedProductCards: ProductCard[] = policyDecision.action === 'allow' && !groundingBlocked
       ? await hydrateProductCards(botId, productSearch.selections)
       : []
     const productCards = productSearch.query.wantsCards
@@ -480,13 +481,15 @@ export async function POST(request: NextRequest) {
     // STEP 6: EXTRACT UX ENHANCEMENTS FROM ORCHESTRATOR
     // ========================================================================
     
-    const quickReplies = buildContextualQuickReplies({
-      mode: businessMode,
-      userMessage: message,
-      assistantMessage: result.response,
-      productCount: resolvedProductCards.length,
-      commerceIntent,
-    })
+    const quickReplies = groundingBlocked
+      ? [{ id: 'grounding-human', text: 'Vorrei parlare con una persona', category: 'support' as const }]
+      : buildContextualQuickReplies({
+          mode: businessMode,
+          userMessage: message,
+          assistantMessage: result.response,
+          productCount: resolvedProductCards.length,
+          commerceIntent,
+        })
 
     // Never invent navigation targets from words in the answer. Every CTA must
     // come from an enabled owner-configured action with a validated HTTPS URL.
@@ -516,6 +519,10 @@ export async function POST(request: NextRequest) {
       actionsSkipped: actionResult.skipped,
       policyAction: policyDecision.action,
       policyCategory: policyDecision.category,
+      groundingAction: result.metadata.grounding.action,
+      groundingReason: result.metadata.grounding.reason,
+      groundingEvidenceCount: result.metadata.grounding.evidenceCount,
+      groundingThreshold: result.metadata.grounding.threshold,
       activeProductIds: resolvedProductCards.map((card) => card.productId),
       // Validation metadata
       ...(result.validationResult && {
@@ -662,6 +669,7 @@ export async function POST(request: NextRequest) {
           coherenceScore: result.validationResult?.coherenceScore,
           isCoherent: result.validationResult?.isCoherent,
         },
+        grounding: result.metadata.grounding,
         handoffRequested: policyDecision.action === 'handoff',
         
         // Cognitive Memory

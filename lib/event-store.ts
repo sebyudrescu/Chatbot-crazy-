@@ -313,6 +313,9 @@ class EventStoreManager {
       strategy: string
       factsLearned: number
       confidence: number
+      groundingAction?: 'allow' | 'caution' | 'fallback'
+      groundingReason?: string
+      groundingEvidenceCount?: number
     }
   ): Promise<void> {
     return this.log({ botId, conversationId }, {

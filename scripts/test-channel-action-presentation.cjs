@@ -9,6 +9,7 @@ let policyAction = "allow";
 let actionCalls = 0;
 let lastActionMessage = "";
 let orchestratorCalls = 0;
+let groundingAction = "allow";
 const prisma = {
   commerceEvent: { createMany: async ({ data }) => { commerceEvents.push(...data); } },
   message: {
@@ -42,9 +43,9 @@ Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "@/lib/db") return { prisma };
   if (request === "@/lib/decision-orchestrator") return {
     orchestrateResponse: async () => { orchestratorCalls += 1; return ({
-      response: "Certo, puoi prenotare online.",
+      response: groundingAction === "fallback" ? "Non ho abbastanza informazioni verificate." : "Certo, puoi prenotare online.",
       decision: { intent: { intent: "booking", confidence: 0.95 }, topics: ["prenotazione"] },
-      metadata: { confidence: 0.9, responseType: "rag" },
+      metadata: { confidence: 0.9, responseType: groundingAction === "fallback" ? "grounding_fallback" : "rag", grounding: { action: groundingAction, reason: groundingAction === "fallback" ? "no_evidence" : "grounded", evidenceCount: groundingAction === "fallback" ? 0 : 1, confidence: 0.9, threshold: 0.7 } },
       sourcesUsed: [],
     }); },
   };
@@ -115,6 +116,13 @@ const { buildMetaProductPayloads } = require("../lib/meta-payloads.ts");
     automationText: "📎 Immagine",
   });
   assert.equal(lastActionMessage, "📎 Immagine", "Testo AI/OCR non attendibile passato al motore azioni");
+  groundingAction = "fallback";
+  const actionCallsBeforeGrounding = actionCalls;
+  const groundedFallback = await processIncomingChannelMessage({ botId: "bot-1", channel: "whatsapp", externalThreadId: "393331234567", externalMessageId: "wamid-grounding-4", text: "Vorrei prenotare un servizio sconosciuto" });
+  assert.match(groundedFallback.response, /informazioni verificate/i, "Fallback grounding non inviato sul canale");
+  assert.equal(actionCalls, actionCallsBeforeGrounding, "Azione esterna eseguita senza prove sufficienti");
+  assert.equal(groundedFallback.productCards.length, 0, "Card prodotto inviata durante il fallback grounding");
+  groundingAction = "allow";
   const card = { title: "Scarpa Pro", shortDescription: "Leggera", imageUrl: "https://shop.example.com/shoe.jpg", productUrl: "https://shop.example.com/shoe", price: 89.9, currency: "EUR", availability: "in_stock" };
   const whatsappCards = buildMetaProductPayloads("whatsapp", "393331234567", [card]);
   assert.equal(whatsappCards[0].type, "image", "WhatsApp non usa la foto prodotto");
@@ -127,7 +135,7 @@ const { buildMetaProductPayloads } = require("../lib/meta-payloads.ts");
   assert.equal(commerceResult.productCards.length, 1, "Scheda prodotto non restituita dal motore canali");
   assert.equal(commerceEvents.length, 1, "Impression prodotto non attribuita alla conversazione");
   assert.match(createdMessages.at(-1).productCards, /Scarpa Pro/, "Scheda prodotto non salvata nel messaggio");
-  console.log(JSON.stringify({ success: true, checks: 15 }, null, 2));
+  console.log(JSON.stringify({ success: true, checks: 18 }, null, 2));
 })().catch((error) => {
   console.error(error);
   process.exit(1);
