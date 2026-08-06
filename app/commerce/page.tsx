@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useDeferredValue, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { AlertTriangle, Box, CheckCircle2, ChevronLeft, ChevronRight, Copy, ExternalLink, ImageOff, KeyRound, MousePointerClick, PackageSearch, RefreshCw, Sparkles } from 'lucide-react'
@@ -104,9 +104,14 @@ export default function CommercePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
   const [syncing, setSyncing] = useState<string | null>(null)
-  const deferredSearch = useDeferredValue(search.trim())
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setSearchQuery(search.trim()), 300)
+    return () => window.clearTimeout(timeout)
+  }, [search])
 
   useEffect(() => {
     let active = true
@@ -124,14 +129,14 @@ export default function CommercePage() {
     setLoading(true); setError('')
     try {
       const params = new URLSearchParams({ botId, page: String(page), pageSize: '20' })
-      if (deferredSearch) params.set('search', deferredSearch)
+      if (searchQuery) params.set('search', searchQuery)
       const response = await fetch(`/api/commerce?${params.toString()}`)
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.error || 'Catalogo non disponibile')
       setData(result.data)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Catalogo non disponibile') }
     finally { setLoading(false) }
-  }, [botId, deferredSearch, page])
+  }, [botId, page, searchQuery])
 
   useEffect(() => { void loadCatalog() }, [loadCatalog])
 
