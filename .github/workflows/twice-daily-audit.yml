@@ -106,6 +106,11 @@ jobs:
         continue-on-error: true
         run: npm run build
 
+      - name: Public agent bundle guard
+        id: public_agent_bundle
+        continue-on-error: true
+        run: npm run test:public-agent-bundle
+
       - name: Start private test server
         id: server
         continue-on-error: true
@@ -224,6 +229,7 @@ jobs:
             echo "| TypeScript | ${{ steps.typecheck.outcome }} |"
             echo "| ESLint | ${{ steps.lint.outcome }} |"
             echo "| Production build | ${{ steps.build.outcome }} |"
+            echo "| Public agent bundle guard | ${{ steps.public_agent_bundle.outcome }} |"
             echo "| Test server | ${{ steps.server.outcome }} |"
             echo "| API smoke test | ${{ steps.smoke.outcome }} |"
             echo "| Knowledge formats | ${{ steps.knowledge.outcome }} |"
@@ -257,6 +263,7 @@ jobs:
              [ "${{ steps.typecheck.outcome }}" != "success" ] ||
              [ "${{ steps.lint.outcome }}" != "success" ] ||
              [ "${{ steps.build.outcome }}" != "success" ] ||
+             [ "${{ steps.public_agent_bundle.outcome }}" != "success" ] ||
              [ "${{ steps.server.outcome }}" != "success" ] ||
              [ "${{ steps.smoke.outcome }}" != "success" ] ||
              [ "${{ steps.knowledge.outcome }}" != "success" ] ||

@@ -407,9 +407,12 @@ try {
     "Draft agent configuration must not be publicly available",
   );
   const draftPublicPage = await fetch(`${baseUrl}/agent/${botId}`);
+  const draftPublicHtml = await draftPublicPage.text();
   assert(
-    draftPublicPage.status === 404,
-    "Draft agent public page must not be exposed",
+    draftPublicPage.ok &&
+      draftPublicHtml.includes("mode=page") &&
+      !draftPublicHtml.includes(companyName),
+    "Draft agent public shell must stay generic and reveal no agent data",
   );
   const oversizedChat = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
