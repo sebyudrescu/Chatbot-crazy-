@@ -67,7 +67,7 @@ export async function persistExtractedProducts(
         status: "running",
         ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
       },
-      data: options.incrementalJob ? {} : { productsSeen: products.length, progress: 50 },
+      data: options.incrementalJob ? { startedAt: new Date() } : { productsSeen: products.length, progress: 50 },
     });
     if (updatedJob.count !== 1) throw new Error("Lease del job commerce non più valida");
   }
@@ -199,7 +199,7 @@ export async function persistExtractedProducts(
         status: "running",
         ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
       },
-      data: options.incrementalJob ? {} : {
+      data: options.incrementalJob ? { startedAt: new Date() } : {
         progress: 95,
         productsCreated: created,
         productsUpdated: updated,
