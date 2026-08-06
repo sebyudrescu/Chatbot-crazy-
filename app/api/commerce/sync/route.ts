@@ -24,6 +24,14 @@ function schedule(job: { id: string; status: string; nextRetryAt: Date | null })
   }
 }
 
+function publicSyncError(error: unknown) {
+  console.error("[Commerce sync]", error);
+  const message = error instanceof Error ? error.message : "";
+  return /non è collegato|è disattivato|ricollega il negozio|Dominio Shopify non valido/i.test(message)
+    ? message
+    : "Impossibile avviare la sincronizzazione. Riprova tra poco.";
+}
+
 export async function POST(request: NextRequest) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ success: false, error: "Richiesta sync non valida" }, { status: 400 });
@@ -33,7 +41,7 @@ export async function POST(request: NextRequest) {
     schedule(job);
     return NextResponse.json({ success: true, data: serializeCommerceSyncJob(job), reused }, { status: 202 });
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Sincronizzazione fallita" }, { status: 400 });
+    return NextResponse.json({ success: false, error: publicSyncError(error) }, { status: 400 });
   }
 }
 
@@ -44,16 +52,21 @@ export async function GET(request: NextRequest) {
     provider: request.nextUrl.searchParams.get("provider") || undefined,
   });
   if (!parsed.success) return NextResponse.json({ success: false, error: "Richiesta stato sync non valida" }, { status: 400 });
-  await recoverStaleCommerceSyncJobs();
-  let job;
-  if (parsed.data.jobId) {
-    job = await getCommerceSyncJob(parsed.data.jobId);
-  } else if (parsed.data.botId && parsed.data.provider) {
-    job = await getLatestCommerceSyncJob(parsed.data.botId, parsed.data.provider);
-  } else {
-    return NextResponse.json({ success: false, error: "Richiesta stato sync non valida" }, { status: 400 });
+  try {
+    await recoverStaleCommerceSyncJobs();
+    let job;
+    if (parsed.data.jobId) {
+      job = await getCommerceSyncJob(parsed.data.jobId);
+    } else if (parsed.data.botId && parsed.data.provider) {
+      job = await getLatestCommerceSyncJob(parsed.data.botId, parsed.data.provider);
+    } else {
+      return NextResponse.json({ success: false, error: "Richiesta stato sync non valida" }, { status: 400 });
+    }
+    if (!job) return NextResponse.json({ success: true, data: null });
+    schedule(job);
+    return NextResponse.json({ success: true, data: serializeCommerceSyncJob(job) });
+  } catch (error) {
+    console.error("[Commerce sync status]", error);
+    return NextResponse.json({ success: false, error: "Stato sincronizzazione temporaneamente non disponibile" }, { status: 500 });
   }
-  if (!job) return NextResponse.json({ success: true, data: null });
-  schedule(job);
-  return NextResponse.json({ success: true, data: serializeCommerceSyncJob(job) });
 }

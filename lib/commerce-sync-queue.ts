@@ -76,7 +76,7 @@ export async function enqueueCommerceSync(botId: string, provider: CommerceProvi
   const baseUrl = await storeOrigin(provider, connection);
 
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`commerce-sync:${botId}:${provider}`}))`;
+    await tx.$queryRaw`SELECT 1::int AS locked FROM pg_advisory_xact_lock(hashtext(${`commerce-sync:${botId}:${provider}`})::bigint)`;
     let source = await tx.productSource.findFirst({ where: { botId, sourceType: provider, baseUrl } });
     source ??= await tx.productSource.create({
       data: {
