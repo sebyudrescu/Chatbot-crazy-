@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
   const { botId, search, recommendationStatus, page, pageSize } = parsed.data;
   const where = {
     botId,
+    status: "active",
     ...(recommendationStatus ? { recommendationStatus } : {}),
     ...(search ? {
       OR: [
@@ -51,12 +52,15 @@ export async function GET(request: NextRequest) {
       take: pageSize,
     }),
     prisma.product.count({ where }),
-    prisma.product.count({ where: { botId } }),
+    prisma.product.count({ where: { botId, status: "active" } }),
     prisma.product.count({ where: { botId, status: "active", availableForSale: true } }),
-    prisma.product.count({ where: { botId, OR: [{ mainImageUrl: null }, { description: "" }] } }),
+    prisma.product.count({ where: { botId, status: "active", OR: [{ mainImageUrl: null }, { description: "" }] } }),
     prisma.productSource.findMany({
       where: { botId },
-      include: { _count: { select: { products: true } }, syncJobs: { orderBy: { createdAt: "desc" }, take: 1 } },
+      include: {
+        _count: { select: { products: { where: { status: "active" } } } },
+        syncJobs: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
       orderBy: { updatedAt: "desc" },
     }),
     prisma.commerceEvent.groupBy({ where: { botId }, by: ["eventType"], _count: { _all: true } }),
