@@ -163,7 +163,7 @@ async function main() {
       runnerCalls += 1;
       assert.equal(botId, bot.id);
       assert.equal(provider, "shopify");
-      assert.equal(options.jobAttempt, 1);
+      assert.equal(options.jobLeaseVersion, 1);
       await options.onProgress(60, "Catalogo di test");
       return { created: 2, updated: 3, failed: 0 };
     });
@@ -172,9 +172,23 @@ async function main() {
     assert.equal(completedQueueJob.progress, 100);
     assert.equal(completedQueueJob.productsCreated, 2);
     assert.equal(completedQueueJob.productsUpdated, 3);
+    assert.equal(completedQueueJob.attempts, 0, "Una tranche riuscita non deve consumare tentativi di errore");
+
+    const continuationQueued = await enqueueCommerceSync(bot.id, "shopify");
+    const firstSlice = await processCommerceSyncJob(continuationQueued.job.id, async (_botId, _provider, options) => {
+      assert.equal(options.jobLeaseVersion, 1);
+      return { created: 1, updated: 0, failed: 0, continuation: true };
+    });
+    assert.equal(firstSlice.status, "pending", "Un catalogo grande deve restare riprendibile tra due invocazioni");
+    assert.equal(firstSlice.attempts, 0);
+    const secondSlice = await processCommerceSyncJob(continuationQueued.job.id, async (_botId, _provider, options) => {
+      assert.equal(options.jobLeaseVersion, 2, "Ogni ripresa deve avere un nuovo fencing token");
+      return { created: 1, updated: 0, failed: 0 };
+    });
+    assert.equal(secondSlice.status, "completed");
 
     const retryQueued = await enqueueCommerceSync(bot.id, "shopify");
-    assert.notEqual(retryQueued.job.id, firstQueued.job.id, "Un job completato non deve bloccare una nuova sincronizzazione");
+    assert.notEqual(retryQueued.job.id, continuationQueued.job.id, "Un job completato non deve bloccare una nuova sincronizzazione");
     const retried = await processCommerceSyncJob(retryQueued.job.id, async () => { throw new Error("Errore temporaneo test"); });
     assert.equal(retried.status, "pending");
     assert.equal(retried.attempts, 1);
@@ -187,7 +201,7 @@ async function main() {
     const recovered = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: retryQueued.job.id } });
     assert.equal(recovered.status, "pending", "Un worker interrotto deve tornare automaticamente in coda");
 
-    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot", "queue-deduplication", "lease-fencing", "queue-progress", "queue-retry", "stale-worker-recovery"] }));
+    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot", "queue-deduplication", "lease-fencing", "checkpoint-continuation", "queue-progress", "queue-retry", "stale-worker-recovery"] }));
   } finally {
     await prisma.chatbot.delete({ where: { id: bot.id } }).catch(() => {});
     await prisma.$disconnect();

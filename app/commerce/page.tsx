@@ -39,6 +39,7 @@ interface CommerceSyncState {
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
   productsSeen: number
+  pagesProcessed: number
   productsCreated: number
   productsUpdated: number
   productsFailed: number
@@ -241,7 +242,7 @@ export default function CommercePage() {
         {syncJob ? <div className={`mt-5 rounded-xl border p-4 ${syncJob.status === 'failed' ? 'border-red-200 bg-red-50' : syncJob.status === 'completed' ? 'border-emerald-200 bg-emerald-50' : 'border-brand-200 bg-brand-50'}`}>
           <div className="flex items-center justify-between gap-3 text-xs font-semibold"><span>{syncJob.status === 'completed' ? 'Catalogo aggiornato' : syncJob.status === 'failed' ? 'Sincronizzazione non riuscita' : `Sincronizzazione ${syncJob.provider === 'shopify' ? 'Shopify' : 'WooCommerce'} in background`}</span><span>{syncJob.progress}%</span></div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80"><div className={`h-full rounded-full transition-all ${syncJob.status === 'failed' ? 'bg-red-500' : syncJob.status === 'completed' ? 'bg-emerald-500' : 'bg-brand-600'}`} style={{ width: `${syncJob.progress}%` }} /></div>
-          <p className="mt-2 text-[10px] text-gray-600">{syncJob.status === 'pending' && syncJob.attempts > 0 ? `Nuovo tentativo automatico ${syncJob.attempts + 1}/${syncJob.maxAttempts}.` : syncJob.status === 'running' ? `${syncJob.productsSeen || 'Catalogo'} prodotti rilevati. Puoi continuare a usare l’app.` : syncJob.status === 'completed' ? `${syncJob.productsCreated} creati, ${syncJob.productsUpdated} aggiornati, ${syncJob.productsFailed} non importati.` : syncJob.error}</p>
+          <p className="mt-2 text-[10px] text-gray-600">{syncJob.status === 'pending' && syncJob.attempts > 0 ? `Nuovo tentativo automatico ${syncJob.attempts + 1}/${syncJob.maxAttempts}.` : syncJob.status === 'running' ? `${syncJob.productsSeen || 'Catalogo'} prodotti rilevati${syncJob.pagesProcessed ? ` in ${syncJob.pagesProcessed} pagine` : ''}. Puoi chiudere questa pagina: il lavoro continua sul server.` : syncJob.status === 'completed' ? `${syncJob.productsCreated} creati, ${syncJob.productsUpdated} aggiornati, ${syncJob.productsFailed} non importati.` : syncJob.error}</p>
         </div> : null}
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Metric label="Prodotti importati" value={summary?.total || 0} icon={<Box className="h-4 w-4" />} />

@@ -1,13 +1,13 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  drainCommerceSyncJob,
   enqueueCommerceSync,
   getCommerceSyncJob,
   getLatestCommerceSyncJob,
   recoverStaleCommerceSyncJobs,
   serializeCommerceSyncJob,
 } from "@/lib/commerce-sync-queue";
+import { runCommerceSyncWorker } from "@/lib/commerce-sync-worker";
 
 const schema = z.object({ botId: z.string().uuid(), provider: z.enum(["shopify", "woocommerce"]) });
 const querySchema = z.union([
@@ -20,7 +20,7 @@ export const maxDuration = 300;
 
 function schedule(job: { id: string; status: string; nextRetryAt: Date | null }) {
   if (job.status === "pending" && (!job.nextRetryAt || job.nextRetryAt <= new Date())) {
-    after(async () => { await drainCommerceSyncJob(job.id); });
+    after(async () => { await runCommerceSyncWorker(job.id); });
   }
 }
 

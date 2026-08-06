@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import * as cheerio from "cheerio";
 import { prisma } from "./db";
 import { assertSafeRemoteUrl } from "./url-safety";
-import { persistExtractedProducts } from "./commerce-importer";
+import { finalizeAuthoritativeSnapshot, persistExtractedProducts } from "./commerce-importer";
 import { safeHttpsUrl } from "./commerce-types";
 import type { ExtractedProduct } from "./product-extractor";
 import { ensureShopifyAccessToken } from "./shopify-auth";
@@ -24,6 +24,7 @@ const SHOPIFY_VARIANT_FIELDS = `
   selectedOptions { name value }
   image { url }
 `;
+const COMPLETED_SNAPSHOT_CHECKPOINT = "__snapshot_complete__";
 
 async function shopifyGraphql(
   endpoint: string,
@@ -87,9 +88,49 @@ async function completeShopifyVariants(
   return nodes;
 }
 
+async function mapShopifyProducts(
+  endpoint: string,
+  token: string,
+  nodes: any[],
+  currency?: string,
+) {
+  const products: ExtractedProduct[] = [];
+  for (const item of nodes) {
+    const canonicalUrl = safeHttpsUrl(item.onlineStoreUrl);
+    if (!canonicalUrl) continue;
+    const images = (item.media?.nodes || [])
+      .map((node: any) => safeHttpsUrl(node?.preview?.image?.url))
+      .filter((url: string | undefined): url is string => Boolean(url));
+    const variantNodes = await completeShopifyVariants(endpoint, token, item.id, item.variants || {});
+    const variants = variantNodes.map((variant: any, index: number) => ({
+      identityKey: identity("shopify-variant", variant.id),
+      externalId: variant.id,
+      sku: variant.sku || undefined,
+      title: variant.title || undefined,
+      price: Number.isFinite(Number(variant.price)) ? Number(variant.price) : undefined,
+      compareAtPrice: variant.compareAtPrice != null && Number.isFinite(Number(variant.compareAtPrice)) ? Number(variant.compareAtPrice) : undefined,
+      currency: currency || undefined,
+      available: Boolean(variant.availableForSale),
+      stockQuantity: Number.isFinite(Number(variant.inventoryQuantity)) ? Number(variant.inventoryQuantity) : undefined,
+      productUrl: canonicalUrl,
+      imageUrl: safeHttpsUrl(variant.image?.url),
+      attributes: Object.fromEntries((variant.selectedOptions || []).map((option: any) => [String(option.name), String(option.value)])),
+      position: index,
+    }));
+    products.push({
+      identityKey: identity("shopify", item.id), externalId: item.id, canonicalUrl, title: item.title,
+      description: item.description || "", brand: item.vendor || undefined, productType: item.productType || undefined, tags: item.tags || [],
+      categories: item.productType ? [item.productType] : [], mainImageUrl: safeHttpsUrl(item.featuredMedia?.preview?.image?.url) ?? images[0],
+      imageUrls: images, availableForSale: item.status === "ACTIVE" && variants.some((variant) => variant.available), variants,
+      metadata: { source: "shopify", tags: item.tags || [] },
+    });
+  }
+  return products;
+}
+
 interface CommerceSyncOptions {
   jobId?: string;
-  jobAttempt?: number;
+  jobLeaseVersion?: number;
   onProgress?: (progress: number, message: string) => Promise<void>;
 }
 
@@ -119,49 +160,87 @@ async function syncShopify(
       pageInfo { hasNextPage endCursor }
     }
   }`;
+  const resumableJob = options.jobId ? await prisma.productSyncJob.findFirst({
+    where: {
+      id: options.jobId,
+      botId,
+      status: "running",
+      ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
+    },
+  }) : null;
+  if (options.jobId && !resumableJob) throw new Error("Lease del job Shopify non valida");
+
+  if (resumableJob) {
+    if (resumableJob.checkpoint === COMPLETED_SNAPSHOT_CHECKPOINT) {
+      await finalizeAuthoritativeSnapshot(botId, resumableJob.sourceId, resumableJob.snapshotStartedAt || resumableJob.startedAt || new Date());
+      return {
+        created: resumableJob.productsCreated,
+        updated: resumableJob.productsUpdated,
+        failed: resumableJob.productsFailed,
+      };
+    }
+    let cursor = resumableJob.checkpoint;
+    for (let invocationPage = 0; invocationPage < 3; invocationPage += 1) {
+      const data = await shopifyGraphql(endpoint, token, query, { cursor });
+      if (!data.products) throw new Error("Shopify API non ha restituito il catalogo prodotti");
+      const pageProducts = await mapShopifyProducts(endpoint, token, data.products.nodes || [], data.shop?.currencyCode);
+      const imported = await persistExtractedProducts(botId, shop.origin, pageProducts, {
+        sourceType: "shopify",
+        sourceName: `Shopify: ${shop.hostname}`,
+        reconcileVariants: true,
+        jobId: options.jobId,
+        jobLeaseVersion: options.jobLeaseVersion,
+        incrementalJob: true,
+      });
+      if (imported.failed > 0) throw new Error(`${imported.failed} prodotti non importati nella pagina Shopify`);
+
+      const hasNextPage = Boolean(data.products.pageInfo?.hasNextPage);
+      const nextCursor = hasNextPage ? data.products.pageInfo?.endCursor : null;
+      if (hasNextPage && !nextCursor) throw new Error("Paginazione Shopify non valida: cursor mancante");
+      const nextPageNumber = resumableJob.pagesProcessed + invocationPage + 1;
+      const progress = Math.min(92, 8 + Math.round(84 * (1 - Math.exp(-nextPageNumber / 12))));
+      const checkpointed = await prisma.productSyncJob.updateMany({
+        where: {
+          id: resumableJob.id,
+          status: "running",
+          ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
+        },
+        data: {
+          checkpoint: hasNextPage ? nextCursor : COMPLETED_SNAPSHOT_CHECKPOINT,
+          pagesProcessed: { increment: 1 },
+          productsSeen: { increment: pageProducts.length },
+          productsCreated: { increment: imported.created },
+          productsUpdated: { increment: imported.updated },
+          progress,
+          errorMessage: null,
+          startedAt: new Date(),
+        },
+      });
+      if (checkpointed.count !== 1) throw new Error("Lease del job Shopify persa durante il checkpoint");
+      await options.onProgress?.(progress, `Sincronizzati ${nextPageNumber * 100 - (100 - pageProducts.length)} prodotti Shopify`);
+
+      if (!hasNextPage) {
+        await finalizeAuthoritativeSnapshot(botId, resumableJob.sourceId, resumableJob.snapshotStartedAt || resumableJob.createdAt);
+        const totals = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: resumableJob.id } });
+        return { created: totals.productsCreated, updated: totals.productsUpdated, failed: totals.productsFailed };
+      }
+      cursor = nextCursor;
+    }
+    const totals = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: resumableJob.id } });
+    return { created: totals.productsCreated, updated: totals.productsUpdated, failed: totals.productsFailed, continuation: true };
+  }
+
   const products: ExtractedProduct[] = [];
   let cursor: string | null = null;
-  let completedSnapshot = false;
-  for (let page = 0; page < 10; page += 1) {
+  for (let page = 0; ; page += 1) {
     const data = await shopifyGraphql(endpoint, token, query, { cursor });
     if (!data.products) throw new Error("Shopify API non ha restituito il catalogo prodotti");
-    for (const item of data.products.nodes as any[]) {
-      const canonicalUrl = safeHttpsUrl(item.onlineStoreUrl);
-      if (!canonicalUrl) continue;
-      const images = (item.media?.nodes || []).map((node: any) => safeHttpsUrl(node?.preview?.image?.url)).filter(Boolean);
-      const variantNodes = await completeShopifyVariants(endpoint, token, item.id, item.variants || {});
-      const variants = variantNodes.map((variant: any, index: number) => ({
-        identityKey: identity("shopify-variant", variant.id),
-        externalId: variant.id,
-        sku: variant.sku || undefined,
-        title: variant.title || undefined,
-        price: Number.isFinite(Number(variant.price)) ? Number(variant.price) : undefined,
-        compareAtPrice: variant.compareAtPrice != null && Number.isFinite(Number(variant.compareAtPrice)) ? Number(variant.compareAtPrice) : undefined,
-        currency: data.shop?.currencyCode || undefined,
-        available: Boolean(variant.availableForSale),
-        stockQuantity: Number.isFinite(Number(variant.inventoryQuantity)) ? Number(variant.inventoryQuantity) : undefined,
-        productUrl: canonicalUrl,
-        imageUrl: safeHttpsUrl(variant.image?.url),
-        attributes: Object.fromEntries((variant.selectedOptions || []).map((option: any) => [String(option.name), String(option.value)])),
-        position: index,
-      }));
-      products.push({
-        identityKey: identity("shopify", item.id), externalId: item.id, canonicalUrl, title: item.title,
-        description: item.description || "", brand: item.vendor || undefined, productType: item.productType || undefined, tags: item.tags || [],
-        categories: item.productType ? [item.productType] : [], mainImageUrl: safeHttpsUrl(item.featuredMedia?.preview?.image?.url) ?? images[0],
-        imageUrls: images, availableForSale: item.status === "ACTIVE" && variants.some((variant: any) => variant.available), variants,
-        metadata: { source: "shopify", tags: item.tags || [] },
-      });
-    }
+    products.push(...await mapShopifyProducts(endpoint, token, data.products.nodes || [], data.shop?.currencyCode));
     await options.onProgress?.(Math.min(45, 15 + ((page + 1) * 3)), `Letti ${products.length} prodotti da Shopify`);
     if (!data.products.pageInfo.hasNextPage) {
-      completedSnapshot = true;
       break;
     }
     cursor = data.products.pageInfo.endCursor;
-  }
-  if (!completedSnapshot) {
-    throw new Error("Catalogo Shopify oltre 1.000 prodotti: sincronizzazione interrotta per evitare uno snapshot parziale");
   }
   return persistExtractedProducts(botId, shop.origin, products, {
     sourceType: "shopify",
@@ -169,7 +248,7 @@ async function syncShopify(
     reconcileVariants: true,
     authoritativeSnapshot: true,
     jobId: options.jobId,
-    jobAttempt: options.jobAttempt,
+    jobLeaseVersion: options.jobLeaseVersion,
     onProgress: options.onProgress,
   });
 }
@@ -215,7 +294,7 @@ async function syncWooCommerce(botId: string, config: Record<string, string>, op
     sourceName: `WooCommerce: ${store.hostname}`,
     authoritativeSnapshot: true,
     jobId: options.jobId,
-    jobAttempt: options.jobAttempt,
+    jobLeaseVersion: options.jobLeaseVersion,
     onProgress: options.onProgress,
   });
 }

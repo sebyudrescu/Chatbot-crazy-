@@ -9,13 +9,13 @@ import { assertSafeRemoteUrl } from "./url-safety";
 
 export type CommerceProvider = "shopify" | "woocommerce";
 
-type SyncResult = { created: number; updated: number; failed: number };
+type SyncResult = { created: number; updated: number; failed: number; continuation?: boolean };
 type SyncRunner = (
   botId: string,
   provider: CommerceProvider,
   options: {
     jobId: string;
-    jobAttempt: number;
+    jobLeaseVersion: number;
     onProgress: (progress: number, message: string) => Promise<void>;
   },
 ) => Promise<SyncResult>;
@@ -59,6 +59,7 @@ export function serializeCommerceSyncJob(job: ProductSyncJob) {
     productsFailed: job.productsFailed,
     error: job.errorMessage,
     attempts: job.attempts,
+    pagesProcessed: job.pagesProcessed,
     maxAttempts: job.maxAttempts,
     nextRetryAt: job.nextRetryAt,
     startedAt: job.startedAt,
@@ -92,7 +93,14 @@ export async function enqueueCommerceSync(botId: string, provider: CommerceProvi
     });
     if (active) return { job: active, reused: true };
     const job = await tx.productSyncJob.create({
-      data: { botId, sourceId: source.id, status: "pending", progress: 0, attempts: 0, maxAttempts: 3 },
+      data: {
+        botId,
+        sourceId: source.id,
+        status: "pending",
+        progress: 0,
+        attempts: 0,
+        maxAttempts: 3,
+      },
     });
     return { job, reused: false };
   });
@@ -105,11 +113,13 @@ export async function recoverStaleCommerceSyncJobs(now = new Date()) {
     select: { id: true, attempts: true, maxAttempts: true },
   });
   for (const job of stale) {
-    if (job.attempts >= job.maxAttempts) {
+    const failures = job.attempts + 1;
+    if (failures >= job.maxAttempts) {
       await prisma.productSyncJob.updateMany({
         where: { id: job.id, status: "running", attempts: job.attempts, startedAt: { lte: cutoff } },
         data: {
           status: "failed",
+          attempts: failures,
           completedAt: now,
           errorMessage: "Sincronizzazione interrotta dopo il numero massimo di tentativi",
         },
@@ -119,6 +129,7 @@ export async function recoverStaleCommerceSyncJobs(now = new Date()) {
         where: { id: job.id, status: "running", attempts: job.attempts, startedAt: { lte: cutoff } },
         data: {
           status: "pending",
+          attempts: failures,
           nextRetryAt: now,
           errorMessage: "Worker interrotto: ripresa automatica in corso",
         },
@@ -163,16 +174,18 @@ export async function processCommerceSyncJob(
     });
   }
 
-  const attempt = pending.attempts + 1;
+  const leaseVersion = pending.leaseVersion + 1;
+  const snapshotStartedAt = pending.snapshotStartedAt || new Date();
   const claimed = await prisma.productSyncJob.updateMany({
-    where: { id: pending.id, status: "pending", attempts: pending.attempts },
+    where: { id: pending.id, status: "pending", leaseVersion: pending.leaseVersion },
     data: {
       status: "running",
-      attempts: attempt,
+      leaseVersion,
       startedAt: new Date(),
       completedAt: null,
       nextRetryAt: null,
       progress: Math.max(1, pending.progress),
+      snapshotStartedAt,
     },
   });
   if (claimed.count !== 1) return getCommerceSyncJob(jobId);
@@ -182,7 +195,7 @@ export async function processCommerceSyncJob(
   const touchLease = async (progress?: number) => {
     if (progress !== undefined) lastProgress = Math.max(lastProgress, Math.min(99, Math.round(progress)));
     const updated = await prisma.productSyncJob.updateMany({
-      where: { id: jobId, status: "running", attempts: attempt },
+      where: { id: jobId, status: "running", leaseVersion },
       data: { startedAt: new Date(), ...(progress !== undefined ? { progress: lastProgress } : {}) },
     });
     if (updated.count !== 1) {
@@ -197,13 +210,18 @@ export async function processCommerceSyncJob(
   try {
     const result = await runner(pending.botId, pending.source.sourceType, {
       jobId,
-      jobAttempt: attempt,
+      jobLeaseVersion: leaseVersion,
       onProgress: async (progress) => touchLease(progress),
     });
     if (leaseLost) return getCommerceSyncJob(jobId);
     const completed = await prisma.productSyncJob.updateMany({
-      where: { id: jobId, status: "running", attempts: attempt },
-      data: {
+      where: { id: jobId, status: "running", leaseVersion },
+      data: result.continuation ? {
+        status: "pending",
+        nextRetryAt: new Date(),
+        startedAt: null,
+        errorMessage: null,
+      } : {
         status: "completed",
         progress: 100,
         productsCreated: result.created,
@@ -212,20 +230,23 @@ export async function processCommerceSyncJob(
         completedAt: new Date(),
         nextRetryAt: null,
         errorMessage: result.failed ? `${result.failed} prodotti non importati` : null,
+        checkpoint: null,
       },
     });
     if (completed.count !== 1) return getCommerceSyncJob(jobId);
   } catch (error) {
     if (leaseLost) return getCommerceSyncJob(jobId);
     const message = error instanceof Error ? error.message.slice(0, 1000) : "Sincronizzazione fallita";
-    const exhausted = attempt >= pending.maxAttempts;
+    const failures = pending.attempts + 1;
+    const exhausted = failures >= pending.maxAttempts;
     await prisma.productSyncJob.updateMany({
-      where: { id: jobId, status: "running", attempts: attempt },
+      where: { id: jobId, status: "running", leaseVersion },
       data: exhausted
-        ? { status: "failed", completedAt: new Date(), errorMessage: message }
+        ? { status: "failed", attempts: failures, completedAt: new Date(), errorMessage: message }
         : {
             status: "pending",
-            nextRetryAt: new Date(Date.now() + (10_000 * (2 ** (attempt - 1)))),
+            attempts: failures,
+            nextRetryAt: new Date(Date.now() + (10_000 * (2 ** (failures - 1)))),
             errorMessage: message,
           },
     });
@@ -242,12 +263,5 @@ export async function processCommerceSyncJob(
 }
 
 export async function drainCommerceSyncJob(jobId: string) {
-  let job = await processCommerceSyncJob(jobId);
-  while (job?.status === "pending" && job.nextRetryAt && job.attempts < job.maxAttempts) {
-    const delay = Math.max(0, job.nextRetryAt.getTime() - Date.now());
-    if (delay > 30_000) return job;
-    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-    job = await processCommerceSyncJob(jobId);
-  }
-  return job;
+  return processCommerceSyncJob(jobId);
 }

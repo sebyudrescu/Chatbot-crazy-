@@ -27,7 +27,8 @@ export async function persistExtractedProducts(
     reconcileVariants?: boolean;
     authoritativeSnapshot?: boolean;
     jobId?: string;
-    jobAttempt?: number;
+    jobLeaseVersion?: number;
+    incrementalJob?: boolean;
     onProgress?: (progress: number, message: string) => Promise<void>;
   } = {},
 ) {
@@ -46,7 +47,7 @@ export async function persistExtractedProducts(
         botId,
         sourceId: source.id,
         status: "running",
-        ...(options.jobAttempt !== undefined ? { attempts: options.jobAttempt } : {}),
+        ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
       } })
     : await prisma.productSyncJob.create({
         data: {
@@ -64,9 +65,9 @@ export async function persistExtractedProducts(
       where: {
         id: job.id,
         status: "running",
-        ...(options.jobAttempt !== undefined ? { attempts: options.jobAttempt } : {}),
+        ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
       },
-      data: { productsSeen: products.length, progress: 50 },
+      data: options.incrementalJob ? {} : { productsSeen: products.length, progress: 50 },
     });
     if (updatedJob.count !== 1) throw new Error("Lease del job commerce non più valida");
   }
@@ -165,7 +166,7 @@ export async function persistExtractedProducts(
       return "failed" as const;
     }
   }, async (processed, total) => {
-    if (!options.onProgress || total === 0) return;
+    if (!options.onProgress || options.incrementalJob || total === 0) return;
     const progress = 50 + Math.floor((processed / total) * 40);
     if (progress >= lastReportedProgress + 5 || processed === total) {
       lastReportedProgress = progress;
@@ -196,9 +197,9 @@ export async function persistExtractedProducts(
       where: {
         id: job.id,
         status: "running",
-        ...(options.jobAttempt !== undefined ? { attempts: options.jobAttempt } : {}),
+        ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
       },
-      data: {
+      data: options.incrementalJob ? {} : {
         progress: 95,
         productsCreated: created,
         productsUpdated: updated,
@@ -207,7 +208,7 @@ export async function persistExtractedProducts(
       },
     });
     if (fencedUpdate.count !== 1) throw new Error("Lease del job commerce persa durante la riconciliazione");
-    await prisma.productSource.update({
+    if (!options.incrementalJob) await prisma.productSource.update({
       where: { id: source.id },
       data: {
         status: status === "failed" ? "error" : "active",
@@ -242,4 +243,25 @@ export async function persistExtractedProducts(
   }
 
   return { created, updated, failed };
+}
+
+export async function finalizeAuthoritativeSnapshot(
+  botId: string,
+  sourceId: string,
+  snapshotStartedAt: Date,
+) {
+  const retired = await prisma.product.updateMany({
+    where: {
+      botId,
+      sourceId,
+      status: "active",
+      OR: [{ lastSyncedAt: null }, { lastSyncedAt: { lt: snapshotStartedAt } }],
+    },
+    data: { status: "deleted", availableForSale: false, lastSyncedAt: new Date() },
+  });
+  await prisma.productSource.update({
+    where: { id: sourceId },
+    data: { status: "active", lastSyncAt: new Date(), lastError: null },
+  });
+  return retired.count;
 }

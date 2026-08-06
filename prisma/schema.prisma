@@ -601,7 +601,11 @@ model ProductSyncJob {
   productsFailed  Int       @default(0)
   errorMessage    String?
   attempts        Int       @default(0)
+  leaseVersion    Int       @default(0)
   maxAttempts     Int       @default(3)
+  checkpoint      String?
+  snapshotStartedAt DateTime?
+  pagesProcessed  Int       @default(0)
   nextRetryAt     DateTime?
   startedAt       DateTime?
   completedAt     DateTime?

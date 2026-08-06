@@ -5,6 +5,13 @@ const connection = { id: "connection-1", botId: "bot-1", enabled: true };
 let imported;
 let connectionUpdate;
 let retiredProductUpdate;
+let resumable = false;
+let finalizedSnapshot = 0;
+const syncJob = {
+  id: "job-1", botId: "bot-1", sourceId: "source-1", status: "running", leaseVersion: 7,
+  checkpoint: null, snapshotStartedAt: new Date("2026-08-06T00:00:00Z"), startedAt: new Date(), createdAt: new Date(),
+  pagesProcessed: 0, productsSeen: 0, productsCreated: 0, productsUpdated: 0, productsFailed: 0,
+};
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "server-only") return {};
@@ -13,9 +20,21 @@ Module._load = function patchedLoad(request, parent, isMain) {
     update: async (input) => { connectionUpdate = input; return connection; },
   }, product: {
     updateMany: async (input) => { retiredProductUpdate = input; return { count: 1 }; },
+  }, productSyncJob: {
+    findFirst: async () => syncJob,
+    findUniqueOrThrow: async () => syncJob,
+    updateMany: async ({ data }) => {
+      for (const [key, value] of Object.entries(data)) {
+        syncJob[key] = value && typeof value === "object" && "increment" in value ? syncJob[key] + value.increment : value;
+      }
+      return { count: 1 };
+    },
   } } };
   if (request === "./url-safety") return { assertSafeRemoteUrl: async (value) => new URL(value) };
-  if (request === "./commerce-importer") return { persistExtractedProducts: async (...args) => { imported = args; return { created: 1, updated: 0, failed: 0 }; } };
+  if (request === "./commerce-importer") return {
+    persistExtractedProducts: async (...args) => { imported = args; return { created: 1, updated: 0, failed: 0 }; },
+    finalizeAuthoritativeSnapshot: async () => { finalizedSnapshot += 1; return 0; },
+  };
   if (request === "./shopify-auth") return {
     ensureShopifyAccessToken: async () => ({ token: "test-token", config: { shopUrl: "https://shop.example.com" } }),
     SHOPIFY_API_VERSION: "2026-07",
@@ -44,6 +63,22 @@ global.fetch = async (_url, init) => {
       pageInfo: { hasNextPage: false, endCursor: null },
     } } } });
   }
+  if (resumable) {
+    const page = body.variables.cursor ? Number(String(body.variables.cursor).replace("cursor-", "")) + 1 : 1;
+    const hasNextPage = page < 4;
+    return Response.json({ data: {
+      shop: { currencyCode: "EUR" },
+      products: {
+        nodes: [{
+          id: `gid://shopify/Product/${page}`, title: `Prodotto ${page}`, description: "Test", vendor: "LitX", productType: "Test", tags: [], status: "ACTIVE",
+          onlineStoreUrl: `https://shop.example.com/products/prodotto-${page}`,
+          featuredMedia: { preview: { image: { url: `https://cdn.example.com/${page}.jpg` } } }, media: { nodes: [] },
+          variants: { nodes: [{ id: `gid://shopify/ProductVariant/${page}`, title: "Default", price: "10", availableForSale: true, inventoryQuantity: 1, selectedOptions: [], image: null }], pageInfo: { hasNextPage: false, endCursor: null } },
+        }],
+        pageInfo: { hasNextPage, endCursor: hasNextPage ? `cursor-${page}` : null },
+      },
+    } });
+  }
   return Response.json({ data: {
     shop: { currencyCode: "EUR" },
     products: {
@@ -71,6 +106,16 @@ syncCommercePlatform(connection.botId, "shopify").then(async (result) => {
   assert.equal(imported[3].reconcileVariants, true);
   assert.equal(imported[3].authoritativeSnapshot, true);
   assert.equal(connectionUpdate.data.status, "connected");
+  resumable = true;
+  const firstSlice = await syncCommercePlatform(connection.botId, "shopify", { jobId: syncJob.id, jobLeaseVersion: 7 });
+  assert.equal(firstSlice.continuation, true, "La prima invocazione deve fermarsi a un limite sicuro di pagine");
+  assert.equal(syncJob.pagesProcessed, 3);
+  assert.equal(syncJob.checkpoint, "cursor-3");
+  const finalSlice = await syncCommercePlatform(connection.botId, "shopify", { jobId: syncJob.id, jobLeaseVersion: 7 });
+  assert.equal(finalSlice.continuation, undefined);
+  assert.equal(syncJob.pagesProcessed, 4);
+  assert.equal(syncJob.checkpoint, "__snapshot_complete__");
+  assert.equal(finalizedSnapshot, 1, "Lo snapshot deve essere riconciliato solo dopo l'ultima pagina");
   const retired = await processShopifyWebhook(
     { ...connection, externalAccountId: "shop.myshopify.com" },
     "products/update",
@@ -79,7 +124,7 @@ syncCommercePlatform(connection.botId, "shopify").then(async (result) => {
   assert.deepEqual(retired, { retired: 1 });
   assert.equal(retiredProductUpdate.data.status, "deleted");
   assert.equal(retiredProductUpdate.data.availableForSale, false);
-  console.log(JSON.stringify({ success: true, checks: 10 }));
+  console.log(JSON.stringify({ success: true, checks: 16 }));
 }).catch((error) => {
   console.error(error);
   process.exit(1);

@@ -26,5 +26,11 @@ const proxy = readFileSync(resolve(process.cwd(), "proxy.ts"), "utf8");
 assert.match(proxy, /httpSecurityHeaders/);
 assert.match(proxy, /withSecurityHeaders\(NextResponse\.redirect/);
 assert.match(proxy, /'\/agent\/'/);
+assert.match(proxy, /publicPaths[^\n]*'\/api\/internal\/commerce-sync'/);
+assert.doesNotMatch(proxy, /publicPrefixes[^\n]*'\/api\/internal\/commerce-sync'/);
 
-console.log(JSON.stringify({ success: true, checks: 17 }));
+const commerceWorkerRoute = readFileSync(resolve(process.cwd(), "app/api/internal/commerce-sync/route.ts"), "utf8");
+assert.match(commerceWorkerRoute, /constantTimeEqual\(received, expected\)/);
+assert.match(commerceWorkerRoute, /process\.env\.CRON_SECRET/);
+
+console.log(JSON.stringify({ success: true, checks: 21 }));
