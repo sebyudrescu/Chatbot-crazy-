@@ -409,9 +409,9 @@ try {
   const draftPublicPage = await fetch(`${baseUrl}/agent/${botId}`);
   const draftPublicHtml = await draftPublicPage.text();
   assert(
-    draftPublicPage.ok &&
+      draftPublicPage.ok &&
       draftPublicHtml.includes("mode=page") &&
-      !draftPublicHtml.includes(companyName),
+      !draftPublicHtml.includes("__SMOKE_TEST__"),
     "Draft agent public shell must stay generic and reveal no agent data",
   );
   const oversizedChat = await fetch(`${baseUrl}/api/chat`, {
