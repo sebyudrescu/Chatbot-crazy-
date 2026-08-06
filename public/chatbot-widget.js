@@ -37,7 +37,8 @@
     widgetSize: 'medium',
     animation: true,
     shadow: true,
-    gradient: true
+    gradient: true,
+    displayMode: 'floating'
   };
 
   // Merge configurazione utente
@@ -677,6 +678,50 @@
       }
     }
 
+    ${config.displayMode === 'page' ? `
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: ${config.theme === 'dark' ? '#111827' : '#f8fafc'};
+      }
+
+      .chatbot-widget-container {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+
+      .chatbot-window,
+      .chatbot-window.open {
+        position: fixed;
+        inset: 0 !important;
+        display: flex;
+        width: 100%;
+        height: 100dvh;
+        border: 0;
+        border-radius: 0;
+        animation: none;
+        box-shadow: none;
+      }
+
+      .chatbot-close { display: none; }
+      .chatbot-messages { padding: clamp(16px, 4vw, 32px); }
+      .chatbot-input-container { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+
+      @media (min-width: 900px) {
+        .chatbot-header,
+        .chatbot-messages,
+        .chatbot-input-container {
+          padding-left: max(24px, calc((100vw - 820px) / 2));
+          padding-right: max(24px, calc((100vw - 820px) / 2));
+        }
+      }
+    ` : ''}
+
     ${config.customCSS || ''}
   `;
 
@@ -846,7 +891,7 @@
 
     // Auto open if configured
     if (config.autoOpen) {
-      setTimeout(openChat, 1000);
+      setTimeout(openChat, config.displayMode === 'page' ? 0 : 1000);
     }
 
     // Initial message

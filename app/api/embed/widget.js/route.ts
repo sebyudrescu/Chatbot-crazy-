@@ -22,6 +22,7 @@ function isDomainAllowed(origin: string | null, allowed: string | null) {
 
 export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')
+  const pageMode = request.nextUrl.searchParams.get('mode') === 'page'
   if (!botId) return NextResponse.json({ error: 'botId parameter is required' }, { status: 400 })
 
   const chatbot = await prisma.chatbot.findUnique({ where: { id: botId }, include: { embedSettings: true } })
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
   if (!chatbot.embedSettings?.enabled) return NextResponse.json({ error: 'Widget not enabled' }, { status: 403 })
 
   const origin = request.headers.get('origin') || request.headers.get('referer')
-  if (!isDomainAllowed(origin, chatbot.embedSettings.allowedDomains)) {
+  if (!pageMode && !isDomainAllowed(origin, chatbot.embedSettings.allowedDomains)) {
     return NextResponse.json({ error: 'Domain not allowed' }, { status: 403 })
   }
 
@@ -46,8 +47,9 @@ export async function GET(request: NextRequest) {
     theme: settings.theme,
     position: settings.position,
     primaryColor: settings.primaryColor,
-    autoOpen: settings.autoOpen,
-    showLauncher: settings.showLauncher,
+    autoOpen: pageMode || settings.autoOpen,
+    showLauncher: pageMode ? false : settings.showLauncher,
+    displayMode: pageMode ? 'page' : 'floating',
     widgetShape: settings.widgetShape,
     iconType: settings.iconType,
     iconValue: settings.iconValue,

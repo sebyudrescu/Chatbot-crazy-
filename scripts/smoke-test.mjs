@@ -406,6 +406,11 @@ try {
     widgetConfig.status === 403,
     "Draft agent configuration must not be publicly available",
   );
+  const draftPublicPage = await fetch(`${baseUrl}/agent/${botId}`);
+  assert(
+    draftPublicPage.status === 404,
+    "Draft agent public page must not be exposed",
+  );
   const oversizedChat = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -720,6 +725,24 @@ try {
     publishedWidgetScript.ok &&
       (await publishedWidgetScript.text()).includes(`"botId":"${botId}"`),
     "Published agent widget script is unavailable",
+  );
+  const publicAgentPage = await fetch(`${baseUrl}/agent/${botId}`);
+  const publicAgentHtml = await publicAgentPage.text();
+  assert(
+    publicAgentPage.ok && publicAgentHtml.includes("mode=page"),
+    "The standalone customer chat page is not publicly available",
+  );
+  const publicAgentScript = await fetch(
+    `${baseUrl}/api/embed/widget.js?botId=${botId}&mode=page`,
+    { headers: { Referer: `${baseUrl}/agent/${botId}` } },
+  );
+  const publicAgentScriptBody = await publicAgentScript.text();
+  assert(
+    publicAgentScript.ok &&
+      publicAgentScriptBody.includes('"displayMode":"page"') &&
+      publicAgentScriptBody.includes('"autoOpen":true') &&
+      publicAgentScriptBody.includes('"showLauncher":false'),
+    "The standalone page did not receive its secure full-page widget configuration",
   );
   if (process.env.SMOKE_AI_ASSIST === "true") {
     const sessionResponse = await fetch(`${baseUrl}/api/embed/${botId}/session`, {

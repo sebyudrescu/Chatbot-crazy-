@@ -505,6 +505,47 @@ assert.equal(
   "Il polling duplica messaggi già ricevuti",
 );
 
+const pageDom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
+  url: "https://litx.example/agent/00000000-0000-4000-8000-000000000001",
+  runScripts: "outside-only",
+  pretendToBeVisual: true,
+});
+const pageWindow = pageDom.window;
+pageWindow.ChatbotConfig = {
+  botId: "00000000-0000-4000-8000-000000000001",
+  apiUrl: "https://litx.example",
+  title: "Assistente pubblico",
+  subtitle: "Risposte verificate",
+  displayMode: "page",
+  autoOpen: true,
+  showLauncher: false,
+};
+pageWindow.fetch = async () => new Response(JSON.stringify({
+  success: true,
+  data: {
+    sessionId: "00000000-0000-4000-8000-000000000333",
+    token: "signed-public-page-token",
+  },
+}), { status: 200, headers: { "Content-Type": "application/json" } });
+pageWindow.eval(script);
+pageWindow.document.dispatchEvent(new pageWindow.Event("DOMContentLoaded"));
+await new Promise((resolve) => pageWindow.setTimeout(resolve, 20));
+assert.equal(
+  pageWindow.document.querySelectorAll(".chatbot-launcher").length,
+  0,
+  "La pagina pubblica mostra ancora il launcher flottante",
+);
+assert.equal(
+  pageWindow.document.querySelector(".chatbot-window")?.classList.contains("open"),
+  true,
+  "La pagina pubblica non apre la chat a schermo intero",
+);
+assert.match(
+  pageWindow.document.querySelector("style")?.textContent || "",
+  /height:\s*100dvh/,
+  "La modalità pagina non occupa il viewport",
+);
+
 console.log(
   JSON.stringify(
     {
@@ -527,6 +568,7 @@ console.log(
         "keyboard-accessible-controls",
         "page-context",
         "verified-product-cards",
+        "standalone-public-page",
       ],
     },
     null,
@@ -536,3 +578,4 @@ console.log(
 
 dom.window.close();
 restoredDom.window.close();
+pageDom.window.close();

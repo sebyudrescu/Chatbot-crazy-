@@ -25,5 +25,6 @@ assert.equal(production["X-Content-Type-Options"], "nosniff");
 const proxy = readFileSync(resolve(process.cwd(), "proxy.ts"), "utf8");
 assert.match(proxy, /httpSecurityHeaders/);
 assert.match(proxy, /withSecurityHeaders\(NextResponse\.redirect/);
+assert.match(proxy, /'\/agent\/'/);
 
-console.log(JSON.stringify({ success: true, checks: 16 }));
+console.log(JSON.stringify({ success: true, checks: 17 }));
