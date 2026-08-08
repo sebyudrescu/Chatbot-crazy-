@@ -1,7 +1,7 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { retryFailedIngestionJob } from "@/lib/operational-health";
-import { processJobManually } from "@/lib/ingestion-worker";
+import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
 
 const RetrySchema = z.object({ jobId: z.string().uuid() });
 
@@ -9,16 +9,10 @@ export async function POST(request: NextRequest) {
   try {
     const { jobId } = RetrySchema.parse(await request.json());
     const job = await retryFailedIngestionJob(jobId);
-    after(async () => {
-      try {
-        await processJobManually(job.id);
-      } catch (error) {
-        console.error(`[IngestionRetry] Job ${job.id} failed:`, error);
-      }
-    });
+    const workflow = await enqueueIngestionWorkflow(job.id);
     return NextResponse.json({
       success: true,
-      data: { id: job.id, status: job.status },
+      data: { id: job.id, status: job.status, workflowRunId: workflow.runId },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "JOB_NOT_FOUND") {

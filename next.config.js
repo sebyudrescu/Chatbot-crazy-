@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const { withWorkflow } = require('workflow/next')
+
 const nextConfig = {
   // pdf-parse ships PDF.js as native Node-targeted ESM/CJS entry points.
   // Keeping the whole parser external avoids Webpack rewriting pdfjs-dist in
@@ -14,4 +16,4 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+module.exports = withWorkflow(nextConfig)

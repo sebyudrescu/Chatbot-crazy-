@@ -28,9 +28,25 @@ assert.match(proxy, /withSecurityHeaders\(NextResponse\.redirect/);
 assert.match(proxy, /'\/agent\/'/);
 assert.match(proxy, /publicPaths[^\n]*'\/api\/internal\/commerce-sync'/);
 assert.doesNotMatch(proxy, /publicPrefixes[^\n]*'\/api\/internal\/commerce-sync'/);
+assert.match(proxy, /\.well-known\/workflow\//);
 
 const commerceWorkerRoute = readFileSync(resolve(process.cwd(), "app/api/internal/commerce-sync/route.ts"), "utf8");
 assert.match(commerceWorkerRoute, /constantTimeEqual\(received, expected\)/);
 assert.match(commerceWorkerRoute, /process\.env\.CRON_SECRET/);
 
-console.log(JSON.stringify({ success: true, checks: 21 }));
+const durableRoutes = [
+  "app/api/ingestion/crawl/route.ts",
+  "app/api/knowledge-sources/crawl-with-progress/route.ts",
+  "app/api/knowledge-sources/add-url/route.ts",
+  "app/api/ingestion/retry/route.ts",
+];
+for (const route of durableRoutes) {
+  const source = readFileSync(resolve(process.cwd(), route), "utf8");
+  assert.match(source, /enqueueIngestionWorkflow/);
+  assert.doesNotMatch(source, /processJobManually|after\(/);
+}
+
+const retiredWorker = readFileSync(resolve(process.cwd(), "app/api/worker/start/route.ts"), "utf8");
+assert.match(retiredWorker, /status: 410/);
+
+console.log(JSON.stringify({ success: true, checks: 31 }));

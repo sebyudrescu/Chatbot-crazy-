@@ -1,8 +1,8 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { createIngestionJob, JobType } from "@/lib/ingestion-queue";
-import { processJobManually } from "@/lib/ingestion-worker";
+import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
 import { assertSafeRemoteUrl } from "@/lib/url-safety";
 
 export const maxDuration = 300;
@@ -52,19 +52,14 @@ export async function POST(request: NextRequest) {
       { singleUrl: url },
       6,
     );
-    after(async () => {
-      try {
-        await processJobManually(job.id);
-      } catch (error) {
-        console.error(`[AddURL] Background job ${job.id} failed:`, error);
-      }
-    });
+    const workflow = await enqueueIngestionWorkflow(job.id);
 
     return NextResponse.json(
       {
         success: true,
         data: {
           jobId: job.id,
+          workflowRunId: workflow.runId,
           url,
           status: job.status,
           message: "URL validato e aggiunto alla coda di indicizzazione.",

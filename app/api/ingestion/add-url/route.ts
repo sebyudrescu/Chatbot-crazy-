@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createIngestionJob, JobType } from '@/lib/ingestion-queue'
+import { enqueueIngestionWorkflow } from '@/lib/enqueue-ingestion-workflow'
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,11 +38,13 @@ export async function POST(request: NextRequest) {
       { singleUrl: url },
       priority
     )
+    const workflow = await enqueueIngestionWorkflow(job.id)
 
     return NextResponse.json({
       success: true,
       data: {
         jobId: job.id,
+        workflowRunId: workflow.runId,
         url,
         status: job.status,
         message: 'URL added to queue. Processing will start shortly.',

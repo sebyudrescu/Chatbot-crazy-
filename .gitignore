@@ -64,3 +64,4 @@ venv/
 # Temporary files
 tmp_rovodev_*
 /audit-report/
+/.swc

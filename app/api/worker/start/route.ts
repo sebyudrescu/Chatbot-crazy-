@@ -1,42 +1,14 @@
-/**
- * GET /api/worker/start
- * 
- * Start the background worker (in-process)
- * Call this once when server starts
- */
+import { NextResponse } from "next/server";
 
-import { NextRequest, NextResponse } from 'next/server'
-import { startWorker } from '@/lib/ingestion-worker'
+export const dynamic = "force-dynamic";
 
-let workerRunning = false
-
-export const dynamic = 'force-dynamic'
-
-export async function GET(request: NextRequest) {
-  if (workerRunning) {
-    return NextResponse.json({
-      success: true,
-      message: 'Worker already running'
-    })
-  }
-
-  try {
-    // Start worker in background
-    startWorker(3000)
-    workerRunning = true
-    
-    console.log('✅ Background worker started via API')
-
-    return NextResponse.json({
-      success: true,
-      message: 'Background worker started successfully'
-    })
-
-  } catch (error: any) {
-    console.error('Failed to start worker:', error)
-    return NextResponse.json({
+export async function GET() {
+  return NextResponse.json(
+    {
       success: false,
-      error: error.message
-    }, { status: 500 })
-  }
+      error:
+        "Endpoint ritirato: i job di ingestion vengono avviati automaticamente dal workflow durevole.",
+    },
+    { status: 410 },
+  );
 }

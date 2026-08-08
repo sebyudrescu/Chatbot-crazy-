@@ -1,8 +1,8 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { createIngestionJob, JobType } from "@/lib/ingestion-queue";
-import { processJobManually } from "@/lib/ingestion-worker";
+import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
 
 export const maxDuration = 300;
 
@@ -37,18 +37,13 @@ export async function POST(request: NextRequest) {
       },
       5,
     );
-    after(async () => {
-      try {
-        await processJobManually(job.id);
-      } catch (error) {
-        console.error(`[CrawlAPI] Background job ${job.id} failed:`, error);
-      }
-    });
+    const workflow = await enqueueIngestionWorkflow(job.id);
 
     return NextResponse.json(
       {
         success: true,
         jobId: job.id,
+        workflowRunId: workflow.runId,
         status: job.status,
         message: "Crawl avviato. Usa l’ID del job per seguire il progresso.",
       },

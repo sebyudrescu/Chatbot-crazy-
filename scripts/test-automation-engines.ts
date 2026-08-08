@@ -22,6 +22,7 @@ import {
   replaceDatabaseVectors,
   searchDatabaseVectors,
 } from "../lib/database-vector-store";
+import { runIngestionAttempt } from "../lib/ingestion-workflow-step";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -348,6 +349,88 @@ async function testPartialKnowledgeAvailability() {
   }
 }
 
+async function testDurableIngestionRecovery() {
+  const bot = await prisma.chatbot.create({
+    data: { companyName: "Durable ingestion test" },
+  });
+  try {
+    const completed = await prisma.ingestionJob.create({
+      data: {
+        botId: bot.id,
+        jobType: "url",
+        params: JSON.stringify({ singleUrl: "https://example.com/completed" }),
+        status: "completed",
+        completedAt: new Date(),
+      },
+    });
+    const completedState = await runIngestionAttempt(completed.id);
+    assert(
+      completedState.status === "completed" && completedState.retryAt === null,
+      "Durable ingestion did not stop on a completed job",
+    );
+
+    const retryAt = new Date(Date.now() + 60_000);
+    const waiting = await prisma.ingestionJob.create({
+      data: {
+        botId: bot.id,
+        jobType: "url",
+        params: JSON.stringify({ singleUrl: "https://example.com/waiting" }),
+        status: "pending",
+        nextRetryAt: retryAt,
+      },
+    });
+    const waitingState = await runIngestionAttempt(waiting.id);
+    assert(
+      waitingState.status === "pending" &&
+        waitingState.retryAt?.getTime() === retryAt.getTime(),
+      "Durable ingestion ignored the persisted retry deadline",
+    );
+
+    const recentStart = new Date(Date.now() - 60_000);
+    const running = await prisma.ingestionJob.create({
+      data: {
+        botId: bot.id,
+        jobType: "crawl",
+        params: JSON.stringify({ url: "https://example.com" }),
+        status: "running",
+        startedAt: recentStart,
+        attempts: 1,
+        maxAttempts: 5,
+      },
+    });
+    const runningState = await runIngestionAttempt(running.id);
+    assert(
+      runningState.status === "running" &&
+        (runningState.retryAt?.getTime() || 0) > Date.now(),
+      "Durable ingestion attempted to steal a live worker lease",
+    );
+
+    const exhausted = await prisma.ingestionJob.create({
+      data: {
+        botId: bot.id,
+        jobType: "crawl",
+        params: JSON.stringify({ url: "https://example.com" }),
+        status: "running",
+        startedAt: new Date(Date.now() - 21 * 60_000),
+        attempts: 1,
+        maxAttempts: 1,
+      },
+    });
+    const exhaustedState = await runIngestionAttempt(exhausted.id);
+    const exhaustedJob = await prisma.ingestionJob.findUnique({
+      where: { id: exhausted.id },
+    });
+    assert(
+      exhaustedState.status === "failed" &&
+        exhaustedJob?.status === "failed" &&
+        exhaustedJob.completedAt !== null,
+      "Durable ingestion did not fence an exhausted stale worker",
+    );
+  } finally {
+    await prisma.chatbot.delete({ where: { id: bot.id } });
+  }
+}
+
 async function main() {
   const databaseUrl = new URL(process.env.DATABASE_URL || "");
   assert(
@@ -381,6 +464,7 @@ async function main() {
   await testAgentPublicationReadiness();
   await testPersistentRateLimit();
   await testPartialKnowledgeAvailability();
+  await testDurableIngestionRecovery();
 
   const simulation = simulateWorkflow({
     triggerType: "keyword",

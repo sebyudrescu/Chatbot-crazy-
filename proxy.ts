@@ -28,7 +28,7 @@ export async function proxy(request: NextRequest) {
   return withSecurityHeaders(NextResponse.redirect(login), request)
 }
 
-export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'] }
+export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'] }
 
 function withSecurityHeaders(response: NextResponse, request: NextRequest) {
   for (const [key, value] of Object.entries(httpSecurityHeaders())) response.headers.set(key, value)

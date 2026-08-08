@@ -4,6 +4,7 @@ import {
   getKnowledgeSyncPreview,
   scheduleKnowledgeSync,
 } from "@/lib/knowledge-sync";
+import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
 
 const ScheduleSchema = z.object({
   botId: z.string().uuid(),
@@ -33,9 +34,18 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const input = ScheduleSchema.parse(await request.json());
+    const scheduled = await scheduleKnowledgeSync(input);
+    const workflows = await Promise.all(
+      scheduled.jobs
+        .filter((job) => job.status === "pending" || job.status === "running")
+        .map(async (job) => ({
+          jobId: job.id,
+          ...(await enqueueIngestionWorkflow(job.id)),
+        })),
+    );
     return noStore({
       success: true,
-      data: await scheduleKnowledgeSync(input),
+      data: { ...scheduled, workflows },
     });
   } catch (error) {
     return noStore(
