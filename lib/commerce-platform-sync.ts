@@ -9,6 +9,7 @@ import { safeHttpsUrl } from "./commerce-types";
 import type { ExtractedProduct } from "./product-extractor";
 import { ensureShopifyAccessToken } from "./shopify-auth";
 import { decryptConfigSecrets } from "./secret-config";
+import { wooCommerceRequest, wooCommerceRequestWithMeta, type WooCommerceConnectionConfig } from "./woocommerce-auth";
 
 function identity(provider: string, value: string) {
   return `${provider}:${createHash("sha256").update(value).digest("hex")}`;
@@ -253,48 +254,188 @@ async function syncShopify(
   });
 }
 
-async function syncWooCommerce(botId: string, config: Record<string, string>, options: CommerceSyncOptions) {
-  const store = await assertSafeRemoteUrl(config.storeUrl || "");
+function wooPrice(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function wooTotalPages(headers: Headers, page: number, itemCount: number) {
+  const raw = headers.get("x-wp-totalpages") || headers.get("x-wc-totalpages");
+  if (!raw) return itemCount === 100 ? page + 1 : page;
+  const total = Number(raw);
+  if (!Number.isInteger(total) || total < 0 || total > 100_000) {
+    throw new Error("Paginazione WooCommerce non valida");
+  }
+  return total;
+}
+
+async function completeWooCommerceVariations(
+  config: WooCommerceConnectionConfig,
+  productId: string,
+) {
+  const variations: any[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await wooCommerceRequestWithMeta<any[]>(
+      config,
+      `/wp-json/wc/v3/products/${encodeURIComponent(productId)}/variations?status=publish&per_page=100&page=${page}&orderby=id&order=asc`,
+    );
+    if (!Array.isArray(response.data)) throw new Error(`Varianti WooCommerce non valide per il prodotto ${productId}`);
+    variations.push(...response.data);
+    const totalPages = wooTotalPages(response.headers, page, response.data.length);
+    if (page >= totalPages || response.data.length === 0) break;
+    if (page >= 10_000) throw new Error(`Il prodotto WooCommerce ${productId} supera il limite di sicurezza delle varianti`);
+  }
+  return variations;
+}
+
+async function mapWooCommerceProducts(
+  config: WooCommerceConnectionConfig,
+  items: any[],
+  currency: string | undefined,
+) {
   const products: ExtractedProduct[] = [];
-  for (let page = 1; page <= 10; page += 1) {
-    const endpoint = new URL(`/wp-json/wc/store/v1/products?per_page=100&page=${page}`, store.origin);
-    const response = await fetch(endpoint, { redirect: "error", signal: AbortSignal.timeout(25_000) });
-    if (!response.ok) throw new Error(`WooCommerce Store API HTTP ${response.status}`);
-    const items = await response.json() as any[];
-    if (!Array.isArray(items)) throw new Error("Risposta WooCommerce non valida");
-    for (const item of items) {
-      const canonicalUrl = safeHttpsUrl(item.permalink);
-      if (!canonicalUrl || !item.name) continue;
-      const minorUnit = Number.isInteger(item.prices?.currency_minor_unit) ? item.prices.currency_minor_unit : 2;
-      const divisor = 10 ** minorUnit;
-      const rawPrice = Number(item.prices?.price);
-      const rawRegular = Number(item.prices?.regular_price);
-      const images = (item.images || []).map((image: any) => safeHttpsUrl(image?.src)).filter(Boolean);
-      const variant = {
-        identityKey: identity("woocommerce-variant", String(item.id)), externalId: String(item.id), sku: item.sku || undefined,
-        title: item.name, price: Number.isFinite(rawPrice) ? rawPrice / divisor : undefined,
-        compareAtPrice: Number.isFinite(rawRegular) && rawRegular > rawPrice ? rawRegular / divisor : undefined,
-        currency: item.prices?.currency_code || undefined, available: Boolean(item.is_in_stock), productUrl: canonicalUrl,
-        imageUrl: images[0], attributes: {},
+  for (const item of items) {
+    const externalId = item?.id ? String(item.id) : "";
+    const canonicalUrl = safeHttpsUrl(item?.permalink);
+    if (!externalId || !canonicalUrl || !item?.name || item.status !== "publish") continue;
+    const images = (item.images || [])
+      .map((image: any) => safeHttpsUrl(image?.src))
+      .filter((url: string | undefined): url is string => Boolean(url));
+    const rawVariants = item.type === "variable"
+      ? await completeWooCommerceVariations(config, externalId)
+      : [item];
+    const variants = rawVariants.map((variant: any, index: number) => {
+      const variantId = String(variant.id || externalId);
+      const price = wooPrice(variant.price);
+      const regularPrice = wooPrice(variant.regular_price);
+      const available = variant.purchasable !== false
+        && variant.status !== "private"
+        && String(variant.stock_status || "instock") !== "outofstock";
+      const attributes = Object.fromEntries((variant.attributes || [])
+        .filter((attribute: any) => attribute?.name && attribute?.option)
+        .map((attribute: any) => [String(attribute.name), String(attribute.option)]));
+      const optionTitle = Object.values(attributes).join(" / ");
+      return {
+        identityKey: identity("woocommerce-variant", variantId),
+        externalId: variantId,
+        sku: variant.sku || undefined,
+        title: optionTitle || variant.name || item.name,
+        price,
+        compareAtPrice: regularPrice !== undefined && price !== undefined && regularPrice > price ? regularPrice : undefined,
+        currency,
+        available,
+        stockQuantity: Number.isFinite(Number(variant.stock_quantity)) ? Number(variant.stock_quantity) : undefined,
+        productUrl: safeHttpsUrl(variant.permalink) || canonicalUrl,
+        imageUrl: safeHttpsUrl(variant.image?.src) || images[0],
+        attributes,
+        position: index,
       };
-      products.push({
-        identityKey: identity("woocommerce", String(item.id)), externalId: String(item.id), canonicalUrl, title: item.name,
-        description: plainText(item.short_description || item.description), brand: item.brands?.[0]?.name || undefined,
-        productType: item.type || undefined, categories: (item.categories || []).map((category: any) => category.name).filter(Boolean), tags: (item.tags || []).map((tag: any) => tag.name).filter(Boolean),
-        mainImageUrl: images[0], imageUrls: images, availableForSale: Boolean(item.is_purchasable && item.is_in_stock),
-        variants: [variant], metadata: { source: "woocommerce", averageRating: item.average_rating },
-      });
+    });
+    products.push({
+      identityKey: identity("woocommerce", externalId),
+      externalId,
+      canonicalUrl,
+      title: item.name,
+      description: plainText(item.short_description || item.description),
+      brand: item.brands?.[0]?.name || undefined,
+      productType: item.type || undefined,
+      categories: (item.categories || []).map((category: any) => category.name).filter(Boolean),
+      tags: (item.tags || []).map((tag: any) => tag.name).filter(Boolean),
+      mainImageUrl: images[0],
+      imageUrls: images,
+      availableForSale: variants.some((variant) => variant.available),
+      variants,
+      metadata: { source: "woocommerce", averageRating: item.average_rating, status: item.status },
+    });
+  }
+  return products;
+}
+
+async function syncWooCommerce(botId: string, config: WooCommerceConnectionConfig, options: CommerceSyncOptions) {
+  const store = await assertSafeRemoteUrl(String(config.storeUrl || ""));
+  const currencyData = await wooCommerceRequest(config, "/wp-json/wc/v3/data/currencies/current") as any;
+  const currency = /^[A-Z]{3}$/.test(String(currencyData?.code || "")) ? String(currencyData.code) : undefined;
+  const resumableJob = options.jobId ? await prisma.productSyncJob.findFirst({
+    where: {
+      id: options.jobId,
+      botId,
+      status: "running",
+      ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
+    },
+  }) : null;
+  if (options.jobId && !resumableJob) throw new Error("Lease del job WooCommerce non valida");
+
+  if (resumableJob) {
+    if (resumableJob.checkpoint === COMPLETED_SNAPSHOT_CHECKPOINT) {
+      await finalizeAuthoritativeSnapshot(botId, resumableJob.sourceId, resumableJob.snapshotStartedAt || resumableJob.startedAt || new Date());
+      return { created: resumableJob.productsCreated, updated: resumableJob.productsUpdated, failed: resumableJob.productsFailed };
     }
-    const totalPages = Number(response.headers.get("x-wp-totalpages") || page);
+    let page = resumableJob.checkpoint?.startsWith("woo:")
+      ? Number(resumableJob.checkpoint.slice(4))
+      : 1;
+    if (!Number.isInteger(page) || page < 1) throw new Error("Checkpoint WooCommerce non valido");
+    let seenThisInvocation = 0;
+    for (let invocationPage = 0; invocationPage < 3; invocationPage += 1) {
+      const response = await wooCommerceRequestWithMeta<any[]>(config, `/wp-json/wc/v3/products?status=publish&per_page=100&page=${page}&orderby=id&order=asc`);
+      if (!Array.isArray(response.data)) throw new Error("Risposta prodotti WooCommerce non valida");
+      const pageProducts = await mapWooCommerceProducts(config, response.data, currency);
+      seenThisInvocation += pageProducts.length;
+      const imported = await persistExtractedProducts(botId, store.origin, pageProducts, {
+        sourceType: "woocommerce",
+        sourceName: `WooCommerce: ${store.hostname}`,
+        reconcileVariants: true,
+        jobId: options.jobId,
+        jobLeaseVersion: options.jobLeaseVersion,
+        incrementalJob: true,
+      });
+      if (imported.failed > 0) throw new Error(`${imported.failed} prodotti non importati nella pagina WooCommerce`);
+      const totalPages = wooTotalPages(response.headers, page, response.data.length);
+      const hasNextPage = page < totalPages && response.data.length > 0;
+      const progress = Math.min(92, totalPages > 0 ? 8 + Math.round(84 * Math.min(1, page / totalPages)) : 92);
+      const checkpointed = await prisma.productSyncJob.updateMany({
+        where: {
+          id: resumableJob.id,
+          status: "running",
+          ...(options.jobLeaseVersion !== undefined ? { leaseVersion: options.jobLeaseVersion } : {}),
+        },
+        data: {
+          checkpoint: hasNextPage ? `woo:${page + 1}` : COMPLETED_SNAPSHOT_CHECKPOINT,
+          pagesProcessed: { increment: 1 },
+          productsSeen: { increment: pageProducts.length },
+          productsCreated: { increment: imported.created },
+          productsUpdated: { increment: imported.updated },
+          progress,
+          errorMessage: null,
+          startedAt: new Date(),
+        },
+      });
+      if (checkpointed.count !== 1) throw new Error("Lease del job WooCommerce persa durante il checkpoint");
+      await options.onProgress?.(progress, `Sincronizzati ${resumableJob.productsSeen + seenThisInvocation} prodotti WooCommerce`);
+      if (!hasNextPage) {
+        await finalizeAuthoritativeSnapshot(botId, resumableJob.sourceId, resumableJob.snapshotStartedAt || resumableJob.createdAt);
+        const totals = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: resumableJob.id } });
+        return { created: totals.productsCreated, updated: totals.productsUpdated, failed: totals.productsFailed };
+      }
+      page += 1;
+    }
+    const totals = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: resumableJob.id } });
+    return { created: totals.productsCreated, updated: totals.productsUpdated, failed: totals.productsFailed, continuation: true };
+  }
+
+  const products: ExtractedProduct[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await wooCommerceRequestWithMeta<any[]>(config, `/wp-json/wc/v3/products?status=publish&per_page=100&page=${page}&orderby=id&order=asc`);
+    if (!Array.isArray(response.data)) throw new Error("Risposta prodotti WooCommerce non valida");
+    products.push(...await mapWooCommerceProducts(config, response.data, currency));
+    const totalPages = wooTotalPages(response.headers, page, response.data.length);
     await options.onProgress?.(Math.min(45, 15 + (page * 3)), `Letti ${products.length} prodotti da WooCommerce`);
-    if (page >= totalPages || items.length === 0) break;
+    if (page >= totalPages || response.data.length === 0) break;
   }
   return persistExtractedProducts(botId, store.origin, products, {
     sourceType: "woocommerce",
     sourceName: `WooCommerce: ${store.hostname}`,
+    reconcileVariants: true,
     authoritativeSnapshot: true,
-    jobId: options.jobId,
-    jobLeaseVersion: options.jobLeaseVersion,
     onProgress: options.onProgress,
   });
 }
@@ -309,8 +450,9 @@ export async function syncCommercePlatform(
   try {
     const result = provider === "shopify"
       ? await syncShopify(connection, options)
-      : await syncWooCommerce(botId, decryptConfigSecrets(JSON.parse(connection.config)) as Record<string, string>, options);
-    await prisma.integrationConnection.update({ where: { id: connection.id }, data: { status: "connected", lastTestedAt: new Date(), lastError: null } });
+      : await syncWooCommerce(botId, decryptConfigSecrets(JSON.parse(connection.config)) as WooCommerceConnectionConfig, options);
+    const continuation = "continuation" in result && result.continuation === true;
+    await prisma.integrationConnection.update({ where: { id: connection.id }, data: { status: continuation ? "syncing" : "connected", lastTestedAt: new Date(), lastError: null } });
     return result;
   } catch (error) {
     await prisma.integrationConnection.update({ where: { id: connection.id }, data: { status: "error", lastTestedAt: new Date(), lastError: error instanceof Error ? error.message.slice(0, 1000) : "Sync fallita" } });

@@ -540,6 +540,8 @@ model Product {
   campaignEnd          DateTime?
   publishedAt          DateTime?
   lastSyncedAt         DateTime?
+  missingSyncCount     Int       @default(0)
+  lastMissingSnapshotAt DateTime?
   contentHash          String?
   metadata             String    @default("{}")
   createdAt            DateTime  @default(now())
@@ -555,6 +557,7 @@ model Product {
   @@index([botId, status, availableForSale])
   @@index([botId, recommendationStatus])
   @@index([sourceId])
+  @@index([sourceId, missingSyncCount])
   @@index([externalId])
   @@index([brand])
   @@map("products")

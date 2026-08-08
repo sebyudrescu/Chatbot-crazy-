@@ -27,7 +27,8 @@ dopo l'autorizzazione.
 4. Il cliente accede a Shopify e autorizza LitX.
 
 LitX conserva access token e refresh token cifrati. I token offline a scadenza vengono ruotati prima
-delle chiamate in background. Dopo il collegamento viene eseguito il primo sync del catalogo.
+delle chiamate in background. Dopo il collegamento il primo sync del catalogo viene accodato e
+prosegue a tranche con checkpoint anche se il browser viene chiuso.
 
 ## Conversioni verificate
 

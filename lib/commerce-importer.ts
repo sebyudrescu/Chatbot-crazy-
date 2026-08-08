@@ -97,6 +97,8 @@ export async function persistExtractedProducts(
           imageUrls: JSON.stringify(candidate.imageUrls),
           availableForSale: candidate.availableForSale,
           lastSyncedAt: new Date(),
+          missingSyncCount: 0,
+          lastMissingSnapshotAt: null,
           metadata: JSON.stringify(candidate.metadata),
         },
         update: {
@@ -114,6 +116,8 @@ export async function persistExtractedProducts(
           availableForSale: candidate.availableForSale,
           status: "active",
           lastSyncedAt: new Date(),
+          missingSyncCount: 0,
+          lastMissingSnapshotAt: null,
           metadata: JSON.stringify(candidate.metadata),
         },
       });
@@ -250,13 +254,18 @@ export async function finalizeAuthoritativeSnapshot(
   sourceId: string,
   snapshotStartedAt: Date,
 ) {
-  const retired = await prisma.product.updateMany({
+  await prisma.product.updateMany({
     where: {
       botId,
       sourceId,
       status: "active",
       OR: [{ lastSyncedAt: null }, { lastSyncedAt: { lt: snapshotStartedAt } }],
+      AND: [{ OR: [{ lastMissingSnapshotAt: null }, { lastMissingSnapshotAt: { lt: snapshotStartedAt } }] }],
     },
+    data: { missingSyncCount: { increment: 1 }, lastMissingSnapshotAt: snapshotStartedAt },
+  });
+  const retired = await prisma.product.updateMany({
+    where: { botId, sourceId, status: "active", missingSyncCount: { gte: 2 } },
     data: { status: "deleted", availableForSale: false, lastSyncedAt: new Date() },
   });
   await prisma.productSource.update({

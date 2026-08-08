@@ -15,7 +15,8 @@ export interface WooCommerceConnectionConfig extends Record<string, unknown> {
 }
 
 export function wooCommerceEnvironment(env: NodeJS.ProcessEnv = process.env) {
-  const candidate = env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "";
+  const host = env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL || "";
+  const candidate = (env.NEXT_PUBLIC_APP_URL || (host ? `https://${host}` : "")).replace(/\/$/, "");
   let appUrl = "";
   try {
     const parsed = new URL(candidate);
@@ -40,23 +41,43 @@ export async function wooCommerceRequest(
   path: string,
   init: RequestInit = {},
 ) {
+  return (await wooCommerceRequestWithMeta(config, path, init)).data;
+}
+
+export async function wooCommerceRequestWithMeta<T = any>(
+  config: WooCommerceConnectionConfig,
+  path: string,
+  init: RequestInit = {},
+): Promise<{ data: T; headers: Headers }> {
   const store = await assertSafeRemoteUrl(String(config.storeUrl || ""));
   if (!config.consumerKey || !config.consumerSecret) throw new Error("Credenziali WooCommerce mancanti: ricollega il negozio");
   const endpoint = new URL(path, store.origin);
-  const response = await fetch(endpoint, {
-    ...init,
-    redirect: "error",
-    signal: AbortSignal.timeout(20_000),
-    headers: {
-      Accept: "application/json",
-      Authorization: `Basic ${Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString("base64")}`,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
-  const payload = await response.json().catch(() => null) as any;
-  if (!response.ok) throw new Error(payload?.message || `WooCommerce API HTTP ${response.status}`);
-  return payload;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(endpoint, {
+      ...init,
+      redirect: "error",
+      signal: AbortSignal.timeout(25_000),
+      headers: {
+        Accept: "application/json",
+        Authorization: `Basic ${Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString("base64")}`,
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+    const payload = await response.json().catch(() => null) as any;
+    const retryable = response.status === 429 || response.status >= 500;
+    if (retryable && attempt < 2) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1_000, 5_000)
+        : 500 * (2 ** attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+    if (!response.ok) throw new Error(payload?.message || `WooCommerce API HTTP ${response.status}`);
+    return { data: payload as T, headers: response.headers };
+  }
+  throw new Error("WooCommerce API non disponibile dopo i tentativi previsti");
 }
 
 const WOO_TOPICS = ["product.created", "product.updated", "product.deleted", "order.created", "order.updated"] as const;

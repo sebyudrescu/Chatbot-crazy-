@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encryptConfigSecrets } from "@/lib/secret-config";
 import {
@@ -9,7 +9,8 @@ import {
 } from "@/lib/shopify-auth";
 import { normalizeShopDomain, verifyShopifyOAuthHmac, verifyShopifyOAuthState } from "@/lib/shopify-signatures";
 import { registerShopifyWebhooks } from "@/lib/shopify-webhooks";
-import { syncCommercePlatform } from "@/lib/commerce-platform-sync";
+import { enqueueCommerceSync } from "@/lib/commerce-sync-queue";
+import { runCommerceSyncWorker } from "@/lib/commerce-sync-worker";
 
 function integrationsRedirect(request: NextRequest, status: string, detail?: string) {
   const url = new URL("/integrations", request.nextUrl.origin);
@@ -64,9 +65,20 @@ export async function GET(request: NextRequest) {
         lastError: null,
       },
     });
-    await registerShopifyWebhooks(connection);
-    await syncCommercePlatform(decoded.botId, "shopify");
-    return integrationsRedirect(request, "connected");
+    after(async () => {
+      try {
+        await registerShopifyWebhooks(connection);
+        const { job } = await enqueueCommerceSync(decoded.botId, "shopify");
+        await runCommerceSyncWorker(job.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Inizializzazione Shopify non riuscita";
+        await prisma.integrationConnection.updateMany({
+          where: { botId: decoded.botId, provider: "shopify" },
+          data: { status: "error", lastError: message.slice(0, 1000) },
+        });
+      }
+    });
+    return integrationsRedirect(request, "connecting");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Collegamento Shopify non riuscito";
     await prisma.integrationConnection.updateMany({

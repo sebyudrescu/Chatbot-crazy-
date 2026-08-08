@@ -1,61 +1,8 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
-import * as cheerio from "cheerio";
 import type { IntegrationConnection } from "@prisma/client";
 import { prisma } from "./db";
-import { persistExtractedProducts } from "./commerce-importer";
-import { safeHttpsUrl } from "./commerce-types";
-import type { ExtractedProduct } from "./product-extractor";
-
-function identity(provider: string, value: string) {
-  return `${provider}:${createHash("sha256").update(value).digest("hex")}`;
-}
-
-function plainText(value: unknown) {
-  if (typeof value !== "string") return "";
-  return cheerio.load(value).text().replace(/\s+/g, " ").trim();
-}
-
-function productFromWebhook(payload: any): ExtractedProduct | null {
-  const externalId = payload?.id ? String(payload.id) : "";
-  const canonicalUrl = safeHttpsUrl(payload?.permalink);
-  if (!externalId || !canonicalUrl || !payload?.name) return null;
-  const images = (payload.images || []).map((image: any) => safeHttpsUrl(image?.src)).filter(Boolean) as string[];
-  const price = Number(payload.price);
-  const regularPrice = Number(payload.regular_price);
-  const stock = Number.isFinite(Number(payload.stock_quantity)) ? Number(payload.stock_quantity) : undefined;
-  const available = payload.purchasable !== false && ["instock", "onbackorder"].includes(String(payload.stock_status || "instock"));
-  return {
-    identityKey: identity("woocommerce", externalId),
-    externalId,
-    canonicalUrl,
-    title: payload.name,
-    description: plainText(payload.short_description || payload.description),
-    brand: payload.brands?.[0]?.name || undefined,
-    productType: payload.type || undefined,
-    categories: (payload.categories || []).map((category: any) => category.name).filter(Boolean),
-    tags: (payload.tags || []).map((tag: any) => tag.name).filter(Boolean),
-    mainImageUrl: images[0],
-    imageUrls: images,
-    availableForSale: available,
-    variants: [{
-      identityKey: identity("woocommerce-variant", externalId),
-      externalId,
-      sku: payload.sku || undefined,
-      title: payload.name,
-      price: Number.isFinite(price) ? price : undefined,
-      compareAtPrice: Number.isFinite(regularPrice) && regularPrice > price ? regularPrice : undefined,
-      currency: payload.currency || undefined,
-      available,
-      stockQuantity: stock,
-      productUrl: canonicalUrl,
-      imageUrl: images[0],
-      attributes: {},
-    }],
-    metadata: { source: "woocommerce-webhook" },
-  };
-}
+import { enqueueCommerceSync } from "./commerce-sync-queue";
 
 function orderMeta(payload: any, key: string) {
   const item = (payload?.meta_data || []).find((meta: any) => meta?.key === key);
@@ -112,9 +59,9 @@ export async function processWooCommerceWebhook(
     return { deleted: result.count };
   }
   if (topic === "product.created" || topic === "product.updated") {
-    const product = productFromWebhook(payload);
-    if (!product) throw new Error("Payload prodotto WooCommerce incompleto");
-    return persistExtractedProducts(connection.botId, connection.externalAccountId || "", [product], { sourceType: "woocommerce", sourceName: `WooCommerce: ${new URL(connection.externalAccountId || product.canonicalUrl).hostname}` });
+    if (!payload?.id) throw new Error("Payload prodotto WooCommerce incompleto");
+    const { job, reused } = await enqueueCommerceSync(connection.botId, "woocommerce");
+    return { queued: true, jobId: job.id, reused };
   }
   if (topic === "order.created" || topic === "order.updated") return processOrder(connection, topic, payload);
   return { ignored: true };

@@ -154,6 +154,7 @@ jobs:
           npm run test:product-extractor
           npm run test:commerce-security
           npm run test:shopify-sync
+          npm run test:woocommerce-sync
           npm run test:commerce-db
 
       - name: Embeddable widget interaction tests

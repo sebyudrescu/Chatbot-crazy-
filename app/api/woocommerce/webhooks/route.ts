@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { parseWooCommerceConfig } from "@/lib/woocommerce-auth";
 import { verifyWooCommerceWebhookHmac } from "@/lib/woocommerce-signatures";
 import { processWooCommerceWebhook } from "@/lib/woocommerce-webhooks";
+import { runCommerceSyncWorker } from "@/lib/commerce-sync-worker";
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -33,6 +34,9 @@ export async function POST(request: NextRequest) {
     const payload = JSON.parse(rawBody);
     const result = await processWooCommerceWebhook(connection, topic, payload);
     await prisma.commerceWebhookDelivery.update({ where: { externalId }, data: { status: "processed", processedAt: new Date() } });
+    if ("jobId" in result && typeof result.jobId === "string") {
+      after(() => runCommerceSyncWorker(result.jobId));
+    }
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Webhook WooCommerce non elaborato";

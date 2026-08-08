@@ -16,6 +16,12 @@ di essere salvate e non vengono restituite all'interfaccia. LitX registra automa
 - prodotto creato, aggiornato o eliminato;
 - ordine creato o aggiornato.
 
+Il primo catalogo viene importato in background tramite la REST API autenticata `wc/v3`. La
+sincronizzazione percorre tutte le pagine di prodotti e tutte le pagine delle varianti, conserva un
+checkpoint dopo ogni tranche riuscita e continua anche se il browser viene chiuso. Un prodotto
+assente viene ritirato automaticamente solo dopo due snapshot completi consecutivi; i webhook di
+eliminazione restano invece immediati.
+
 Gli ordini vengono trasformati in eventi checkout/conversione senza memorizzare nome, email,
 indirizzo o altri dati personali del compratore. `externalEventId` impedisce di contare due volte la
 stessa consegna.

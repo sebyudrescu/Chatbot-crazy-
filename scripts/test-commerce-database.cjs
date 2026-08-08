@@ -12,7 +12,7 @@ require("ts-node/register/transpile-only");
 const { prisma } = require("../lib/db.ts");
 const { searchVerifiedProducts } = require("../lib/product-search.ts");
 const { hydrateProductCards } = require("../lib/commerce-catalog.ts");
-const { persistExtractedProducts } = require("../lib/commerce-importer.ts");
+const { finalizeAuthoritativeSnapshot, persistExtractedProducts } = require("../lib/commerce-importer.ts");
 const {
   enqueueCommerceSync,
   processCommerceSyncJob,
@@ -140,6 +140,30 @@ async function main() {
     const latestJob = await prisma.productSyncJob.findFirstOrThrow({ where: { botId: bot.id, sourceId: importedBag.sourceId }, orderBy: { createdAt: "desc" } });
     assert.equal(latestJob.status, "completed", "Uno snapshot vuoto valido non deve essere classificato come errore");
 
+    const wooSource = await prisma.productSource.create({
+      data: { botId: bot.id, sourceType: "woocommerce", name: "Woo test", baseUrl: "https://woo.example.com" },
+    });
+    const possiblyMissing = await prisma.product.create({
+      data: {
+        botId: bot.id,
+        sourceId: wooSource.id,
+        identityKey: "woocommerce:missing-twice",
+        canonicalUrl: "https://woo.example.com/product/missing-twice",
+        title: "Possibile assenza temporanea",
+        lastSyncedAt: new Date("2026-08-01T00:00:00Z"),
+      },
+    });
+    await finalizeAuthoritativeSnapshot(bot.id, wooSource.id, new Date("2026-08-02T00:00:00Z"));
+    const firstMiss = await prisma.product.findUniqueOrThrow({ where: { id: possiblyMissing.id } });
+    assert.equal(firstMiss.status, "active", "Una singola assenza non deve ritirare un prodotto durante paginazione concorrente");
+    assert.equal(firstMiss.missingSyncCount, 1);
+    await finalizeAuthoritativeSnapshot(bot.id, wooSource.id, new Date("2026-08-02T00:00:00Z"));
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: possiblyMissing.id } })).missingSyncCount, 1, "Il retry dello stesso snapshot deve essere idempotente");
+    await finalizeAuthoritativeSnapshot(bot.id, wooSource.id, new Date("2026-08-03T00:00:00Z"));
+    const confirmedMissing = await prisma.product.findUniqueOrThrow({ where: { id: possiblyMissing.id } });
+    assert.equal(confirmedMissing.status, "deleted", "Due snapshot completi devono confermare il ritiro del prodotto");
+    assert.equal(confirmedMissing.availableForSale, false);
+
     await prisma.integrationConnection.create({
       data: {
         botId: bot.id,
@@ -201,7 +225,7 @@ async function main() {
     const recovered = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: retryQueued.job.id } });
     assert.equal(recovered.status, "pending", "Un worker interrotto deve tornare automaticamente in coda");
 
-    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot", "queue-deduplication", "lease-fencing", "checkpoint-continuation", "queue-progress", "queue-retry", "stale-worker-recovery"] }));
+    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot", "two-snapshot-retirement", "queue-deduplication", "lease-fencing", "checkpoint-continuation", "queue-progress", "queue-retry", "stale-worker-recovery"] }));
   } finally {
     await prisma.chatbot.delete({ where: { id: bot.id } }).catch(() => {});
     await prisma.$disconnect();

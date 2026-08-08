@@ -3,7 +3,8 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { saveWooCommerceConnection, registerWooCommerceWebhooks } from "@/lib/woocommerce-auth";
 import { verifyWooCommerceOAuthState, wooSigningSecret } from "@/lib/woocommerce-signatures";
-import { syncCommercePlatform } from "@/lib/commerce-platform-sync";
+import { enqueueCommerceSync } from "@/lib/commerce-sync-queue";
+import { runCommerceSyncWorker } from "@/lib/commerce-sync-worker";
 import { prisma } from "@/lib/db";
 
 const schema = z.object({
@@ -29,7 +30,8 @@ export async function POST(request: NextRequest) {
   after(async () => {
     try {
       await registerWooCommerceWebhooks(connection);
-      await syncCommercePlatform(state.botId, "woocommerce");
+      const { job } = await enqueueCommerceSync(state.botId, "woocommerce");
+      await runCommerceSyncWorker(job.id);
     } catch (error) {
       await prisma.integrationConnection.update({ where: { id: connection.id }, data: { status: "error", lastError: error instanceof Error ? error.message.slice(0, 1000) : "Setup WooCommerce non riuscito" } });
     }
