@@ -32,7 +32,10 @@ export interface ShopifyConnectionConfig extends Record<string, unknown> {
 export function shopifyEnvironment(env: NodeJS.ProcessEnv = process.env) {
   const clientId = env.SHOPIFY_CLIENT_ID?.trim() || "";
   const clientSecret = env.SHOPIFY_CLIENT_SECRET?.trim() || "";
-  const appUrl = env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "";
+  const vercelHost = env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL || "";
+  const appUrl = (env.NEXT_PUBLIC_APP_URL || (vercelHost ? `https://${vercelHost}` : ""))
+    .trim()
+    .replace(/\/$/, "");
   let publicAppUrl = "";
   try {
     const parsed = new URL(appUrl);
