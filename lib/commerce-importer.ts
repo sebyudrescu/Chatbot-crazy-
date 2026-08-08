@@ -75,13 +75,40 @@ export async function persistExtractedProducts(
   let lastReportedProgress = 50;
   const outcomes = await mapInBatches(products, 6, async (candidate) => {
     try {
-      const existing = await prisma.product.findUnique({
+      const existingByIdentity = await prisma.product.findUnique({
+        where: { botId_identityKey: { botId, identityKey: candidate.identityKey } },
+        select: { id: true },
+      });
+      const existing = existingByIdentity || await prisma.product.findUnique({
         where: { botId_canonicalUrl: { botId, canonicalUrl: candidate.canonicalUrl } },
         select: { id: true },
       });
-      const product = await prisma.product.upsert({
-        where: { botId_canonicalUrl: { botId, canonicalUrl: candidate.canonicalUrl } },
-        create: {
+      const product = existing
+        ? await prisma.product.update({
+          where: { id: existing.id },
+          data: {
+            sourceId: source.id,
+            identityKey: candidate.identityKey,
+            externalId: candidate.externalId,
+            canonicalUrl: candidate.canonicalUrl,
+            title: candidate.title,
+            description: candidate.description,
+            brand: candidate.brand,
+            productType: candidate.productType,
+            categories: JSON.stringify(candidate.categories),
+            tags: JSON.stringify(candidate.tags || []),
+            mainImageUrl: candidate.mainImageUrl,
+            imageUrls: JSON.stringify(candidate.imageUrls),
+            availableForSale: candidate.availableForSale,
+            status: "active",
+            lastSyncedAt: new Date(),
+            missingSyncCount: 0,
+            lastMissingSnapshotAt: null,
+            metadata: JSON.stringify(candidate.metadata),
+          },
+        })
+        : await prisma.product.create({
+          data: {
           botId,
           sourceId: source.id,
           identityKey: candidate.identityKey,
@@ -96,25 +123,6 @@ export async function persistExtractedProducts(
           mainImageUrl: candidate.mainImageUrl,
           imageUrls: JSON.stringify(candidate.imageUrls),
           availableForSale: candidate.availableForSale,
-          lastSyncedAt: new Date(),
-          missingSyncCount: 0,
-          lastMissingSnapshotAt: null,
-          metadata: JSON.stringify(candidate.metadata),
-        },
-        update: {
-          sourceId: source.id,
-          identityKey: candidate.identityKey,
-          externalId: candidate.externalId,
-          title: candidate.title,
-          description: candidate.description,
-          brand: candidate.brand,
-          productType: candidate.productType,
-          categories: JSON.stringify(candidate.categories),
-          tags: JSON.stringify(candidate.tags || []),
-          mainImageUrl: candidate.mainImageUrl,
-          imageUrls: JSON.stringify(candidate.imageUrls),
-          availableForSale: candidate.availableForSale,
-          status: "active",
           lastSyncedAt: new Date(),
           missingSyncCount: 0,
           lastMissingSnapshotAt: null,

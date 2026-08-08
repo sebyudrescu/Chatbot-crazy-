@@ -98,6 +98,17 @@ async function main() {
     const importedBag = await prisma.product.findUniqueOrThrow({
       where: { botId_identityKey: { botId: bot.id, identityKey: bagCandidate.identityKey } },
     });
+    const movedBagUrl = "https://catalog.example.com/products/bag-new-domain";
+    const movedBag = { ...bagCandidate, canonicalUrl: movedBagUrl, variants: bagCandidate.variants.map((variant) => ({ ...variant, productUrl: movedBagUrl })) };
+    assert.deepEqual(
+      await persistExtractedProducts(bot.id, "https://catalog.example.com", [movedBag]),
+      { created: 0, updated: 1, failed: 0 },
+      "Un prodotto con identità stabile e URL cambiato deve essere aggiornato, non duplicato",
+    );
+    assert.equal(await prisma.product.count({ where: { botId: bot.id, identityKey: bagCandidate.identityKey } }), 1);
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: importedBag.id } })).canonicalUrl, movedBagUrl);
+    bagCandidate.canonicalUrl = movedBagUrl;
+    bagCandidate.variants[0].productUrl = movedBagUrl;
     await prisma.productVariant.create({
       data: {
         productId: importedBag.id,
@@ -225,7 +236,7 @@ async function main() {
     const recovered = await prisma.productSyncJob.findUniqueOrThrow({ where: { id: retryQueued.job.id } });
     assert.equal(recovered.status, "pending", "Un worker interrotto deve tornare automaticamente in coda");
 
-    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot", "two-snapshot-retirement", "queue-deduplication", "lease-fencing", "checkpoint-continuation", "queue-progress", "queue-retry", "stale-worker-recovery"] }));
+    console.log(JSON.stringify({ success: true, checks: ["migration", "catalog-write", "price-filter", "blocked-product", "server-hydration", "add-to-cart", "sync-job", "stable-identity-url-migration", "variant-reconciliation", "product-retirement", "product-reactivation", "source-isolation", "empty-snapshot", "two-snapshot-retirement", "queue-deduplication", "lease-fencing", "checkpoint-continuation", "queue-progress", "queue-retry", "stale-worker-recovery"] }));
   } finally {
     await prisma.chatbot.delete({ where: { id: bot.id } }).catch(() => {});
     await prisma.$disconnect();
