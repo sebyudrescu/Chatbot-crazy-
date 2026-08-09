@@ -9,14 +9,15 @@ for (const toolName of [
   'search_products',
   'get_product',
   'check_inventory',
+  'present_products',
   'search_knowledge_base',
   'get_order_status',
 ]) {
   assert.match(toolsSource, new RegExp(`name:\\s*["']${toolName}["']`), `Tool mancante: ${toolName}`)
 }
 
-assert.equal((toolsSource.match(/strict:\s*true/g) || []).length, 5)
-assert.equal((toolsSource.match(/additionalProperties:\s*false/g) || []).length, 5)
+assert.equal((toolsSource.match(/strict:\s*true/g) || []).length, 6)
+assert.equal((toolsSource.match(/additionalProperties:\s*false/g) || []).length, 6)
 assert.match(orchestratorSource, /openai\.responses\.create/)
 assert.match(orchestratorSource, /tools:\s*AGENT_TOOLS/)
 assert.match(orchestratorSource, /tool_choice:\s*["']auto["']/)
@@ -27,4 +28,4 @@ assert.match(orchestratorSource, /MAX_TOOL_CALLS\s*=\s*[2-9]/)
 assert.match(orchestratorSource, /conversationHistory\.slice\(-12\)/)
 assert.match(orchestratorSource, /isAgentToolName\(call\.name\)/)
 
-console.log(JSON.stringify({ success: true, tools: 5, multiToolLoop: true }))
+console.log(JSON.stringify({ success: true, tools: 6, multiToolLoop: true }))

@@ -12,6 +12,7 @@ export type AgentToolName =
   | "search_products"
   | "get_product"
   | "check_inventory"
+  | "present_products"
   | "search_knowledge_base"
   | "get_order_status";
 
@@ -19,6 +20,7 @@ export const AGENT_TOOL_NAMES = new Set<AgentToolName>([
   "search_products",
   "get_product",
   "check_inventory",
+  "present_products",
   "search_knowledge_base",
   "get_order_status",
 ]);
@@ -127,6 +129,26 @@ export const AGENT_TOOLS = [
   },
   {
     type: "function",
+    name: "present_products",
+    description: "Mostra nel carosello solo i prodotti che hai scelto di consigliare. Chiamalo dopo la ricerca soltanto se il cliente ha chiesto di vedere prodotti; non chiamarlo per una semplice domanda su taglie, stock o dettagli.",
+    strict: true,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["product_ids"],
+      properties: {
+        product_ids: {
+          type: "array",
+          minItems: 1,
+          maxItems: 5,
+          items: { type: "string" },
+          description: "ID interni esatti, nell'ordine in cui devono comparire nel carosello.",
+        },
+      },
+    },
+  },
+  {
+    type: "function",
     name: "search_knowledge_base",
     description: "Cerca informazioni aziendali verificate: identità, servizi, politiche, spedizioni, resi, FAQ e contenuti del sito autorizzato.",
     strict: true,
@@ -168,6 +190,9 @@ const SearchProductsArgs = z.object({
 });
 const ProductArgs = z.object({ product_id: z.string().uuid() });
 const InventoryArgs = ProductArgs.extend({ variant_id: z.string().uuid().nullable() });
+const PresentProductsArgs = z.object({
+  product_ids: z.array(z.string().uuid()).min(1).max(5),
+});
 const KnowledgeArgs = z.object({ query: z.string().trim().min(1).max(1000) });
 const OrderArgs = z.object({
   order_number: z.string().trim().max(80).nullable(),
@@ -234,7 +259,7 @@ export async function executeAgentTool(
         products: cards.map(publicCard),
         verified: true,
       },
-      artifacts: { ...emptyArtifacts(), productCards: cards },
+      artifacts: emptyArtifacts(),
     };
   }
 
@@ -243,7 +268,7 @@ export async function executeAgentTool(
     const cards = await hydrateProductCards(context.botId, [{ productId: args.product_id, reason: "" }]);
     return {
       output: cards[0] ? { found: true, product: publicCard(cards[0]), verified: true } : { found: false, verified: true },
-      artifacts: { ...emptyArtifacts(), productCards: cards },
+      artifacts: emptyArtifacts(),
     };
   }
 
@@ -275,6 +300,22 @@ export async function executeAgentTool(
         verified: true,
       },
       artifacts: emptyArtifacts(),
+    };
+  }
+
+  if (name === "present_products") {
+    const args = PresentProductsArgs.parse(rawArguments);
+    const cards = await hydrateProductCards(
+      context.botId,
+      args.product_ids.map((productId) => ({ productId, reason: "" })),
+    );
+    return {
+      output: {
+        presented: cards.length,
+        product_ids: cards.map((card) => card.productId),
+        verified: true,
+      },
+      artifacts: { ...emptyArtifacts(), productCards: cards },
     };
   }
 
