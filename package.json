@@ -44,6 +44,7 @@
         "test:http-security": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-http-security.ts",
         "test:public-agent-bundle": "node scripts/test-public-agent-bundle.mjs",
         "test:recovery-safety": "node scripts/test-database-recovery-safety.mjs",
+        "test:durable-ingestion-production": "node scripts/test-durable-ingestion-production.mjs",
         "db:backup": "node scripts/database-recovery.mjs backup",
         "db:restore-drill": "node scripts/database-recovery.mjs drill",
         "postinstall": "prisma generate",
