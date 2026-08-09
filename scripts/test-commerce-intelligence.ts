@@ -3,6 +3,7 @@ import {
   categoryConflicts,
   categoryMatches,
   classifyCommerceIntent,
+  isGenericStyleAdviceRequest,
   matchesCommerceConstraints,
   parseCommerceQuery,
 } from "../lib/commerce-query";
@@ -78,6 +79,8 @@ const cardFollowUp = parseCommerceQuery("Dammi le card del prodotto");
 assert.equal(cardFollowUp.wantsCards, true);
 assert.equal(cardFollowUp.maxCards, 5);
 assert.equal(classifyCommerceIntent("Cosa mi consigli per un ragazzo che vuole vestirsi elegante?"), "fit_advice");
+assert.equal(isGenericStyleAdviceRequest("Cosa mi consigli per un ragazzo che vuole vestirsi elegante?"), true);
+assert.equal(classifyCommerceIntent("Avete pantaloni da uomo eleganti?"), "product_discovery");
 assert.equal(isVerifiedCatalogIntent("product_discovery"), true);
 assert.match(styleAdviceClarification(), /outfit per lavoro, cerimonia, serata o tutti i giorni/i);
 assert.equal(classifyCommerceIntent("Se non mi va bene, entro quanti giorni posso restituire il Pantalone Lord Nero?"), "returns_policy");

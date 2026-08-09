@@ -45,6 +45,7 @@ const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi
 const DISCOVERY_ACTION = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|dammi|cosa avete|quali avete|avete|vendete|cerco|cercando|vorrei|voglio|volevo|desidero|mi serve|consigliami|consiglia|raccomand|alternative?|foto|immagin[ei]|link|card|schede?|comprare|acquistare)\b/i;
 const DETAIL_ACTION = /\b(prezzo|cost[oa]|materiale|composizione|descrizione|dettagli[oi]|caratteristiche|scheda prodotto|disponibil)\b/i;
 const VARIANT_ACTION = /\b(tagli[ae]|misur[ae]|variant[ei]|numero|color[ei])\b/i;
+const GENERIC_STYLE_ADVICE = /\b(look|outfit|vestirmi|vestire|elegante|casual|cerimonia|matrimonio|serata)\b/i;
 
 const CATEGORY_PATTERNS: Array<[ProductCategory, RegExp]> = [
   ["shorts", /\b(pantaloncin[oi]|shorts?|bermuda)\b/i],
@@ -126,12 +127,17 @@ export function classifyCommerceIntent(message: string, commerceMode = true): Co
   if (/\b(dove|traccia|tracking|stato)\b.*\b(ordine|pacco|spedizione)\b|\b(ordine|pacco)\b.*\b(dove|traccia|tracking|stato)\b/i.test(value)) return "order_tracking";
   if (/\b(res[oi]|restitu\w*|rimbors\w*|cambio merce|diritto di recesso)\b/i.test(value)) return "returns_policy";
   if (/\b(spedizion\w*|consegn\w*|arriv\w*|corriere|tempi di consegna)\b/i.test(value)) return "shipping_policy";
-  if (/\b(garantis\w*|stara bene|vestira|vestibilita|che taglia devo|taglia consigli\w*|altezza|peso|look|outfit|vestirmi|vestire|elegante|casual|cerimonia|matrimonio|serata)\b/i.test(value)) return "fit_advice";
   if (/\b(confronta|paragona|differenz[ae]|meglio tra|quale dei due)\b/i.test(value)) return "product_comparison";
   if (VARIANT_ACTION.test(value) && PRODUCT_WORD.test(value)) return "variant_availability";
   if (DISCOVERY_ACTION.test(value) && PRODUCT_WORD.test(value)) return "product_discovery";
   if (DETAIL_ACTION.test(value) && PRODUCT_WORD.test(value)) return "product_detail";
+  if (/\b(garantis\w*|stara bene|vestira|vestibilita|che taglia devo|taglia consigli\w*|altezza|peso)\b/i.test(value) || GENERIC_STYLE_ADVICE.test(value)) return "fit_advice";
   return "none";
+}
+
+export function isGenericStyleAdviceRequest(message: string) {
+  const normalized = normalizeCommerceText(message);
+  return GENERIC_STYLE_ADVICE.test(normalized) && categoriesIn(normalized).length === 0;
 }
 
 function categoriesIn(value: string) {

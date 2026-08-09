@@ -12,7 +12,7 @@ import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
-import { classifyCommerceIntent } from "@/lib/commerce-query";
+import { classifyCommerceIntent, isGenericStyleAdviceRequest } from "@/lib/commerce-query";
 import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, styleAdviceClarification } from "@/lib/conversation-guidance";
 
 const CHANNEL_RATE_LIMIT = 30;
@@ -138,7 +138,7 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   ].filter(Boolean).join(" "));
   const commerceIntent = classifyCommerceIntent(query, businessMode === "commerce");
   const productSearch = await searchVerifiedProducts(input.botId, query, undefined, { intent: commerceIntent });
-  const needsStyleClarification = commerceIntent === "fit_advice" && !productSearch.query.category && productSearch.selections.length === 0;
+  const needsStyleClarification = commerceIntent === "fit_advice" && isGenericStyleAdviceRequest(query);
   const requiresCatalog = isVerifiedCatalogIntent(commerceIntent);
   if ((needsStyleClarification || requiresCatalog) && productSearch.selections.length === 0) {
     const response = needsStyleClarification ? styleAdviceClarification() : catalogUnavailableResponse(productSearch.catalogSize);

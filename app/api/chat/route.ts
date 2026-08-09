@@ -36,7 +36,7 @@ import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { buildVerifiedProductResponse } from '@/lib/verified-product-response'
-import { classifyCommerceIntent, parseCommerceQuery } from '@/lib/commerce-query'
+import { classifyCommerceIntent, isGenericStyleAdviceRequest, parseCommerceQuery } from '@/lib/commerce-query'
 import { tryVerifiedOrderLookup } from '@/lib/order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import {
@@ -357,8 +357,8 @@ export async function POST(request: NextRequest) {
     const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
 
     const needsStyleClarification = commerceIntent === 'fit_advice'
-      && !productSearch.query.category
-      && productSearch.selections.length === 0
+      && activeProductIds.length === 0
+      && isGenericStyleAdviceRequest(message)
     const requiresCatalog = isVerifiedCatalogIntent(commerceIntent)
     if (incomingPolicy.action === 'allow' && (needsStyleClarification || (requiresCatalog && productSearch.selections.length === 0))) {
       const response = needsStyleClarification
