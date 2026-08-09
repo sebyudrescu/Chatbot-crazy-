@@ -9,6 +9,7 @@ import { tokenizeForRetrieval } from "@/lib/bm25";
 import { evaluationJudgeSchema } from "@/lib/evaluation-judge-contract";
 import { deterministicPassForBenchmark, inferEvaluationBenchmarkType, judgedPassForBenchmark } from "@/lib/evaluation-benchmark-policy";
 import { formatBusinessContextForPrompt, getCachedBusinessContext } from "@/lib/business-context";
+import { partitionEvaluationContextRelevance } from "@/lib/evaluation-context-relevance";
 
 const InputSchema = z.object({
   botId: z.string().uuid(),
@@ -47,18 +48,21 @@ export async function POST(request: NextRequest) {
     const benchmarkType = inferEvaluationBenchmarkType(input.expectedKeywords, input.forbiddenKeywords);
     const candidates = await retrieveBenchmarkCandidates({ botId: input.botId, query: input.question, topK: 20 });
     const businessContext = formatBusinessContextForPrompt(await getCachedBusinessContext(input.botId)).trim();
+    const includesAuthoritativeBusinessContext = Boolean(businessContext);
     const contexts = [
       ...(businessContext ? [businessContext] : []),
       ...candidates.map((candidate) => candidate.text),
     ];
-    const candidateIds = [
-      ...(businessContext ? [`business-context:${input.botId}`] : []),
-      ...candidates.map((candidate) => candidate.id),
-    ];
+    const candidateIds = candidates.map((candidate) => candidate.id);
     const deterministic = evaluateResponse(input.response, input.confidence, { ...input, contexts: contexts.slice(0, 5) });
     const fallbackRelevantIndexes = deterministicRelevantIndexes(input.question, input.expectedKeywords, contexts);
+    const fallbackRelevance = partitionEvaluationContextRelevance({
+      relevantContextIndexes: fallbackRelevantIndexes,
+      includesAuthoritativeBusinessContext,
+      retrievalCandidateCount: candidateIds.length,
+    });
     const fallbackRetrieval = {
-      ...retrievalBenchmark(candidateIds, fallbackRelevantIndexes),
+      ...retrievalBenchmark(candidateIds, fallbackRelevance.retrievalRelevantIndexes),
       topRetrievalScore: candidates[0]?.finalScore ?? null,
     };
     const deterministicPassed = deterministicPassForBenchmark(benchmarkType, deterministic);
@@ -68,7 +72,15 @@ export async function POST(request: NextRequest) {
       failureReason: deterministicPassed
         ? null
         : deterministic.failureReason || "Metriche RAG deterministiche sotto il gate di produzione",
-      dimensions: { ...deterministic.dimensions, benchmarkType, retrieval: fallbackRetrieval },
+      dimensions: {
+        ...deterministic.dimensions,
+        benchmarkType,
+        retrieval: fallbackRetrieval,
+        contextEvidence: {
+          authoritativeBusinessContextIncluded: includesAuthoritativeBusinessContext,
+          authoritativeBusinessContextRelevant: fallbackRelevance.authoritativeBusinessContextRelevant,
+        },
+      },
       evaluator: "deterministic",
     };
 
@@ -129,7 +141,13 @@ export async function POST(request: NextRequest) {
               candidateResponse: input.response,
               expectedKeywords: input.expectedKeywords,
               forbiddenKeywords: input.forbiddenKeywords,
-              contexts: contexts.map((text, index) => ({ index, text: text.slice(0, 1_200) })),
+              contexts: contexts.map((text, index) => ({
+                index,
+                kind: includesAuthoritativeBusinessContext && index === 0
+                  ? "authoritative_business_context"
+                  : "retrieved_document",
+                text: text.slice(0, 1_200),
+              })),
             }),
           },
         ],
@@ -143,8 +161,13 @@ export async function POST(request: NextRequest) {
         durationMs: Date.now() - startedAt,
       });
       const judged = evaluationJudgeSchema.parse(JSON.parse(completion.choices[0]?.message?.content || "{}"));
+      const judgedRelevance = partitionEvaluationContextRelevance({
+        relevantContextIndexes: judged.relevantContextIndexes,
+        includesAuthoritativeBusinessContext,
+        retrievalCandidateCount: candidateIds.length,
+      });
       const retrieval = {
-        ...retrievalBenchmark(candidateIds, judged.relevantContextIndexes),
+        ...retrievalBenchmark(candidateIds, judgedRelevance.retrievalRelevantIndexes),
         topRetrievalScore: candidates[0]?.finalScore ?? null,
       };
       const passed = judgedPassForBenchmark(benchmarkType, deterministic.passed, judged);
@@ -155,7 +178,15 @@ export async function POST(request: NextRequest) {
           passed,
           failureReason: reasons.join(" · ") || null,
           score: judged.score,
-          dimensions: { ...judged, benchmarkType, retrieval },
+          dimensions: {
+            ...judged,
+            benchmarkType,
+            retrieval,
+            contextEvidence: {
+              authoritativeBusinessContextIncluded: includesAuthoritativeBusinessContext,
+              authoritativeBusinessContextRelevant: judgedRelevance.authoritativeBusinessContextRelevant,
+            },
+          },
           evaluator: model,
         },
       });

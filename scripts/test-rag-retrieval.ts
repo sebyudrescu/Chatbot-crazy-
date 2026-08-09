@@ -5,6 +5,7 @@ import { rerankWithCrossEncoder } from '../lib/cross-encoder-reranker'
 import { searchAuthorizedWeb } from '../lib/live-web-search'
 import { benchmarkHtmlExtraction } from '../lib/html-extraction-benchmark'
 import { averageRetrievalMetrics, calculateAnswerQualityMetrics, calculateRetrievalMetrics, calibrateRagThresholds } from '../lib/retrieval-metrics'
+import { partitionEvaluationContextRelevance } from '../lib/evaluation-context-relevance'
 
 const corpus = [
   { id: 'generic', text: 'Pantaloni pantaloni pantaloni e abbigliamento estivo per tutta la famiglia.' },
@@ -31,12 +32,22 @@ async function main() {
 const perfect = calculateRetrievalMetrics({ retrievedIds: ['lord', 'generic'], relevantIds: ['lord'] }, 2)
 assert.equal(perfect.precisionAtK, 0.5)
 assert.equal(perfect.recallAtK, 1)
+assert.equal(perfect.hitAtK, 1)
 assert.equal(perfect.reciprocalRank, 1)
 assert.equal(perfect.ndcgAtK, 1)
 
 const delayed = calculateRetrievalMetrics({ retrievedIds: ['generic', 'lord'], relevantIds: ['lord'] }, 2)
 assert.equal(delayed.reciprocalRank, 0.5)
 assert.ok(delayed.ndcgAtK > 0.6 && delayed.ndcgAtK < 0.7)
+  const missed = calculateRetrievalMetrics({ retrievedIds: ['generic'], relevantIds: ['lord'] }, 1)
+  assert.equal(missed.hitAtK, 0)
+  const partitioned = partitionEvaluationContextRelevance({
+    relevantContextIndexes: [0, 2, 2, 99],
+    includesAuthoritativeBusinessContext: true,
+    retrievalCandidateCount: 3,
+  })
+  assert.equal(partitioned.authoritativeBusinessContextRelevant, true)
+  assert.deepEqual(partitioned.retrievalRelevantIndexes, [1])
   const average = averageRetrievalMetrics([perfect, delayed])
   assert.equal(average.reciprocalRank, 0.75)
 
@@ -111,7 +122,7 @@ assert.ok(delayed.ndcgAtK > 0.6 && delayed.ndcgAtK < 0.7)
 
   console.log(JSON.stringify({
     success: true,
-    checks: 27,
+    checks: 33,
     topBm25Result: ranked[0]?.document.id,
     metrics: average,
   }))

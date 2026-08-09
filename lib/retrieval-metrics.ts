@@ -6,6 +6,7 @@ export interface RetrievalMetricSample {
 export interface RetrievalMetrics {
   precisionAtK: number;
   recallAtK: number;
+  hitAtK: number;
   reciprocalRank: number;
   ndcgAtK: number;
 }
@@ -121,17 +122,19 @@ export function calculateRetrievalMetrics(
   return {
     precisionAtK: safeDivide(relevantRetrieved.length, effectiveK),
     recallAtK: safeDivide(relevantRetrieved.length, relevant.size),
+    hitAtK: relevantRetrieved.length > 0 ? 1 : 0,
     reciprocalRank: firstRelevantRank >= 0 ? 1 / (firstRelevantRank + 1) : 0,
     ndcgAtK: safeDivide(discountedGain, idealDiscountedGain),
   };
 }
 
 export function averageRetrievalMetrics(samples: RetrievalMetrics[]): RetrievalMetrics {
-  if (!samples.length) return { precisionAtK: 0, recallAtK: 0, reciprocalRank: 0, ndcgAtK: 0 };
+  if (!samples.length) return { precisionAtK: 0, recallAtK: 0, hitAtK: 0, reciprocalRank: 0, ndcgAtK: 0 };
   return samples.reduce<RetrievalMetrics>((average, sample) => ({
     precisionAtK: average.precisionAtK + sample.precisionAtK / samples.length,
     recallAtK: average.recallAtK + sample.recallAtK / samples.length,
+    hitAtK: average.hitAtK + sample.hitAtK / samples.length,
     reciprocalRank: average.reciprocalRank + sample.reciprocalRank / samples.length,
     ndcgAtK: average.ndcgAtK + sample.ndcgAtK / samples.length,
-  }), { precisionAtK: 0, recallAtK: 0, reciprocalRank: 0, ndcgAtK: 0 });
+  }), { precisionAtK: 0, recallAtK: 0, hitAtK: 0, reciprocalRank: 0, ndcgAtK: 0 });
 }
