@@ -388,10 +388,15 @@ export function extractEntitiesQuick(text: string): string[] {
   const singleMatches = text.match(singleCapitalRegex)
   
   if (singleMatches) {
-    const commonWords = ['Ciao', 'Salve', 'Buongiorno', 'Buonasera', 'Grazie', 'Prego', 'Sono', 'Come', 'Cosa', 'Dove', 'Quando', 'Perché']
+    const commonWords = new Set([
+      'ciao', 'salve', 'buongiorno', 'buonasera', 'grazie', 'prego',
+      'sono', 'siamo', 'come', 'cosa', 'dove', 'quando', 'perché',
+      'avete', 'vorrei', 'voglio', 'potete', 'potresti', 'dimmi',
+      'sapete', 'cerco', 'volevo', 'quali', 'quale',
+    ])
     
     singleMatches.forEach(match => {
-      if (!commonWords.includes(match)) {
+      if (!commonWords.has(match.toLocaleLowerCase('it-IT'))) {
         entities.add(match)
       }
     })

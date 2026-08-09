@@ -321,9 +321,12 @@ export async function multiDimensionalRetrieve(params: {
   let persistentFacts: StructuredFact[] = []
   let knowledgeChunks: any[] = []
   let sources: MemorySource[] = []
-  
-  // === 1. Retrieve from Persistent Memory ===
-  if (plan.usePersistentMemory) {
+
+  // Persistent memory and company knowledge are independent. Running them in
+  // parallel avoids making an entity-aware question pay for both round trips
+  // sequentially.
+  const persistentMemoryTask = async (): Promise<StructuredFact[]> => {
+    if (!plan.usePersistentMemory) return []
     const memoryStartedAt = Date.now()
     console.log(`🧠 [MultiDimRetrieval] Querying persistent memory`)
     
@@ -340,26 +343,28 @@ export async function multiDimensionalRetrieve(params: {
       useSemanticSearch: true
     }
     
-    persistentFacts = await queryMemory(memoryQuery)
+    const facts = await queryMemory(memoryQuery)
     await eventStore.logSourceQueried(botId, conversationId, {
       source: 'persistent_memory',
-      resultsCount: persistentFacts.length,
+      resultsCount: facts.length,
       durationMs: Date.now() - memoryStartedAt,
     })
-    
-    if (persistentFacts.length > 0) {
-      sources.push('persistent')
-      console.log(`✅ [MultiDimRetrieval] Found ${persistentFacts.length} persistent facts`)
-    }
+    return facts
   }
-  
-  // === 2. Retrieve from Knowledge Base ===
-  if (plan.useKnowledgeBase) {
+
+  const knowledgeBaseTask = async (): Promise<any[]> => {
+    if (!plan.useKnowledgeBase) return []
     console.log(`📚 [MultiDimRetrieval] Querying knowledge base`)
-    
+
     // Use advanced RAG pipeline
     const candidateStartedAt = Date.now()
     const effectiveMinScore = Math.max(0, Math.min(1, context.minSemanticScore ?? 0.3))
+    const webSearchPromise = searchAuthorizedWeb({
+      query: context.query,
+      enabled: context.liveWebSearchEnabled,
+      allowedDomains: context.liveWebAllowedDomains || [],
+      limit: 3,
+    })
     const [rawChunks, keywordCorpus] = await Promise.all([
       queryKnowledgeBase(botId, context.query, {
         topK: 100,
@@ -367,14 +372,18 @@ export async function multiDimensionalRetrieve(params: {
       }),
       listDatabaseTextChunks(botId),
     ])
-    await eventStore.logSourceQueried(botId, conversationId, {
-      source: 'candidate_retrieval',
-      resultsCount: rawChunks.length + keywordCorpus.length,
-      topScore: rawChunks[0]?.score,
-      durationMs: Date.now() - candidateStartedAt,
-    })
-    await recordPipelineStage({ botId, conversationId, stage: 'retrieval', durationMs: Date.now() - candidateStartedAt, provider: 'hybrid_candidates', inputCount: rawChunks.length + keywordCorpus.length, outputCount: rawChunks.length + keywordCorpus.length })
-    
+    const candidateDurationMs = Date.now() - candidateStartedAt
+    await Promise.all([
+      eventStore.logSourceQueried(botId, conversationId, {
+        source: 'candidate_retrieval',
+        resultsCount: rawChunks.length + keywordCorpus.length,
+        topScore: rawChunks[0]?.score,
+        durationMs: candidateDurationMs,
+      }),
+      recordPipelineStage({ botId, conversationId, stage: 'retrieval', durationMs: candidateDurationMs, provider: 'hybrid_candidates', inputCount: rawChunks.length + keywordCorpus.length, outputCount: rawChunks.length + keywordCorpus.length }),
+    ])
+
+    const chunks: any[] = []
     if (rawChunks.length > 0 || keywordCorpus.length > 0) {
       // Prepare for advanced RAG
       const preparedChunks = prepareChunksForAdvancedRAG(rawChunks)
@@ -393,13 +402,13 @@ export async function multiDimensionalRetrieve(params: {
         enableCrossEncoder: context.rerankerEnabled,
         stageMetrics,
       })
-      for (const metric of stageMetrics) {
-        await eventStore.logSourceQueried(botId, conversationId, {
+      await Promise.all(stageMetrics.flatMap((metric) => [
+        eventStore.logSourceQueried(botId, conversationId, {
           source: `rag.${metric.stage}${metric.fallback ? '.fallback' : ''}`,
           resultsCount: metric.outputCount,
           durationMs: metric.durationMs,
-        })
-        await recordPipelineStage({
+        }),
+        recordPipelineStage({
           botId,
           conversationId,
           stage: metric.stage === 'cross_encoder' || metric.stage === 'contextual_rerank' ? 'reranking' : 'retrieval',
@@ -410,41 +419,50 @@ export async function multiDimensionalRetrieve(params: {
           inputCount: metric.inputCount,
           outputCount: metric.outputCount,
           metadata: { substage: metric.stage, fallback: metric.fallback, totalTokens: metric.usageTokens },
-        })
-      }
-      
-      knowledgeChunks = advancedResults.map(result => ({
+        }),
+      ]))
+
+      chunks.push(...advancedResults.map(result => ({
         text: result.text,
         score: result.finalScore,
         metadata: result.metadata
-      }))
-      
-      if (knowledgeChunks.length > 0) {
-        sources.push('knowledge_base')
-        console.log(`✅ [MultiDimRetrieval] Found ${knowledgeChunks.length} KB chunks`)
-      }
+      })))
     }
 
-    const webSearch = await searchAuthorizedWeb({
-      query: context.query,
-      enabled: context.liveWebSearchEnabled,
-      allowedDomains: context.liveWebAllowedDomains || [],
-      limit: 3,
-    })
-    await eventStore.logSourceQueried(botId, conversationId, {
-      source: `live_web${webSearch.error ? '.fallback' : ''}`,
-      resultsCount: webSearch.results.length,
-      durationMs: webSearch.durationMs,
-    })
-    await recordPipelineStage({ botId, conversationId, stage: 'web_search', durationMs: webSearch.durationMs, success: !webSearch.error, provider: 'firecrawl', outputCount: webSearch.results.length, metadata: { creditsUsed: webSearch.creditsUsed } })
+    const webSearch = await webSearchPromise
+    await Promise.all([
+      eventStore.logSourceQueried(botId, conversationId, {
+        source: `live_web${webSearch.error ? '.fallback' : ''}`,
+        resultsCount: webSearch.results.length,
+        durationMs: webSearch.durationMs,
+      }),
+      recordPipelineStage({ botId, conversationId, stage: 'web_search', durationMs: webSearch.durationMs, success: !webSearch.error, provider: 'firecrawl', outputCount: webSearch.results.length, metadata: { creditsUsed: webSearch.creditsUsed } }),
+    ])
     if (webSearch.results.length) {
-      knowledgeChunks.push(...webSearch.results.map((result, index) => ({
+      chunks.push(...webSearch.results.map((result, index) => ({
         text: result.text,
         score: 0.65 - index * 0.05,
         metadata: { sourceId: result.url, sourceType: 'live_web', sourceUrl: result.url, title: result.title, domain: result.domain },
       })))
-      sources.push('live_web')
     }
+    return chunks
+  }
+
+  ;[persistentFacts, knowledgeChunks] = await Promise.all([
+    persistentMemoryTask(),
+    knowledgeBaseTask(),
+  ])
+
+  if (persistentFacts.length > 0) {
+    sources.push('persistent')
+    console.log(`✅ [MultiDimRetrieval] Found ${persistentFacts.length} persistent facts`)
+  }
+  if (knowledgeChunks.some((chunk) => chunk.metadata?.sourceType !== 'live_web')) {
+    sources.push('knowledge_base')
+    console.log(`✅ [MultiDimRetrieval] Found ${knowledgeChunks.length} knowledge chunks`)
+  }
+  if (knowledgeChunks.some((chunk) => chunk.metadata?.sourceType === 'live_web')) {
+    sources.push('live_web')
   }
   
   // === 3. Context Only ===

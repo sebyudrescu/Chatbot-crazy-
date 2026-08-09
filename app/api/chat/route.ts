@@ -75,6 +75,8 @@ export async function OPTIONS() {
 
 // POST /api/chat - Cognitive chat with structured memory
 export async function POST(request: NextRequest) {
+  const routeStartedAt = Date.now()
+  const requestId = request.headers.get('x-vercel-id') || crypto.randomUUID()
   try {
     const parsed = ChatRequestSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -442,6 +444,7 @@ export async function POST(request: NextRequest) {
     
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything
     const result = await orchestrateResponse(orchestratorContext)
+    for (const task of result.deferredTasks) after(task)
     const groundingBlocked = result.metadata.grounding.action === 'fallback'
     const effectiveIntent = commerceIntent !== 'none' ? commerceIntent : result.decision.intent.intent
     const workflowResult = incomingPolicy.action === 'allow' && !groundingBlocked
@@ -517,7 +520,9 @@ export async function POST(request: NextRequest) {
       responseStrategy: result.decision.responseStrategy,
       sourcesUsed: result.sourcesUsed.length,
       factsExtracted: result.extractedFacts.length,
+      factsExtractionScheduled: result.metadata.phaseTimings.learningScheduled,
       processingTimeMs: result.metadata.processingTimeMs,
+      phaseTimings: result.metadata.phaseTimings,
       workflowsExecuted: workflowResult.executed.length,
       workflowsFailed: workflowResult.failed,
       workflowsSkipped: workflowResult.skipped,
@@ -634,8 +639,19 @@ export async function POST(request: NextRequest) {
     // ========================================================================
     // STEP 10: RETURN RESPONSE
     // ========================================================================
-    
-    console.log(`✅ [ChatAPI] Request completed successfully\n`)
+
+    console.log(JSON.stringify({
+      event: 'chat.request.completed',
+      requestId,
+      botId,
+      conversationId: conversation.id,
+      durationMs: Date.now() - routeStartedAt,
+      orchestratorMs: result.metadata.processingTimeMs,
+      phases: result.metadata.phaseTimings,
+      responseType: result.metadata.responseType,
+      groundingAction: result.metadata.grounding.action,
+      productsShown: productCards.length,
+    }))
 
     return NextResponse.json({
       success: true,
@@ -685,6 +701,7 @@ export async function POST(request: NextRequest) {
           persistentFactsUsed: result.retrievalResult?.persistentFacts.length || 0,
           knowledgeChunksUsed: result.retrievalResult?.knowledgeChunks.length || 0,
           factsExtracted: result.extractedFacts.length,
+          factsExtractionScheduled: result.metadata.phaseTimings.learningScheduled,
         },
         
         // Validation (if available)
@@ -699,6 +716,7 @@ export async function POST(request: NextRequest) {
         // Response metadata
         responseType: result.metadata.responseType,
         processingTimeMs: result.metadata.processingTimeMs,
+        phaseTimings: result.metadata.phaseTimings,
         workflow: workflowResult,
         actions: actionResult,
         
@@ -709,7 +727,12 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('❌ [ChatAPI] Error:', error)
+    console.error(JSON.stringify({
+      event: 'chat.request.failed',
+      requestId,
+      durationMs: Date.now() - routeStartedAt,
+      error: error instanceof Error ? error.message : 'unknown_error',
+    }))
     return NextResponse.json(
       {
         success: false,

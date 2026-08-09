@@ -174,10 +174,17 @@ export interface OrchestratorResult {
     confidence: number
     processingTimeMs: number
     grounding: GroundingPolicyDecision
+    phaseTimings: {
+      understandingMs: number
+      retrievalMs: number
+      generationMs: number
+      learningScheduled: boolean
+    }
   }
   
   // Learning
   extractedFacts: any[]
+  deferredTasks: Array<() => Promise<void>>
 }
 
 // ============================================================================
@@ -189,6 +196,12 @@ export interface OrchestratorResult {
  */
 export async function orchestrateResponse(context: OrchestratorContext): Promise<OrchestratorResult> {
   const startTime = Date.now()
+  const phaseTimings = {
+    understandingMs: 0,
+    retrievalMs: 0,
+    generationMs: 0,
+    learningScheduled: false,
+  }
   
   console.log(`\n🧠 [Orchestrator] ========== NEW REQUEST ==========`)
   console.log(`[Orchestrator] Query: "${context.query}"`)
@@ -220,6 +233,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   const topics = context.conversationMetadata.topics || []
   console.log(`   Entities: ${entities.length > 0 ? entities.join(', ') : 'none'}`)
   console.log(`   Topics: ${topics.length > 0 ? topics.join(', ') : 'none'}`)
+  phaseTimings.understandingMs = Date.now() - startTime
   
   // ========================================================================
   // PHASE 2: DECISION - Decidi la strategia di risposta
@@ -264,6 +278,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   let graphResult: { entities: GraphEntity[]; relations: GraphRelation[]; reasoning: string } | undefined
   
   if (decision.shouldUseRAG) {
+    const retrievalStartedAt = Date.now()
     const retrievalHistory = conversationHistoryForIntent(intent.intent, context.conversationHistory)
     console.log(`\n🔍 [Orchestrator] PHASE 3: RETRIEVAL`)
     
@@ -337,6 +352,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
     if (!validationResult.isCoherent && validationResult.conflicts.length > 0) {
       console.log(`⚠️ [Orchestrator] Low coherence detected, will inform user`)
     }
+    phaseTimings.retrievalMs = Date.now() - retrievalStartedAt
   }
   
   // ========================================================================
@@ -345,6 +361,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   
   console.log(`\n💬 [Orchestrator] PHASE 5: GENERATION`)
   
+  const generationStartedAt = Date.now()
   let generationResult = process.env.CI_MOCK_AI === 'true'
     ? {
         response: retrievalResult?.knowledgeChunks[0]?.text
@@ -399,6 +416,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   
   console.log(`   Response generated (${generationResult.response.length} chars)`)
   console.log(`   Sources used: ${generationResult.sourcesUsed.length}`)
+  phaseTimings.generationMs = Date.now() - generationStartedAt
   
   // ========================================================================
   // PHASE 6: LEARNING - Estrai nuovi fatti
@@ -406,26 +424,44 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   
   console.log(`\n🧠 [Orchestrator] PHASE 6: LEARNING`)
   
-  let extractedFacts: any[] = []
+  const extractedFacts: any[] = []
+  const deferredTasks: Array<() => Promise<void>> = []
   
   // Extract facts only if this was a meaningful exchange
   if (process.env.CI_MOCK_AI === 'true') {
     console.log(`   Skipped fact extraction (CI mock)`)
   } else if (grounding.action !== 'fallback' && (decision.shouldUseRAG || intent.intent === 'question')) {
-    try {
-      extractedFacts = await extractFactsIncremental({
-        conversationId: context.conversationId,
-        botId: context.botId,
-        userMessage: context.query,
-        assistantMessage: generationResult.response,
-        conversationContext: context.conversationHistory,
-        currentIntent: intent.intent
-      })
-      
-      console.log(`   Extracted ${extractedFacts.length} new facts`)
-    } catch (error) {
-      console.error(`[Orchestrator] Error extracting facts:`, error)
+    phaseTimings.learningScheduled = true
+    const learningInput = {
+      conversationId: context.conversationId,
+      botId: context.botId,
+      userMessage: context.query,
+      assistantMessage: generationResult.response,
+      conversationContext: context.conversationHistory,
+      currentIntent: intent.intent,
     }
+    deferredTasks.push(async () => {
+      const learningStartedAt = Date.now()
+      try {
+        const learnedFacts = await extractFactsIncremental(learningInput)
+        console.log(JSON.stringify({
+          event: 'chat.learning.completed',
+          botId: context.botId,
+          conversationId: context.conversationId,
+          durationMs: Date.now() - learningStartedAt,
+          factsExtracted: learnedFacts.length,
+        }))
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: 'chat.learning.failed',
+          botId: context.botId,
+          conversationId: context.conversationId,
+          durationMs: Date.now() - learningStartedAt,
+          error: error instanceof Error ? error.message : 'unknown_error',
+        }))
+      }
+    })
+    console.log(`   Fact extraction scheduled after the response`)
   } else {
     console.log(`   Skipped fact extraction (conversational intent)`)
   }
@@ -468,8 +504,10 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
       confidence: generationResult.confidence,
       processingTimeMs,
       grounding,
+      phaseTimings,
     },
-    extractedFacts
+    extractedFacts,
+    deferredTasks,
   }
 }
 
