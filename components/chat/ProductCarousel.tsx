@@ -241,7 +241,7 @@ export function ProductCarousel({
             return (
               <article
                 key={`${card.productId}-${card.variantId || index}`}
-                className="group w-[calc(100%-2.5rem)] min-w-[210px] max-w-[300px] shrink-0 snap-start overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:border-brand-200 hover:shadow-md"
+                className="group w-[calc(100%-2.5rem)] min-w-[210px] shrink-0 snap-start overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:border-brand-200 hover:shadow-md"
                 aria-label={`${index + 1} di ${validCards.length}: ${card.title}`}
               >
                 <a
