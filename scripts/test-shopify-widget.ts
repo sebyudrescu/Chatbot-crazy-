@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import { shopifyThemeEditorUrl } from '../lib/shopify-widget'
 
 const url = shopifyThemeEditorUrl('demo-store.myshopify.com', '92af677613cc889443a398db8f937611')
@@ -10,4 +12,7 @@ assert.equal(parsed.searchParams.get('context'), 'apps')
 assert.equal(parsed.searchParams.get('activateAppId'), '92af677613cc889443a398db8f937611/litx-chat-widget')
 assert.equal(shopifyThemeEditorUrl('evil.example.com', '92af677613cc889443a398db8f937611'), null)
 assert.equal(shopifyThemeEditorUrl('demo-store.myshopify.com', 'not-a-client-id'), null)
+const proxySource = fs.readFileSync(path.join(process.cwd(), 'proxy.ts'), 'utf8')
+assert.match(proxySource, /publicPaths[^\n]+['"]\/api\/shopify\/widget\.js['"]/, 'the storefront loader must bypass owner login')
+assert.doesNotMatch(proxySource, /publicPrefixes[^\n]+['"]\/api\/shopify\/['"]/, 'Shopify admin APIs must not become public as a group')
 console.log('Shopify widget onboarding tests passed')
