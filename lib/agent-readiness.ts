@@ -1,7 +1,7 @@
 import 'server-only'
 import { prisma } from './db'
 import { parseJSON } from './utils'
-import { hasProductionEvaluationMetrics, latestReadinessDate } from './readiness-metrics'
+import { latestReadinessDate, productionEvaluationMetricType } from './readiness-metrics'
 
 export type ReadinessCheckKey = 'instructions' | 'knowledge' | 'conversation' | 'evaluations' | 'channel' | 'commerce'
 
@@ -92,13 +92,16 @@ export async function getAgentReadiness(botId: string) {
     latestAssistantAt &&
     (!verificationChangedAt || latestAssistantAt >= verificationChangedAt)
   )
-  const evaluationsPassed = agent.evaluationCases.length > 0 &&
-    agent.evaluationCases.every(test => {
+  const evaluationMetricTypes = agent.evaluationCases.flatMap(test => {
       const latestRun = test.runs[0]
-      return latestRun?.passed === true &&
-        hasProductionEvaluationMetrics(latestRun.metrics) &&
-        (!verificationChangedAt || latestRun.createdAt >= verificationChangedAt)
+      if (latestRun?.passed !== true || (verificationChangedAt && latestRun.createdAt < verificationChangedAt)) return []
+      const metricType = productionEvaluationMetricType(latestRun.metrics)
+      return metricType ? [metricType] : []
     })
+  const evaluationsPassed = agent.evaluationCases.length > 0 &&
+    evaluationMetricTypes.length === agent.evaluationCases.length &&
+    evaluationMetricTypes.includes('grounded') &&
+    evaluationMetricTypes.includes('policy')
   const allowedDomains = agent.embedSettings?.allowedDomains
     ?.split(/[\n,]/)
     .map(domain => domain.trim())
@@ -137,7 +140,7 @@ export async function getAgentReadiness(botId: string) {
     {
       key: 'evaluations',
       label: 'Valutazioni automatiche',
-      description: 'I controlli recenti includono faithfulness, accuratezza, Precision@K, Recall@K, MRR e sicurezza.',
+      description: 'I controlli recenti includono almeno un caso RAG con faithfulness, accuratezza, Precision@K, Recall@K e MRR, più un caso di sicurezza.',
       done: evaluationsPassed,
       href: `/evaluations?botId=${botId}`,
     },
