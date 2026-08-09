@@ -41,11 +41,13 @@ export interface ParsedCommerceQuery {
   maxCards: number;
 }
 
-const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarp[ae]|sneakers?|bors[ae]|zain[oi]|accessori?|intimo|costum[ei]|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
+const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarp[ae]|sneakers?|bors[ae]|zain[oi]|accessori?|intimo|costum[ei]|design\w*|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
 const DISCOVERY_ACTION = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|dammi|cosa avete|quali avete|avete|vendete|cerco|cercando|vorrei|voglio|volevo|desidero|mi serve|consigliami|consiglia|raccomand|alternative?|foto|immagin[ei]|link|card|schede?|comprare|acquistare)\b/i;
 const DETAIL_ACTION = /\b(prezzo|cost[oa]|materiale|composizione|descrizione|dettagli[oi]|caratteristiche|scheda prodotto|disponibil)\b/i;
 const VARIANT_ACTION = /\b(tagli[ae]|misur[ae]|variant[ei]|numero|color[ei])\b/i;
 const GENERIC_STYLE_ADVICE = /\b(look|outfit|vestirmi|vestire|elegante|casual|cerimonia|matrimonio|serata)\b/i;
+const EXPLICIT_PRODUCT_BROWSE = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|foto|immagin[ei]|card|schede?|catalogo completo|tutti i modelli)\b/i;
+const STYLE_PREFERENCE = /\b(elegant\w*|casual|cerimoni\w*|matrimoni\w*|serat\w*|lavoro|sportiv\w*|streetwear|formal\w*)\b/i;
 
 const CATEGORY_PATTERNS: Array<[ProductCategory, RegExp]> = [
   ["shorts", /\b(pantaloncin[oi]|shorts?|bermuda)\b/i],
@@ -138,6 +140,20 @@ export function classifyCommerceIntent(message: string, commerceMode = true): Co
 export function isGenericStyleAdviceRequest(message: string) {
   const normalized = normalizeCommerceText(message);
   return GENERIC_STYLE_ADVICE.test(normalized) && categoriesIn(normalized).length === 0;
+}
+
+/**
+ * A bare availability question needs discovery before a recommendation.
+ * Explicit browse requests and sufficiently constrained requests still go
+ * straight to verified products.
+ */
+export function needsProductDiscoveryClarification(message: string, query = parseCommerceQuery(message)) {
+  if (query.intent !== "product_discovery") return false;
+  const normalized = normalizeCommerceText(message);
+  if (EXPLICIT_PRODUCT_BROWSE.test(normalized)) return false;
+  if (query.colors.length || query.materials.length || query.size || query.minPrice !== undefined || query.maxPrice !== undefined || query.availableOnly) return false;
+  if (query.gender && STYLE_PREFERENCE.test(normalized)) return false;
+  return Boolean(query.category) || /\bdesign\w*\b/i.test(normalized);
 }
 
 /**

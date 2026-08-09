@@ -36,7 +36,7 @@ import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { buildVerifiedProductResponse } from '@/lib/verified-product-response'
-import { buildCatalogFollowUpQuery, classifyCommerceIntent, isGenericStyleAdviceRequest, parseCommerceQuery } from '@/lib/commerce-query'
+import { buildCatalogFollowUpQuery, classifyCommerceIntent, isGenericStyleAdviceRequest, needsProductDiscoveryClarification, parseCommerceQuery } from '@/lib/commerce-query'
 import { tryVerifiedOrderLookup } from '@/lib/order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import {
@@ -44,6 +44,7 @@ import {
   catalogUnavailableResponse,
   detectBusinessMode,
   isVerifiedCatalogIntent,
+  productDiscoveryClarification,
   styleAdviceClarification,
 } from '@/lib/conversation-guidance'
 
@@ -369,21 +370,28 @@ export async function POST(request: NextRequest) {
     const needsStyleClarification = commerceIntent === 'fit_advice'
       && activeProductIds.length === 0
       && isGenericStyleAdviceRequest(message)
+    const needsProductClarification = commerceIntent === 'product_discovery'
+      && needsProductDiscoveryClarification(message, parsedCommerceQuery)
+      && (!parsedCommerceQuery.category || productSearch.selections.length > 0)
     const requiresCatalog = isVerifiedCatalogIntent(commerceIntent)
-    if (incomingPolicy.action === 'allow' && (needsStyleClarification || (requiresCatalog && productSearch.selections.length === 0))) {
+    if (incomingPolicy.action === 'allow' && (needsStyleClarification || needsProductClarification || (requiresCatalog && productSearch.selections.length === 0))) {
       const response = needsStyleClarification
         ? styleAdviceClarification()
+        : needsProductClarification
+          ? productDiscoveryClarification(parsedCommerceQuery.category)
         : catalogUnavailableResponse(productSearch.catalogSize)
       const quickReplies = buildContextualQuickReplies({
         mode: businessMode,
         userMessage: message,
         assistantMessage: response,
         productCount: 0,
-        catalogBlocked: !needsStyleClarification,
+        catalogBlocked: !needsStyleClarification && !needsProductClarification,
         commerceIntent,
       })
       const responseType = needsStyleClarification
         ? 'style_advice_clarification'
+        : needsProductClarification
+          ? 'product_discovery_clarification'
         : productSearch.catalogSize === 0
           ? 'verified_catalog_unavailable'
           : 'verified_catalog_no_match'
@@ -409,7 +417,7 @@ export async function POST(request: NextRequest) {
           userMessage: { id: userMessage.id, content: userMessage.content, createdAt: userMessage.createdAt },
           assistantMessage: { id: assistantMessage.id, content: assistantMessage.content, createdAt: assistantMessage.createdAt },
           sources: [],
-          intent: { type: needsStyleClarification ? 'fit_advice' : 'product_search', confidence: 1, reasoning: needsStyleClarification ? 'Consiglio outfit: richiesta di dettaglio prima di proporre prodotti' : 'Richiesta prodotto vincolata al catalogo verificato' },
+          intent: { type: needsStyleClarification ? 'fit_advice' : 'product_search', confidence: 1, reasoning: needsStyleClarification ? 'Consiglio outfit: richiesta di dettaglio prima di proporre prodotti' : needsProductClarification ? 'Scoperta esigenze prima di proporre prodotti' : 'Richiesta prodotto vincolata al catalogo verificato' },
           queryClassification: { type: 'transactional', complexity: 'simple' },
           decision: { strategy: 'verified_catalog_guard', sources: ['product_catalog'], reasoning: 'Nessun prodotto verificato corrispondente' },
           confidence: { score: 1, isCoherent: true },

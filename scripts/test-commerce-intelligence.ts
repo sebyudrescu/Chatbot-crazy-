@@ -5,12 +5,13 @@ import {
   buildCatalogFollowUpQuery,
   classifyCommerceIntent,
   isGenericStyleAdviceRequest,
+  needsProductDiscoveryClarification,
   matchesCommerceConstraints,
   parseCommerceQuery,
 } from "../lib/commerce-query";
 import { productCardsSchema } from "../lib/commerce-types";
 import { buildVerifiedProductResponse } from "../lib/verified-product-response";
-import { isVerifiedCatalogIntent, styleAdviceClarification } from "../lib/conversation-guidance";
+import { isVerifiedCatalogIntent, productDiscoveryClarification, styleAdviceClarification } from "../lib/conversation-guidance";
 
 const blackTrousers = parseCommerceQuery("Mostrami pantaloni neri da uomo disponibili");
 assert.equal(blackTrousers.intent, "product_discovery");
@@ -76,6 +77,12 @@ assert.equal(classifyCommerceIntent("Che taglie ha?"), "variant_availability");
 assert.equal(classifyCommerceIntent("Volevo qualcosa di nero come pantaloni"), "product_discovery");
 assert.equal(classifyCommerceIntent("Avete anche zaini?"), "product_discovery");
 assert.equal(parseCommerceQuery("Avete anche zaini?").category, "bag");
+assert.equal(needsProductDiscoveryClarification("Avete anche zaini?"), true);
+assert.equal(needsProductDiscoveryClarification("Mostrami gli zaini"), false);
+assert.equal(needsProductDiscoveryClarification("Cerco zaini neri"), false);
+assert.equal(needsProductDiscoveryClarification("Avete pantaloni da uomo eleganti?"), false);
+assert.equal(needsProductDiscoveryClarification("Avete design?"), true);
+assert.match(productDiscoveryClarification("bag"), /zaini o borse/i);
 assert.equal(
   buildCatalogFollowUpQuery("Cerca nel catalogo", ["Avete anche zaini?"]),
   "Avete anche zaini? Cerca nel catalogo",

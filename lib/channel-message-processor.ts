@@ -12,8 +12,8 @@ import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
-import { buildCatalogFollowUpQuery, classifyCommerceIntent, isGenericStyleAdviceRequest } from "@/lib/commerce-query";
-import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, styleAdviceClarification } from "@/lib/conversation-guidance";
+import { buildCatalogFollowUpQuery, classifyCommerceIntent, isGenericStyleAdviceRequest, needsProductDiscoveryClarification, parseCommerceQuery } from "@/lib/commerce-query";
+import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, productDiscoveryClarification, styleAdviceClarification } from "@/lib/conversation-guidance";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -152,10 +152,22 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const commerceSearchQuery = catalogFollowUpQuery || query;
   const productSearch = await searchVerifiedProducts(input.botId, commerceSearchQuery, undefined, { intent: commerceIntent });
   const needsStyleClarification = commerceIntent === "fit_advice" && isGenericStyleAdviceRequest(query);
+  const parsedCommerceQuery = parseCommerceQuery(query, businessMode === "commerce");
+  const needsProductClarification = commerceIntent === "product_discovery"
+    && needsProductDiscoveryClarification(query, parsedCommerceQuery)
+    && (!parsedCommerceQuery.category || productSearch.selections.length > 0);
   const requiresCatalog = isVerifiedCatalogIntent(commerceIntent);
-  if ((needsStyleClarification || requiresCatalog) && productSearch.selections.length === 0) {
-    const response = needsStyleClarification ? styleAdviceClarification() : catalogUnavailableResponse(productSearch.catalogSize);
-    const responseType = needsStyleClarification ? "style_advice_clarification" : productSearch.catalogSize === 0 ? "verified_catalog_unavailable" : "verified_catalog_no_match";
+  if (needsStyleClarification || needsProductClarification || (requiresCatalog && productSearch.selections.length === 0)) {
+    const response = needsStyleClarification
+      ? styleAdviceClarification()
+      : needsProductClarification
+        ? productDiscoveryClarification(parsedCommerceQuery.category)
+        : catalogUnavailableResponse(productSearch.catalogSize);
+    const responseType = needsStyleClarification
+      ? "style_advice_clarification"
+      : needsProductClarification
+        ? "product_discovery_clarification"
+        : productSearch.catalogSize === 0 ? "verified_catalog_unavailable" : "verified_catalog_no_match";
     const assistantMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,

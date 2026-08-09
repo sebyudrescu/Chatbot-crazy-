@@ -6,7 +6,7 @@ export interface SuggestedReply {
   category?: "faq" | "product" | "support" | "general";
 }
 
-import { classifyCommerceIntent, type CommerceIntent } from "./commerce-query";
+import { classifyCommerceIntent, type CommerceIntent, type ProductCategory } from "./commerce-query";
 
 const COMMERCE_CONTEXT = /\b(e-?commerce|negozio|shop|shopify|woocommerce|catalogo|abbigliamento|moda|scarpe|accessori|prodotti?|ordini?|spedizioni?|resi?)\b/i;
 const SERVICE_CONTEXT = /\b(servizi?|consulenz|preventiv|appuntament|agenzia|professionist|studio)\b/i;
@@ -63,6 +63,27 @@ export function catalogUnavailableResponse(catalogSize: number): string {
 
 export function styleAdviceClarification() {
   return "Posso aiutarti a costruire un look, ma per consigliarti prodotti reali senza andare a caso mi serve un dettaglio in piÃ¹: cerchi un outfit per lavoro, cerimonia, serata o tutti i giorni? Dimmi anche una fascia di budget e ti mostro solo capi verificati del catalogo.";
+}
+
+const CATEGORY_LABELS: Partial<Record<ProductCategory, string>> = {
+  trousers: "pantaloni",
+  shorts: "pantaloncini",
+  polo: "polo",
+  shirt: "camicie o t-shirt",
+  top: "maglie o top",
+  jacket: "giacche",
+  coat: "cappotti",
+  sweatshirt: "felpe",
+  dress: "vestiti",
+  shoes: "scarpe",
+  bag: "zaini o borse",
+  accessory: "accessori",
+  swimwear: "costumi",
+};
+
+export function productDiscoveryClarification(category?: ProductCategory) {
+  const label = category ? CATEGORY_LABELS[category] || "prodotti" : "prodotti";
+  return `Certo! Per proporti ${label} davvero adatti a te, cosa stai cercando di preciso? Dimmi se hai una preferenza di stile o occasione, colore, materiale e budget. Se vuoi invece solo esplorare, scrivi “mostrami ${label}” e ti faccio vedere i prodotti verificati disponibili.`;
 }
 
 export function buildContextualQuickReplies(input: {
