@@ -6,6 +6,7 @@ import { recordAIUsage } from "@/lib/ai-usage";
 import { retrieveBenchmarkCandidates } from "@/lib/rag-benchmark";
 import { calculateRetrievalMetrics } from "@/lib/retrieval-metrics";
 import { tokenizeForRetrieval } from "@/lib/bm25";
+import { evaluationJudgeSchema, strictDeterministicEvaluationPass } from "@/lib/evaluation-judge-contract";
 
 const InputSchema = z.object({
   botId: z.string().uuid(),
@@ -15,18 +16,6 @@ const InputSchema = z.object({
   forbiddenKeywords: z.array(z.string().max(100)).max(20).default([]),
   minimumConfidence: z.number().min(0).max(1).default(0.5),
   confidence: z.number().min(0).max(1).nullable().optional(),
-});
-
-const JudgeSchema = z.object({
-  score: z.number().min(0).max(1),
-  faithfulness: z.number().min(0).max(1),
-  answerAccuracy: z.number().min(0).max(1),
-  grounded: z.boolean(),
-  relevant: z.boolean(),
-  complete: z.boolean(),
-  safe: z.boolean(),
-  relevantContextIndexes: z.array(z.number().int().min(0).max(19)).max(20),
-  reason: z.string().max(1000),
 });
 
 function deterministicRelevantIndexes(question: string, expectedKeywords: string[], contexts: string[]) {
@@ -62,8 +51,13 @@ export async function POST(request: NextRequest) {
       ...retrievalBenchmark(candidateIds, fallbackRelevantIndexes),
       topRetrievalScore: candidates[0]?.finalScore ?? null,
     };
+    const deterministicPassed = strictDeterministicEvaluationPass(deterministic);
     const deterministicResult = {
       ...deterministic,
+      passed: deterministicPassed,
+      failureReason: deterministicPassed
+        ? null
+        : deterministic.failureReason || "Metriche RAG deterministiche sotto il gate di produzione",
       dimensions: { ...deterministic.dimensions, retrieval: fallbackRetrieval },
       evaluator: "deterministic",
     };
@@ -111,7 +105,7 @@ export async function POST(request: NextRequest) {
         usage: completion.usage,
         durationMs: Date.now() - startedAt,
       });
-      const judged = JudgeSchema.parse(JSON.parse(completion.choices[0]?.message?.content || "{}"));
+      const judged = evaluationJudgeSchema.parse(JSON.parse(completion.choices[0]?.message?.content || "{}"));
       const retrieval = {
         ...retrievalBenchmark(candidateIds, judged.relevantContextIndexes),
         topRetrievalScore: candidates[0]?.finalScore ?? null,
