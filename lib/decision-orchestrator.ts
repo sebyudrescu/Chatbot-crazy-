@@ -48,7 +48,7 @@ import {
 import { extractEntityMentions } from './entity-extractor'
 import { eventStore } from './event-store'
 import { recordAIUsage } from './ai-usage'
-import { DEFAULT_CHAT_MODEL, normalizeAIModel } from './ai-models'
+import { DEFAULT_CHAT_MODEL, normalizeLegacyAIModel } from './ai-models'
 import { addGroundingCaution, evaluateGroundingPolicy, groundingFallbackMessage, type GroundingPolicyDecision } from './grounding-policy'
 import { conversationHistoryForIntent } from './intent-context-policy'
 
@@ -116,7 +116,7 @@ function getPromptConfig(context: OrchestratorContext) {
 }
 
 function getModel(context: OrchestratorContext, fallback = DEFAULT_CHAT_MODEL) {
-  return normalizeAIModel(context.botConfig.aiModel || fallback)
+  return normalizeLegacyAIModel(context.botConfig.aiModel || fallback)
 }
 
 function getTemperature(context: OrchestratorContext, fallback: number) {

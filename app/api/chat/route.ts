@@ -53,6 +53,11 @@ import {
   parseCommerceQuery,
 } from "@/lib/commerce-query";
 import { tryVerifiedOrderLookup } from "@/lib/order-tracking";
+import { runAgenticChatTurn } from "@/lib/agentic-chat-runtime";
+import {
+  parseOrderLookupMessage,
+  redactOrderLookupMessage,
+} from "@/lib/woocommerce-order-tracking-contract";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
 import {
   buildContextualQuickReplies,
@@ -279,12 +284,16 @@ export async function POST(request: NextRequest) {
       [...conversation.messages]
         .reverse()
         .find((item) => item.role === MessageRole.ASSISTANT)?.content || "";
-    const orderLookup = await tryVerifiedOrderLookup({
-      botId,
-      text: message,
-      previousAssistantText,
-      rateLimitScope: `${conversation.id}:${requestClientIp(request.headers)}`,
-    });
+    const useAgenticCore = process.env.AGENTIC_CORE_ENABLED !== "false";
+    const rateLimitScope = `${conversation.id}:${requestClientIp(request.headers)}`;
+    const orderLookup = useAgenticCore
+      ? { handled: false, redactedUserText: message }
+      : await tryVerifiedOrderLookup({
+          botId,
+          text: message,
+          previousAssistantText,
+          rateLimitScope,
+        });
     if (orderLookup.handled && orderLookup.response) {
       const [userMessage, assistantMessage] = await prisma.$transaction([
         prisma.message.create({
@@ -399,8 +408,10 @@ export async function POST(request: NextRequest) {
     // Transactional tools remain available even while knowledge is being
     // indexed; ordinary RAG answers still require a ready knowledge base.
     const { isBotReady } = await import("@/lib/ingestion-queue");
-    const kbStatus = await isBotReady(botId);
-    if (!kbStatus.ready) {
+    const kbStatus = useAgenticCore
+      ? { ready: true, status: "agentic_tools", message: "", totalChunks: 0 }
+      : await isBotReady(botId);
+    if (!useAgenticCore && !kbStatus.ready) {
       console.log(`⚠️ [ChatAPI] KB not ready: ${kbStatus.status}`);
       return NextResponse.json(
         {
@@ -428,7 +439,10 @@ export async function POST(request: NextRequest) {
       data: {
         conversationId: conversation.id,
         role: MessageRole.USER,
-        content: message,
+        content: redactOrderLookupMessage(
+          message,
+          parseOrderLookupMessage(message, previousAssistantText),
+        ),
       },
     });
 
@@ -484,6 +498,123 @@ export async function POST(request: NextRequest) {
 
     const chatbotSettings = (parseJSON(conversation.chatbot.settings) ||
       {}) as ChatbotSettings;
+    const currentSentiment = detectSentiment(message);
+    const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings);
+    const activeProductIds = latestActiveProductIds(conversation.messages);
+    const activeProductCards = activeProductIds.length
+      ? await hydrateProductCards(
+          botId,
+          activeProductIds.map((productId) => ({ productId, reason: "" })),
+        )
+      : [];
+    const baseOrchestratorContext: OrchestratorContext = {
+      botId,
+      conversationId: conversation.id,
+      query: message,
+      conversationHistory: contextMessages,
+      conversationMetadata: {
+        userIntent: conversation.userIntent || undefined,
+        sentiment: conversation.sentiment || undefined,
+        topics: conversation.topicsDiscussed
+          ? JSON.parse(conversation.topicsDiscussed)
+          : undefined,
+      },
+      verifiedCommerceContext: activeProductCards.length
+        ? JSON.stringify({
+            recentlyShownProducts: activeProductCards.map((card) => ({
+              productId: card.productId,
+              variantId: card.variantId,
+              title: card.title,
+              availability: card.availability,
+              options: card.options,
+            })),
+          })
+        : undefined,
+      botConfig: {
+        companyName: conversation.chatbot.companyName,
+        promptTemplateId: conversation.chatbot.promptTemplateId,
+        systemPrompt: conversation.chatbot.systemPrompt,
+        promptVariables: parseJSON(conversation.chatbot.promptVariables),
+        role: chatbotSettings.role,
+        objective: chatbotSettings.objective,
+        personality: chatbotSettings.personality,
+        rules: chatbotSettings.rules,
+        forbiddenTopics: chatbotSettings.forbiddenTopics,
+        forbiddenResponses: chatbotSettings.forbiddenResponses,
+        handoffTriggers: chatbotSettings.handoffTriggers,
+        leadCollectionFields: chatbotSettings.leadCollectionFields,
+        language: chatbotSettings.language,
+        tone: chatbotSettings.tone,
+        responseLength: chatbotSettings.responseLength,
+        fallbackMessage: chatbotSettings.fallbackMessage,
+        handoffMessage: chatbotSettings.handoffMessage,
+        aiModel: chatbotSettings.aiModel,
+        temperature: chatbotSettings.temperature,
+        maxTokens: chatbotSettings.maxTokens,
+        retrievalMinScore: chatbotSettings.retrievalMinScore,
+        groundingThreshold: chatbotSettings.groundingThreshold,
+        rerankerEnabled: chatbotSettings.rerankerEnabled,
+        liveWebSearchEnabled: chatbotSettings.liveWebSearchEnabled,
+        liveWebAllowedDomains: chatbotSettings.liveWebAllowedDomains,
+        ragCalibration: chatbotSettings.ragCalibration,
+      },
+    };
+
+    if (useAgenticCore) {
+      let agentic: Awaited<ReturnType<typeof runAgenticChatTurn>> | null = null;
+      try {
+        agentic = await runAgenticChatTurn({
+          context: baseOrchestratorContext,
+          messageId: userMessage.id,
+          userMessage: {
+            id: userMessage.id,
+            content: userMessage.content,
+            createdAt: userMessage.createdAt,
+          },
+          userSessionId: conversation.userSessionId,
+          rateLimitScope,
+          previousAssistantText,
+          incomingPolicy,
+          settings: chatbotSettings,
+          sentiment: currentSentiment,
+          pageUrl: pageContext?.url,
+        });
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "chat.agentic.fallback",
+          requestId,
+          botId,
+          conversationId: conversation.id,
+          error: error instanceof Error ? error.name : "unknown_error",
+        }));
+      }
+      if (agentic) {
+        if (agentic.handoffRequested) {
+          after(() =>
+            emitIntegrationWebhook({
+              botId,
+              event: "conversation.handoff_requested",
+              idempotencyKey: `chat-agentic-handoff:${userMessage.id}`,
+              payload: {
+                conversationId: conversation.id,
+                messageId: userMessage.id,
+                reason: agentic.handoffReason,
+              },
+            }),
+          );
+        }
+        console.log(JSON.stringify({
+          event: "chat.agentic.completed",
+          requestId,
+          botId,
+          conversationId: conversation.id,
+          routeDurationMs: Date.now() - routeStartedAt,
+          ...agentic.telemetry,
+        }));
+        return NextResponse.json({ success: true, data: agentic.data });
+      }
+    }
+
     const configuredBusinessMode = detectBusinessMode(
       [
         conversation.chatbot.companyName,
@@ -495,7 +626,6 @@ export async function POST(request: NextRequest) {
         .filter(Boolean)
         .join(" "),
     );
-    const activeProductIds = latestActiveProductIds(conversation.messages);
     const hasCommerceSource = await hasVerifiedProductSource(botId);
     const businessMode = hasCommerceSource ? "commerce" : configuredBusinessMode;
     const previousUserMessages = conversation.messages
@@ -537,9 +667,6 @@ export async function POST(request: NextRequest) {
         activeProductIds,
       },
     );
-    const currentSentiment = detectSentiment(message);
-    const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings);
-
     const needsStyleClarification =
       commerceIntent === "fit_advice" &&
       activeProductIds.length === 0 &&
@@ -656,46 +783,8 @@ export async function POST(request: NextRequest) {
       });
     }
     const orchestratorContext: OrchestratorContext = {
-      botId,
-      conversationId: conversation.id,
-      query: message,
-      conversationHistory: contextMessages,
-      conversationMetadata: {
-        userIntent: conversation.userIntent || undefined,
-        sentiment: conversation.sentiment || undefined,
-        topics: conversation.topicsDiscussed
-          ? JSON.parse(conversation.topicsDiscussed)
-          : undefined,
-      },
+      ...baseOrchestratorContext,
       verifiedCommerceContext: productSearch.promptContext,
-      botConfig: {
-        companyName: conversation.chatbot.companyName,
-        promptTemplateId: conversation.chatbot.promptTemplateId,
-        systemPrompt: conversation.chatbot.systemPrompt,
-        promptVariables: parseJSON(conversation.chatbot.promptVariables),
-        role: chatbotSettings.role,
-        objective: chatbotSettings.objective,
-        personality: chatbotSettings.personality,
-        rules: chatbotSettings.rules,
-        forbiddenTopics: chatbotSettings.forbiddenTopics,
-        forbiddenResponses: chatbotSettings.forbiddenResponses,
-        handoffTriggers: chatbotSettings.handoffTriggers,
-        leadCollectionFields: chatbotSettings.leadCollectionFields,
-        language: chatbotSettings.language,
-        tone: chatbotSettings.tone,
-        responseLength: chatbotSettings.responseLength,
-        fallbackMessage: chatbotSettings.fallbackMessage,
-        handoffMessage: chatbotSettings.handoffMessage,
-        aiModel: chatbotSettings.aiModel,
-        temperature: chatbotSettings.temperature,
-        maxTokens: chatbotSettings.maxTokens,
-        retrievalMinScore: chatbotSettings.retrievalMinScore,
-        groundingThreshold: chatbotSettings.groundingThreshold,
-        rerankerEnabled: chatbotSettings.rerankerEnabled,
-        liveWebSearchEnabled: chatbotSettings.liveWebSearchEnabled,
-        liveWebAllowedDomains: chatbotSettings.liveWebAllowedDomains,
-        ragCalibration: chatbotSettings.ragCalibration,
-      },
     };
 
     // 🎯 MAGIC HAPPENS HERE - The orchestrator handles everything

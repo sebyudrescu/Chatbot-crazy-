@@ -41,6 +41,7 @@ const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "server-only") return {};
   if (request === "@/lib/db") return { prisma };
+  if (request === "@/lib/agentic-orchestrator") return { orchestrateAgenticResponse: async () => { throw new Error("Agentic core disabled in legacy test"); } };
   if (request === "@/lib/decision-orchestrator") return {
     orchestrateResponse: async () => { orchestratorCalls += 1; return ({
       response: groundingAction === "fallback" ? "Non ho abbastanza informazioni verificate." : "Certo, puoi prenotare online.",
@@ -79,6 +80,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
   return originalLoad.call(this, request, parent, isMain);
 };
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: "CommonJS", moduleResolution: "node" });
+process.env.AGENTIC_CORE_ENABLED = "false";
 require("ts-node/register/transpile-only");
 
 const { processIncomingChannelMessage } = require("../lib/channel-message-processor.ts");

@@ -187,7 +187,7 @@ export async function searchVerifiedProducts(
   botId: string,
   query: string,
   pageContext?: PageContext,
-  options: { intent?: CommerceIntent; activeProductIds?: string[] } = {},
+  options: { intent?: CommerceIntent; activeProductIds?: string[]; excludedProductIds?: string[]; maxResults?: number } = {},
 ): Promise<ProductSearchResult> {
   const parsed = parseCommerceQuery(query);
   if (options.intent) parsed.intent = options.intent;
@@ -205,6 +205,7 @@ export async function searchVerifiedProducts(
   }
 
   const activeProductIds = (options.activeProductIds || []).slice(0, 5);
+  const excludedProductIds = (options.excludedProductIds || []).slice(0, 5);
   const exactSelectors = [
     pageContext?.productId ? { externalId: pageContext.productId } : undefined,
     pageContext?.sku
@@ -234,6 +235,7 @@ export async function searchVerifiedProducts(
     prisma.product.findMany({
       where: {
         botId,
+        id: excludedProductIds.length ? { notIn: excludedProductIds } : undefined,
         status: "active",
         recommendationStatus: { notIn: ["excluded", "blocked"] },
         OR: [...exactSelectors, ...textSelectors].length
@@ -394,12 +396,12 @@ export async function searchVerifiedProducts(
     )
     .slice(
       0,
-      parsed.maxCards > 0
+      options.maxResults || (parsed.maxCards > 0
         ? Math.max(
             parsed.maxCards,
             parsed.intent === "product_comparison" ? 2 : 1,
           )
-        : 1,
+        : 1),
     );
 
   const selections = ranked.map(({ product, variant, reason }) => ({

@@ -1,31 +1,15 @@
 import 'server-only'
 import { prisma } from './db'
 import { recordPipelineStage } from './pipeline-telemetry'
+import { estimateAIUsageCost } from './ai-pricing'
+
+export { estimateAIUsageCost } from './ai-pricing'
 
 type Usage = {
   prompt_tokens?: number
   completion_tokens?: number
   total_tokens?: number
   prompt_tokens_details?: { cached_tokens?: number } | null
-}
-
-const pricingPerMillion: Array<{ test: RegExp; input: number; cached?: number; output: number }> = [
-  { test: /^text-embedding-3-small/i, input: 0.02, output: 0 },
-  { test: /^text-embedding-3-large/i, input: 0.13, output: 0 },
-  { test: /^gpt-4o-mini-transcribe/i, input: 1.25, output: 5 },
-  { test: /^gpt-4o-mini/i, input: 0.15, cached: 0.075, output: 0.60 },
-  { test: /^gpt-4o/i, input: 2.50, cached: 1.25, output: 10 },
-  { test: /^gpt-4\.1-mini/i, input: 0.40, cached: 0.10, output: 1.60 },
-  { test: /^gpt-4\.1/i, input: 2, cached: 0.50, output: 8 },
-  { test: /^gpt-3\.5-turbo/i, input: 0.50, output: 1.50 },
-  { test: /^gpt-4(?:-|$)/i, input: 30, output: 60 },
-]
-
-export function estimateAIUsageCost(model: string, inputTokens: number, outputTokens = 0, cachedInputTokens = 0) {
-  const price = pricingPerMillion.find(item => item.test.test(model))
-  if (!price) return 0
-  const regularInput = Math.max(0, inputTokens - cachedInputTokens)
-  return Number(((regularInput * price.input + cachedInputTokens * (price.cached ?? price.input) + outputTokens * price.output) / 1_000_000).toFixed(8))
 }
 
 export async function recordAIUsage(input: {

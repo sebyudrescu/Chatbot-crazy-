@@ -1,0 +1,221 @@
+import "server-only";
+
+import { prisma } from "./db";
+import {
+  enforceOutgoingPolicy,
+  policyResponse,
+  type AgentPolicyDecision,
+} from "./agent-policy";
+import {
+  orchestrateAgenticResponse,
+  type AgenticResult,
+} from "./agentic-orchestrator";
+import type { OrchestratorContext } from "./decision-orchestrator";
+import type { ChatbotSettings } from "./types";
+import { stringifyJSON } from "./utils";
+
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+
+export interface AgenticChatRuntimeInput {
+  context: OrchestratorContext;
+  messageId: string;
+  userMessage: { id: string; content: string; createdAt: Date };
+  userSessionId: string;
+  rateLimitScope: string;
+  previousAssistantText?: string;
+  incomingPolicy: AgentPolicyDecision;
+  settings: ChatbotSettings;
+  sentiment: string;
+  pageUrl?: string;
+}
+
+function policyOnlyResult(
+  policy: AgentPolicyDecision,
+  settings: ChatbotSettings,
+): AgenticResult {
+  return {
+    response: policyResponse(policy, settings),
+    productCards: [],
+    orderLookupForm: false,
+    handoff: policy.action === "handoff",
+    sources: [],
+    toolTrace: [],
+    model: "policy",
+    processingTimeMs: 0,
+    responseType: `policy_${policy.action}`,
+    intent: policy.action === "handoff" ? "human_handoff" : "policy_blocked",
+    confidence: 1,
+  };
+}
+
+export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
+  const agentResult = input.incomingPolicy.action === "allow"
+    ? await orchestrateAgenticResponse({
+        ...input.context,
+        messageId: input.messageId,
+        rateLimitScope: input.rateLimitScope,
+        previousAssistantText: input.previousAssistantText,
+      })
+    : policyOnlyResult(input.incomingPolicy, input.settings);
+  const outgoingPolicy = input.incomingPolicy.action === "allow"
+    ? enforceOutgoingPolicy(agentResult.response, input.settings)
+    : input.incomingPolicy;
+  const policyDecision = input.incomingPolicy.action !== "allow"
+    ? input.incomingPolicy
+    : outgoingPolicy;
+  const publicResponse = (policyDecision.action === "allow"
+    ? agentResult.response
+    : policyResponse(policyDecision, input.settings))
+    .replace(EMAIL_PATTERN, "[email rimossa]");
+  const persistedResponse = policyDecision.action === "allow"
+    ? agentResult.persistedResponse || publicResponse
+    : publicResponse;
+  const handoffRequested = agentResult.handoff || policyDecision.action === "handoff";
+  const visibleCards = policyDecision.action === "allow" ? agentResult.productCards : [];
+  const quickReplies = handoffRequested
+    ? [{ id: "handoff-confirmed", text: "Attendi un operatore", category: "support" as const }]
+    : [];
+
+  const savedAssistantMessage = await prisma.message.create({
+    data: {
+      conversationId: input.context.conversationId,
+      role: "assistant",
+      content: persistedResponse,
+      sourcesUsed: stringifyJSON({
+        sources: agentResult.sources,
+        metadata: {
+          responseType: agentResult.responseType,
+          intent: agentResult.intent,
+          confidence: agentResult.confidence,
+          model: agentResult.model,
+          agentic: true,
+          toolTrace: agentResult.toolTrace,
+          activeProductIds: visibleCards.map((card) => card.productId),
+          policyAction: policyDecision.action,
+        },
+      }),
+      quickReplies: stringifyJSON(quickReplies),
+      ctaData: stringifyJSON([]),
+      productCards: stringifyJSON(visibleCards),
+    },
+  });
+  if (visibleCards.length > 0) {
+    await prisma.commerceEvent.createMany({
+      data: visibleCards.map((card) => ({
+        botId: input.context.botId,
+        conversationId: input.context.conversationId,
+        messageId: savedAssistantMessage.id,
+        productId: card.productId,
+        variantId: card.variantId,
+        eventType: "impression",
+        sessionId: input.userSessionId,
+        pageUrl: input.pageUrl,
+      })),
+    });
+  }
+  await prisma.conversation.update({
+    where: { id: input.context.conversationId },
+    data: {
+      lastMessageAt: new Date(),
+      userIntent: agentResult.intent,
+      sentiment: input.sentiment,
+      ...(handoffRequested
+        ? {
+            needsHumanEscalation: true,
+            escalatedAt: new Date(),
+            escalationReason: policyDecision.matchedRule
+              ? `Policy agente: ${policyDecision.matchedRule}`
+              : "Handoff richiesto dall'agente",
+          }
+        : {}),
+    },
+  });
+
+  const sourceIds = agentResult.sources
+    .map((source) => source.sourceId)
+    .filter((id): id is string => Boolean(id));
+  const sourceDetails = sourceIds.length
+    ? await prisma.knowledgeSource.findMany({
+        where: { id: { in: sourceIds } },
+        select: {
+          id: true,
+          sourceType: true,
+          sourceUrl: true,
+          originalFilename: true,
+        },
+      })
+    : [];
+
+  return {
+    handoffRequested,
+    handoffReason: policyDecision.matchedRule || "Handoff richiesto dall'agente",
+    telemetry: {
+      model: agentResult.model,
+      durationMs: agentResult.processingTimeMs,
+      tools: agentResult.toolTrace,
+      productsShown: visibleCards.length,
+    },
+    data: {
+      conversationId: input.context.conversationId,
+      userMessage: input.userMessage,
+      assistantMessage: {
+        id: savedAssistantMessage.id,
+        content: publicResponse,
+        createdAt: savedAssistantMessage.createdAt,
+      },
+      sources: sourceDetails,
+      intent: {
+        type: agentResult.intent,
+        confidence: agentResult.confidence,
+        reasoning: "Decisione semantica dell'orchestratore LLM tramite tool calling",
+      },
+      queryClassification: {
+        type: agentResult.toolTrace.length ? "tool_assisted" : "conversational",
+        complexity: agentResult.toolTrace.length > 1 ? "complex" : "simple",
+      },
+      decision: {
+        strategy: "agentic_tool_calling",
+        sources: agentResult.toolTrace.map((trace) => trace.name),
+        reasoning: "Il modello ha scelto autonomamente i tool necessari",
+      },
+      confidence: { score: agentResult.confidence, isCoherent: true },
+      grounding: {
+        action: policyDecision.action === "allow" ? "allow" : "fallback",
+        reason: policyDecision.matchedRule || "verified_tool_results",
+        evidenceCount:
+          agentResult.sources.length +
+          visibleCards.length +
+          (agentResult.orderStatusCard ? 1 : 0),
+      },
+      handoffRequested,
+      memory: {
+        persistentFactsUsed: 0,
+        knowledgeChunksUsed: agentResult.sources.length,
+        factsExtracted: 0,
+        factsExtractionScheduled: false,
+      },
+      responseType: agentResult.responseType,
+      processingTimeMs: agentResult.processingTimeMs,
+      phaseTimings: { agentic: agentResult.processingTimeMs },
+      workflow: { executed: [], failed: [], skipped: [], actions: [] },
+      actions: {
+        executed: [],
+        failed: [],
+        skipped: [],
+        ctas: [],
+        leadForms: [],
+        channelMessages: [],
+        handoffActivated: handoffRequested,
+        forceProductCards: false,
+        orderLookupForm: policyDecision.action === "allow" && agentResult.orderLookupForm,
+        productWidget: null,
+      },
+      quickReplies,
+      ctas: [],
+      productCards: visibleCards,
+      productWidget: null,
+      orderLookupForm: policyDecision.action === "allow" && agentResult.orderLookupForm,
+      orderStatusCard: policyDecision.action === "allow" ? agentResult.orderStatusCard : undefined,
+    },
+  };
+}

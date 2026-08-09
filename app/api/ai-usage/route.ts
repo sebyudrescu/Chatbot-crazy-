@@ -33,6 +33,6 @@ export async function GET(request: NextRequest) {
     byFeature: byFeature.map(item => ({ feature: item.feature, calls: item._count.id, tokens: item._sum.totalTokens || 0, costUsd: Number((item._sum.estimatedCostUsd || 0).toFixed(6)) })).sort((a, b) => b.costUsd - a.costUsd),
     byAgent: byBot.map(item => ({ botId: item.botId, name: item.botId ? names.get(item.botId) || 'Agente eliminato' : 'Strumenti generali', calls: item._count.id, tokens: item._sum.totalTokens || 0, costUsd: Number((item._sum.estimatedCostUsd || 0).toFixed(6)) })).sort((a, b) => b.costUsd - a.costUsd),
     daily,
-    pricingUpdatedAt: '2026-07-16',
+    pricingUpdatedAt: '2026-08-09',
   } })
 }
