@@ -314,17 +314,54 @@
       outline-offset: 2px;
     }
 
+    .chatbot-product-carousel-shell { position: relative; min-width: 0; margin-top: 10px; }
+    .chatbot-product-carousel-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+      padding: 0 2px;
+      color: ${config.theme === 'dark' ? '#94a3b8' : '#64748b'};
+      font-size: 9px;
+      font-weight: 750;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .chatbot-product-counter { font-variant-numeric: tabular-nums; letter-spacing: 0; }
     .chatbot-product-carousel {
       display: grid;
       grid-auto-flow: column;
-      grid-auto-columns: minmax(210px, 82%);
+      grid-auto-columns: calc(100% - 42px);
       gap: 10px;
-      margin-top: 10px;
-      padding: 2px 2px 8px;
+      padding: 2px 42px 8px 2px;
       overflow-x: auto;
       scroll-snap-type: x mandatory;
-      scrollbar-width: thin;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
     }
+    .chatbot-product-carousel::-webkit-scrollbar { display: none; }
+    .chatbot-product-nav {
+      position: absolute;
+      z-index: 2;
+      top: 50%;
+      display: grid;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      place-items: center;
+      transform: translateY(-35%);
+      border: 1px solid ${config.theme === 'dark' ? '#475569' : '#e2e8f0'};
+      border-radius: 999px;
+      background: ${config.theme === 'dark' ? 'rgba(30, 41, 59, 0.96)' : 'rgba(255, 255, 255, 0.96)'};
+      color: ${config.theme === 'dark' ? '#f8fafc' : '#334155'};
+      box-shadow: 0 5px 14px rgba(15, 23, 42, 0.16);
+      cursor: pointer;
+    }
+    .chatbot-product-nav.previous { left: 8px; }
+    .chatbot-product-nav.next { right: 8px; }
+    .chatbot-product-nav:hover, .chatbot-product-nav:focus-visible { color: ${config.primaryColor}; outline: 2px solid ${config.primaryColor}55; outline-offset: 2px; }
+    .chatbot-product-nav[disabled] { pointer-events: none; opacity: 0; }
 
     .chatbot-product-card {
       position: relative;
@@ -1165,10 +1202,21 @@
   function addProductCards(contentElement, productCards, messageId) {
     const cards = Array.isArray(productCards) ? productCards.slice(0, 5) : [];
     if (!cards.length) return;
+    const shell = document.createElement('section');
+    shell.className = 'chatbot-product-carousel-shell';
+    shell.setAttribute('role', 'region');
+    shell.setAttribute('aria-roledescription', 'carosello');
+    shell.setAttribute('aria-label', 'Prodotti consigliati');
+    const heading = document.createElement('div');
+    heading.className = 'chatbot-product-carousel-heading';
+    const headingLabel = document.createElement('span');
+    headingLabel.textContent = 'Prodotti';
+    const counter = document.createElement('span');
+    counter.className = 'chatbot-product-counter';
+    heading.append(headingLabel, counter);
     const carousel = document.createElement('div');
     carousel.className = 'chatbot-product-carousel';
-    carousel.setAttribute('role', 'region');
-    carousel.setAttribute('aria-label', 'Prodotti consigliati');
+    shell.append(heading, carousel);
 
     cards.forEach((card) => {
       const productUrl = safeProductUrl(card && card.productUrl);
@@ -1257,7 +1305,59 @@
       carousel.appendChild(article);
     });
 
-    if (carousel.childElementCount) contentElement.appendChild(carousel);
+    const renderedCards = Array.from(carousel.children);
+    if (!renderedCards.length) return;
+    renderedCards.forEach((card, index) => {
+      const title = card.querySelector('.chatbot-product-title')?.textContent || 'Prodotto';
+      card.setAttribute('aria-label', `${index + 1} di ${renderedCards.length}: ${title}`);
+    });
+    let activeIndex = 0;
+    const updateNavigation = () => {
+      if (previousButton) previousButton.disabled = activeIndex === 0;
+      if (nextButton) nextButton.disabled = activeIndex === renderedCards.length - 1;
+      counter.textContent = renderedCards.length > 1 ? `${activeIndex + 1} / ${renderedCards.length}` : '';
+    };
+    const moveTo = (index) => {
+      activeIndex = Math.max(0, Math.min(index, renderedCards.length - 1));
+      const target = renderedCards[activeIndex];
+      if (typeof carousel.scrollTo === 'function') carousel.scrollTo({ left: target.offsetLeft, behavior: 'smooth' });
+      else if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+      updateNavigation();
+    };
+    let previousButton = null;
+    let nextButton = null;
+    if (renderedCards.length > 1) {
+      carousel.tabIndex = 0;
+      previousButton = document.createElement('button');
+      previousButton.type = 'button';
+      previousButton.className = 'chatbot-product-nav previous';
+      previousButton.setAttribute('aria-label', 'Prodotto precedente');
+      previousButton.textContent = '‹';
+      nextButton = document.createElement('button');
+      nextButton.type = 'button';
+      nextButton.className = 'chatbot-product-nav next';
+      nextButton.setAttribute('aria-label', 'Prodotto successivo');
+      nextButton.textContent = '›';
+      previousButton.onclick = () => moveTo(activeIndex - 1);
+      nextButton.onclick = () => moveTo(activeIndex + 1);
+      carousel.onkeydown = (event) => {
+        if (event.key === 'ArrowLeft') { event.preventDefault(); moveTo(activeIndex - 1); }
+        if (event.key === 'ArrowRight') { event.preventDefault(); moveTo(activeIndex + 1); }
+      };
+      carousel.onscroll = () => {
+        let nearestIndex = 0;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        renderedCards.forEach((card, index) => {
+          const distance = Math.abs(card.offsetLeft - carousel.scrollLeft);
+          if (distance < nearestDistance) { nearestIndex = index; nearestDistance = distance; }
+        });
+        activeIndex = nearestIndex;
+        updateNavigation();
+      };
+      shell.append(previousButton, nextButton);
+    }
+    updateNavigation();
+    contentElement.appendChild(shell);
   }
 
   function formatOrderDate(value) {

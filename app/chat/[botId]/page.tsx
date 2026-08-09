@@ -23,7 +23,8 @@ import { Button } from "@/components/ui/Button";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { SafeRichText, safeHttpUrl } from "@/components/chat/SafeRichText";
 import { OrderLookupForm, OrderStatusCardView } from "@/components/chat/OrderTracking";
-import type { OrderStatusCard } from "@/lib/commerce-types";
+import { ProductCarousel } from "@/components/chat/ProductCarousel";
+import type { OrderStatusCard, ProductCard } from "@/lib/commerce-types";
 import {
   buildInitialQuickReplies,
   detectBusinessMode,
@@ -46,17 +47,6 @@ interface Source {
   sourceType: string;
   sourceUrl?: string;
   originalFilename?: string;
-}
-interface ProductCard {
-  productId: string;
-  title: string;
-  shortDescription: string;
-  imageUrl?: string;
-  productUrl: string;
-  price?: number;
-  currency?: string;
-  availability: string;
-  badge?: string;
 }
 interface Message {
   id: string;
@@ -344,7 +334,7 @@ export default function ChatPage() {
                         message.content
                       )}
                     </div>
-                    <ProductCards cards={message.productCards} />
+                    <ProductCarousel cards={message.productCards} />
                     {message.role === "assistant" && message.orderLookupForm ? <OrderLookupForm busy={sending} onLookup={(orderNumber, email) => send(`Ordine ${orderNumber}, ${email}`, true)} /> : null}
                     {message.role === "assistant" ? <OrderStatusCardView card={message.orderStatusCard} /> : null}
                     {message.role === "assistant" &&
@@ -538,36 +528,6 @@ export default function ChatPage() {
         </div>
       </div>
     </DashboardLayout>
-  );
-}
-
-function ProductCards({ cards }: { cards?: ProductCard[] }) {
-  if (!cards?.length) return null;
-  return (
-    <div className="mt-2 grid gap-2">
-      {cards.map((card) => {
-        const href = safeHttpUrl(card.productUrl);
-        const image = card.imageUrl ? safeHttpUrl(card.imageUrl) : null;
-        if (!href) return null;
-        return (
-          <a key={card.productId} href={href} target="_blank" rel="noopener noreferrer" className="group flex overflow-hidden rounded-xl border bg-white shadow-sm transition hover:border-brand-200 hover:shadow-md">
-            {image ? (
-              // The catalog accepts arbitrary verified HTTPS merchant domains.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt={card.title} className="h-24 w-24 shrink-0 object-cover" loading="lazy" />
-            ) : (
-              <div className="flex h-24 w-24 shrink-0 items-center justify-center bg-gray-100"><Bot className="h-5 w-5 text-gray-300" /></div>
-            )}
-            <div className="min-w-0 flex-1 p-3">
-              <div className="flex items-start justify-between gap-2"><p className="line-clamp-2 text-[11px] font-semibold text-gray-900">{card.title}</p><ExternalLink className="h-3 w-3 shrink-0 text-brand-500" /></div>
-              {card.price !== undefined ? <p className="mt-1 text-xs font-bold text-brand-700">{new Intl.NumberFormat("it-IT", { style: "currency", currency: card.currency || "EUR" }).format(card.price)}</p> : null}
-              <p className="mt-1 line-clamp-2 text-[9px] leading-4 text-gray-500">{card.shortDescription}</p>
-              <p className={`mt-1 text-[9px] font-medium ${card.availability === "in_stock" ? "text-emerald-600" : "text-amber-600"}`}>{card.availability === "in_stock" ? "Disponibile" : "Verifica disponibilità"}</p>
-            </div>
-          </a>
-        );
-      })}
-    </div>
   );
 }
 

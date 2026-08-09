@@ -138,6 +138,16 @@ window.fetch = async (url, options = {}) => {
             badge: "In offerta",
           },
           {
+            productId: "00000000-0000-4000-8000-000000000022",
+            title: "Secondo prodotto verificato",
+            shortDescription: "Seconda scheda da sfogliare",
+            imageUrl: "https://cliente.example/images/product-2.jpg",
+            productUrl: "https://cliente.example/products/verified-2",
+            price: 74.5,
+            currency: "EUR",
+            availability: "preorder",
+          },
+          {
             productId: "00000000-0000-4000-8000-000000000021",
             title: "Prodotto non sicuro",
             productUrl: "javascript:alert(1)",
@@ -237,13 +247,23 @@ assert.equal(
 );
 assert.equal(actions[0].getAttribute("rel"), "noopener noreferrer");
 const productCards = window.document.querySelectorAll(".chatbot-product-card");
-assert.equal(productCards.length, 1, "Le product card HTTPS non vengono renderizzate in sicurezza");
+assert.equal(productCards.length, 2, "Le product card HTTPS non vengono renderizzate in sicurezza");
 assert.equal(
   productCards[0].querySelector(".chatbot-product-image-link")?.getAttribute("href"),
   "https://cliente.example/products/verified",
   "La foto prodotto non punta alla pagina canonica",
 );
 assert.match(productCards[0].textContent || "", /89,90|€89\.90|89\.90/, "Il prezzo prodotto non viene mostrato");
+const productCarousel = window.document.querySelector(".chatbot-product-carousel-shell");
+assert.equal(productCarousel?.getAttribute("aria-roledescription"), "carosello", "Il carosello prodotti non è annunciato correttamente");
+const carouselButtons = productCarousel?.querySelectorAll(".chatbot-product-nav") || [];
+assert.equal(carouselButtons.length, 2, "Le frecce del carosello prodotti non vengono mostrate");
+assert.equal(carouselButtons[0].getAttribute("aria-label"), "Prodotto precedente");
+assert.equal(carouselButtons[1].getAttribute("aria-label"), "Prodotto successivo");
+assert.equal(carouselButtons[0].disabled, true, "La freccia precedente deve partire disabilitata");
+carouselButtons[1].click();
+assert.equal(carouselButtons[1].disabled, true, "La freccia successiva non aggiorna la pagina attiva");
+assert.equal(productCarousel?.querySelector(".chatbot-product-counter")?.textContent, "2 / 2", "Il contatore del carosello non si aggiorna");
 const sources = window.document.querySelectorAll(".chatbot-source");
 assert.equal(sources.length, 3, "Le fonti della risposta non vengono mostrate");
 assert.equal(
@@ -568,6 +588,7 @@ console.log(
         "keyboard-accessible-controls",
         "page-context",
         "verified-product-cards",
+        "accessible-product-carousel",
         "standalone-public-page",
       ],
     },

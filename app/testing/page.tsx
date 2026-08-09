@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle as TriangleAlert, Bot, CheckCircle2, Database, ExternalLink, FlaskConical, Gauge, Loader2, MessageSquare, RotateCcw, Send, Settings2, ShieldCheck, ShoppingBag, Sparkles } from 'lucide-react'
+import { AlertTriangle as TriangleAlert, Bot, CheckCircle2, Database, FlaskConical, Gauge, Loader2, MessageSquare, RotateCcw, Send, Settings2, ShieldCheck, Sparkles } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { SafeRichText } from '@/components/chat/SafeRichText'
 import { OrderLookupForm, OrderStatusCardView } from '@/components/chat/OrderTracking'
+import { ProductCarousel } from '@/components/chat/ProductCarousel'
 import type { OrderStatusCard, ProductCard } from '@/lib/commerce-types'
 
 interface Agent { id: string; companyName: string; kbStatus: string; kbTotalChunks: number; settings?: { welcomeMessage?: string } | null; _count: { knowledgeSources: number; conversations: number } }
@@ -97,6 +98,5 @@ function GroundingStatus({ diagnostics }: { diagnostics: Diagnostics }) {
 }
 
 function ProductCardsPreview({ cards }: { cards?: ProductCard[] }) {
-  if (!cards?.length) return null
-  return <div className="grid gap-2 sm:grid-cols-2">{cards.map(card => <a key={`${card.productId}-${card.variantId || ''}`} href={card.productUrl} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md">{card.imageUrl ? <div role="img" aria-label={card.title} className="h-28 w-full bg-cover bg-center" style={{ backgroundImage: `url(${card.imageUrl})` }} /> : <div className="flex h-28 items-center justify-center bg-gray-50 text-gray-300"><ShoppingBag className="h-7 w-7" /></div>}<div className="p-3"><p className="line-clamp-2 text-[11px] font-semibold leading-4 text-gray-900">{card.title}</p><div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs font-bold text-brand-700">{card.price !== undefined ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: card.currency || 'EUR' }).format(card.price) : 'Vedi prezzo'}</span><ExternalLink className="h-3.5 w-3.5 text-gray-400 group-hover:text-brand-600" /></div></div></a>)}</div>
+  return <ProductCarousel cards={cards} />
 }
