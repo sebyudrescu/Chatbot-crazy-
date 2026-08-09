@@ -17,9 +17,23 @@ assert.equal(evaluateGroundingPolicy({ ...base, coherenceScore: 0.49 }).reason, 
 assert.equal(evaluateGroundingPolicy({ ...base, confidence: 0.72 }).action, 'caution')
 assert.equal(evaluateGroundingPolicy({ ...base, confidence: 0.9 }).action, 'allow')
 assert.equal(evaluateGroundingPolicy({ ...base, knowledgeChunks: 0, hasVerifiedCommerceContext: true }).reason, 'verified_commerce')
+const authoritativeIdentity = evaluateGroundingPolicy({
+  ...base,
+  knowledgeChunks: 0,
+  hasAuthoritativeBusinessContext: true,
+})
+assert.equal(authoritativeIdentity.action, 'allow')
+assert.equal(authoritativeIdentity.reason, 'authoritative_business_context')
+assert.equal(authoritativeIdentity.evidenceCount, 1)
+assert.equal(evaluateGroundingPolicy({
+  ...base,
+  confidence: 0.69,
+  knowledgeChunks: 0,
+  hasAuthoritativeBusinessContext: true,
+}).reason, 'below_threshold')
 assert.match(groundingFallbackMessage(undefined, 'it'), /informazioni verificate/i)
 assert.match(groundingFallbackMessage(undefined, 'en'), /verified information/i)
 assert.equal(groundingFallbackMessage('  Messaggio proprietario  ', 'it'), 'Messaggio proprietario')
 assert.match(addGroundingCaution('Risposta verificata', 'it'), /potrebbero essere parziali/i)
 
-console.log(JSON.stringify({ success: true, checks: 11 }))
+console.log(JSON.stringify({ success: true, checks: 15 }))

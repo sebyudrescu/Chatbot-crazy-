@@ -8,12 +8,13 @@ export interface GroundingPolicyInput {
   persistentFacts: number
   graphEntities: number
   hasVerifiedCommerceContext?: boolean
+  hasAuthoritativeBusinessContext?: boolean
   coherenceScore?: number
 }
 
 export interface GroundingPolicyDecision {
   action: GroundingAction
-  reason: 'not_required' | 'verified_commerce' | 'no_evidence' | 'low_coherence' | 'below_threshold' | 'limited_margin' | 'grounded'
+  reason: 'not_required' | 'verified_commerce' | 'authoritative_business_context' | 'no_evidence' | 'low_coherence' | 'below_threshold' | 'limited_margin' | 'grounded'
   evidenceCount: number
   confidence: number
   threshold: number
@@ -24,7 +25,9 @@ const clamp = (value: number) => Math.max(0, Math.min(1, value))
 export function evaluateGroundingPolicy(input: GroundingPolicyInput): GroundingPolicyDecision {
   const confidence = clamp(input.confidence)
   const threshold = clamp(input.threshold)
-  const evidenceCount = input.knowledgeChunks + input.persistentFacts + input.graphEntities
+  const retrievedEvidenceCount = input.knowledgeChunks + input.persistentFacts + input.graphEntities
+  const authoritativeBusinessEvidence = input.hasAuthoritativeBusinessContext ? 1 : 0
+  const evidenceCount = retrievedEvidenceCount + authoritativeBusinessEvidence
 
   if (!input.requiresGrounding) {
     return { action: 'allow', reason: 'not_required', evidenceCount, confidence, threshold }
@@ -43,6 +46,9 @@ export function evaluateGroundingPolicy(input: GroundingPolicyInput): GroundingP
   }
   if (confidence < threshold + 0.08 || (input.coherenceScore !== undefined && input.coherenceScore < 0.75)) {
     return { action: 'caution', reason: 'limited_margin', evidenceCount, confidence, threshold }
+  }
+  if (authoritativeBusinessEvidence > 0 && retrievedEvidenceCount === 0) {
+    return { action: 'allow', reason: 'authoritative_business_context', evidenceCount, confidence, threshold }
   }
   return { action: 'allow', reason: 'grounded', evidenceCount, confidence, threshold }
 }

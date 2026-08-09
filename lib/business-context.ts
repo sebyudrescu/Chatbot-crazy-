@@ -101,6 +101,9 @@ export async function getBusinessContext(
     const settings = (parseJSON(chatbot.settings) || {}) as Record<string, unknown>
     const context: BusinessContext = {
       companyName: chatbot.companyName,
+      companyDescription: typeof settings.role === 'string' && settings.role.trim()
+        ? settings.role.trim()
+        : undefined,
       businessMode: detectBusinessMode([
         chatbot.companyName,
         chatbot.systemPrompt,
@@ -146,6 +149,11 @@ export function formatBusinessContextForPrompt(
   // Company name (ALWAYS present)
   prompt += `**Nome Azienda:** ${context.companyName}\n\n`
   
+  // Owner-configured role/description (authoritative)
+  if (context.companyDescription) {
+    prompt += `**Descrizione ufficiale:**\n${context.companyDescription}\n\n`
+  }
+
   // About Us (if available)
   if (context.aboutUs) {
     prompt += `**Chi Siamo / Cosa Facciamo:**\n${context.aboutUs}\n\n`
@@ -171,9 +179,9 @@ export function formatBusinessContextForPrompt(
 Quando qualcuno chiede "Chi siete?" o "Cosa fate?", rispondi usando QUESTE informazioni.
 
 Esempio risposta:
-"Sono l'assistente virtuale di ${context.companyName}${context.aboutUs ? '. ' + context.aboutUs.split('\n')[0].substring(0, 100) + '...' : ''}
+"Siamo ${context.companyName}${context.companyDescription ? '. ' + context.companyDescription.split('\n')[0].substring(0, 160) : context.aboutUs ? '. ' + context.aboutUs.split('\n')[0].substring(0, 100) : ''}.
 
-Come posso aiutarti oggi?"
+Cerchi informazioni sui nostri prodotti oppure assistenza su un ordine?"
 
 NON dire solo "Sono un assistente supporto clienti".
 Devi SEMPRE menzionare ${context.companyName} e cosa facciamo.

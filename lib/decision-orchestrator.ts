@@ -375,6 +375,13 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
     persistentFacts: retrievalResult?.persistentFacts.length || 0,
     graphEntities: graphResult?.entities.length || 0,
     hasVerifiedCommerceContext: Boolean(context.verifiedCommerceContext?.trim()),
+    // The owner-configured company identity is itself an authoritative source.
+    // Without this evidence, a correct answer such as "Siamo Acme" could be
+    // replaced by the generic no-evidence fallback when retrieval finds no
+    // matching About page.
+    hasAuthoritativeBusinessContext:
+      decision.responseStrategy === 'identity_authoritative'
+      && Boolean(context.botConfig.companyName?.trim()),
     coherenceScore: validationResult?.coherenceScore,
   })
   if (grounding.action === 'fallback') {
@@ -1027,9 +1034,14 @@ Ora rispondi alla domanda dell'utente mantenendo questa identità unificata.
   // 10. Calculate confidence
   const hasKBData = (retrievalResult?.knowledgeChunks.length || 0) > 0
   const hasGraphData = (graphResult?.entities.length || 0) > 0
-  const hasBusinessContext = businessContext.aboutUs || (businessContext.mainServices && businessContext.mainServices.length > 0)
+  const hasBusinessContext = Boolean(
+    businessContext.companyName?.trim()
+    || businessContext.companyDescription?.trim()
+    || businessContext.aboutUs?.trim()
+    || businessContext.mainServices?.length
+  )
   
-  let confidence = 0.6  // Base confidence for identity
+  let confidence = 0.7  // The configured company identity is authoritative.
   
   if (hasKBData) confidence += 0.2
   if (hasGraphData) confidence += 0.1
