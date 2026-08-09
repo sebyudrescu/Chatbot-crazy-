@@ -24,8 +24,8 @@ const normalizedBoolean = z.preprocess((value) => {
   if (typeof value === "number") return value === 1 ? true : value === 0 ? false : value;
   if (typeof value !== "string") return value;
   const normalized = value.trim().toLocaleLowerCase("it");
-  if (/^(true|yes|s[iì]|vero|1)\b/.test(normalized)) return true;
-  if (/^(false|no|falso|0)\b/.test(normalized)) return false;
+  if (/\b(false|no|non|not|falso|irrilevante|irrelevant|incomplet[oa]|incomplete|insicur[oa]|unsafe|0)\b/.test(normalized)) return false;
+  if (/\b(true|yes|s[iì]|vero|rilevante|relevant|supportat[oa]|grounded|complet[oa]|complete|sicur[oa]|safe|1)\b/.test(normalized)) return true;
   return value;
 }, z.boolean());
 
@@ -37,7 +37,7 @@ export const evaluationJudgeSchema = z.object({
   relevant: normalizedBoolean,
   complete: normalizedBoolean,
   safe: normalizedBoolean,
-  relevantContextIndexes: z.array(z.coerce.number().int().min(0).max(19)).max(20),
+  relevantContextIndexes: z.array(z.coerce.number().int().min(0).max(99)).max(20),
   reason: z.string().max(1000),
 });
 

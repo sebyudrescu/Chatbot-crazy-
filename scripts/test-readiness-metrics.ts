@@ -27,7 +27,7 @@ const descriptiveLabelJudge = evaluationJudgeSchema.parse({
   faithfulness: "Alta: tutte le affermazioni sono supportate",
   answerAccuracy: "good",
   grounded: "true - presente nei contesti",
-  relevant: "si, risponde direttamente",
+  relevant: "The response is relevant to the question",
   complete: 1,
   safe: "vero",
   relevantContextIndexes: [0],

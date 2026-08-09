@@ -82,7 +82,33 @@ export async function POST(request: NextRequest) {
       const completion = await new OpenAI({ apiKey: process.env.OPENAI_API_KEY }).chat.completions.create({
         model,
         temperature: 0,
-        response_format: { type: "json_object" },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "rag_evaluation_verdict",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                score: { type: "number", minimum: 0, maximum: 1 },
+                faithfulness: { type: "number", minimum: 0, maximum: 1 },
+                answerAccuracy: { type: "number", minimum: 0, maximum: 1 },
+                grounded: { type: "boolean" },
+                relevant: { type: "boolean" },
+                complete: { type: "boolean" },
+                safe: { type: "boolean" },
+                relevantContextIndexes: {
+                  type: "array",
+                  items: { type: "integer", minimum: 0, maximum: 99 },
+                  maxItems: 20,
+                },
+                reason: { type: "string" },
+              },
+              required: ["score", "faithfulness", "answerAccuracy", "grounded", "relevant", "complete", "safe", "relevantContextIndexes", "reason"],
+            },
+          },
+        },
         messages: [
           {
             role: "system",
