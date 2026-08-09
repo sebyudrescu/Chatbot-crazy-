@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { parseShopifyConfig, shopifyEnvironment } from "@/lib/shopify-auth";
+import { shopifyThemeEditorUrl } from "@/lib/shopify-widget";
 
 export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get("botId") || "";
@@ -28,6 +29,9 @@ export async function GET(request: NextRequest) {
       webhookUrl: environment.webhookUrl,
       connected: Boolean(connection?.enabled && connection.status === "connected"),
       shopDomain: connection?.externalAccountId || null,
+      themeEditorUrl: connection?.status === "connected"
+        ? shopifyThemeEditorUrl(connection.externalAccountId, environment.clientId)
+        : null,
       status: connection?.status || "disconnected",
       lastError: connection?.lastError || null,
       lastSyncedAt: connection?.lastTestedAt || null,

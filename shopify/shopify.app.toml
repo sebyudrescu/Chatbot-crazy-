@@ -1,0 +1,18 @@
+# Official Shopify application configuration for LitX AI Connector.
+client_id = "92af677613cc889443a398db8f937611"
+name = "LitX AI Connector"
+application_url = "https://litx-ai-agent-studio.vercel.app/integrations"
+embedded = false
+
+[access_scopes]
+scopes = "read_products,read_orders"
+use_legacy_install_flow = true
+
+[auth]
+redirect_urls = [ "https://litx-ai-agent-studio.vercel.app/api/shopify/oauth/callback" ]
+
+[webhooks]
+api_version = "2026-07"
+
+[build]
+automatically_update_urls_on_dev = false

@@ -1,0 +1,12 @@
+<script type="application/json" id="litx-shop-context">
+  {"shop": {{ shop.permanent_domain | json }} }
+</script>
+
+{% schema %}
+{
+  "name": "AI chat widget",
+  "target": "body",
+  "javascript": "litx-loader.js",
+  "settings": []
+}
+{% endschema %}
