@@ -147,6 +147,16 @@ export async function tryShopifyOrderLookup(input: {
       };
     }
     if (result.capability !== "ready" || !result.data) throw new Error("Shopify non disponibile");
+    if (refreshedConfig.orderTrackingPcdStatus !== "ready" || connection.lastError) {
+      await prisma.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          config: JSON.stringify(encryptConfigSecrets({ ...refreshedConfig, orderTrackingPcdStatus: "ready" as const })),
+          lastError: null,
+          lastTestedAt: new Date(),
+        },
+      }).catch(() => undefined);
+    }
     const candidates = Array.isArray(result.data.orders.nodes) ? result.data.orders.nodes : [];
     const order = candidates.find((item) => matchesShopifyOrderNumber(item.name, parsed.orderNumber!) && safeOrderLookupEqual(String(item.email || ""), normalizedEmail));
     if (!order) return { handled: true, redactedUserText, response: GENERIC_FAILURE, persistedResponse: GENERIC_FAILURE, verified: false, provider: "shopify", capability: "ready" };

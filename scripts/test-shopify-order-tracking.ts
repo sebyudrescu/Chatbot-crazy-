@@ -57,6 +57,7 @@ assert.match(serviceSource, /checkRateLimit/);
 assert.match(serviceSource, /safeOrderLookupEqual/);
 assert.match(serviceSource, /persistedResponse:\s*PERSISTED_SUCCESS/);
 assert.match(serviceSource, /orderTrackingPcdStatus:\s*"required"/);
+assert.match(serviceSource, /result\.capability !== "ready"[\s\S]*orderTrackingPcdStatus: "ready"/, "a successful privacy-safe probe must persist PCD readiness even when no order matches");
 assert.doesNotMatch(serviceSource, /console\.(?:log|info|warn|error)/, "the lookup service must not log protected order data");
 
 const chatSource = readFileSync("app/api/chat/route.ts", "utf8");
