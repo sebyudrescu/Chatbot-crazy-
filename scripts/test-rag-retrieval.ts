@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { rankBm25, tokenizeForRetrieval } from '../lib/bm25'
+import { rankBm25, tokenizeForRetrieval, tokenizeRetrievalQuery } from '../lib/bm25'
 import { advancedRetrieve } from '../lib/advanced-rag'
 import { rerankWithCrossEncoder } from '../lib/cross-encoder-reranker'
 import { searchAuthorizedWeb } from '../lib/live-web-search'
@@ -14,9 +14,15 @@ const corpus = [
 ]
 
 assert.deepEqual(tokenizeForRetrieval('Taglie: 46-52, LINO!'), ['taglie', '46', '52', 'lino'])
+assert.ok(tokenizeRetrievalQuery('condizioni reso').includes('recesso'))
 const ranked = rankBm25('pantalone uomo lino nero taglie', corpus, { topK: 3 })
 assert.equal(ranked[0]?.document.id, 'lord')
 assert.equal(ranked.every((result) => result.score > 0 && result.score <= 1), true)
+const returnPolicy = rankBm25('Quali sono le condizioni per effettuare un reso?', [
+  { id: 'generic-return', text: 'Per assistenza sui prodotti contatta il nostro team.' },
+  { id: 'withdrawal', text: 'Diritto di recesso entro 14 giorni dalla ricezione del prodotto.' },
+], { topK: 2 })
+assert.equal(returnPolicy[0]?.document.id, 'withdrawal')
 
 async function main() {
   const hybrid = await advancedRetrieve('pantalone uomo lino nero taglie', [], {
@@ -122,7 +128,7 @@ assert.ok(delayed.ndcgAtK > 0.6 && delayed.ndcgAtK < 0.7)
 
   console.log(JSON.stringify({
     success: true,
-    checks: 33,
+    checks: 35,
     topBm25Result: ranked[0]?.document.id,
     metrics: average,
   }))

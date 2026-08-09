@@ -16,10 +16,33 @@ export interface Bm25Options {
 }
 
 const TOKEN_PATTERN = /[\p{L}\p{N}]+/gu;
+const STOP_WORDS = new Set([
+  "a", "ad", "al", "alla", "alle", "anche", "che", "chi", "con", "come", "da", "dal",
+  "dalla", "delle", "di", "e", "effettuare", "gli", "il", "in", "la", "le", "lo", "mi",
+  "nel", "nella", "non", "o", "per", "piu", "puoi", "quale", "quali", "sono", "su", "un",
+  "una", "uno", "the", "a", "an", "and", "are", "for", "from", "how", "in", "is", "of",
+  "on", "or", "the", "to", "what", "which", "with",
+]);
+
+const QUERY_SYNONYMS: Record<string, string[]> = {
+  reso: ["recesso", "restituzione", "restituire"],
+  resi: ["recesso", "restituzione", "restituzioni", "restituire"],
+  recesso: ["reso", "resi", "restituzione"],
+  restituzione: ["reso", "resi", "recesso"],
+  spedizione: ["consegna", "corriere"],
+  consegna: ["spedizione", "corriere"],
+  pagamento: ["pagare", "pagamenti"],
+  pagamenti: ["pagare", "pagamento"],
+};
 
 export function tokenizeForRetrieval(value: string): string[] {
   return (value.normalize("NFKC").toLocaleLowerCase("it").match(TOKEN_PATTERN) || [])
-    .filter((token) => token.length > 1);
+    .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
+}
+
+export function tokenizeRetrievalQuery(value: string): string[] {
+  const tokens = tokenizeForRetrieval(value);
+  return [...new Set(tokens.flatMap((token) => [token, ...(QUERY_SYNONYMS[token] || [])]))];
 }
 
 export function rankBm25<T extends Bm25Document>(
@@ -28,7 +51,7 @@ export function rankBm25<T extends Bm25Document>(
   options: Bm25Options = {},
 ): Bm25Result<T>[] {
   const { k1 = 1.2, b = 0.75, topK = documents.length } = options;
-  const queryTerms = [...new Set(tokenizeForRetrieval(query))];
+  const queryTerms = tokenizeRetrievalQuery(query);
   if (!queryTerms.length || !documents.length || topK <= 0) return [];
 
   const corpus = documents.map((document) => ({
