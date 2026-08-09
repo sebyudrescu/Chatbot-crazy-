@@ -27,6 +27,8 @@ export function appendAgentInstructions(basePrompt: string, config: AgentInstruc
   }
 
   const lines = [
+    Object.values(config).some(Boolean) && 'Comprensione del messaggio: interpreta refusi, trasposizioni e grammatica imperfetta usando il contesto della conversazione. Non correggere il cliente e non inventare; se esistono due interpretazioni plausibili, fai una sola domanda breve di chiarimento.',
+    Object.values(config).some(Boolean) && 'ContinuitÃ : conserva i vincoli giÃ  espressi dall\'utente (categoria, preferenze, budget, misure o obiettivo) finchÃ© non cambia chiaramente argomento.',
     config.role && `Ruolo: ${config.role}`,
     config.objective && `Obiettivo: ${config.objective}`,
     config.personality && `Personalità: ${config.personality}`,

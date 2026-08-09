@@ -3,6 +3,7 @@ import {
   categoryConflicts,
   categoryMatches,
   buildCatalogFollowUpQuery,
+  buildConversationalCommerceQuery,
   classifyCommerceIntent,
   isGenericStyleAdviceRequest,
   needsProductDiscoveryClarification,
@@ -76,6 +77,14 @@ assert.equal(classifyCommerceIntent("Del Pantalone Lord Nero quali taglie sono d
 assert.equal(classifyCommerceIntent("Che taglie ha?"), "variant_availability");
 assert.equal(classifyCommerceIntent("Volevo qualcosa di nero come pantaloni"), "product_discovery");
 assert.equal(classifyCommerceIntent("Avete anche zaini?"), "product_discovery");
+assert.equal(classifyCommerceIntent("Che pantaloni hai?"), "product_discovery");
+assert.equal(classifyCommerceIntent("Che pantlaoni hai??"), "product_discovery");
+assert.equal(parseCommerceQuery("Che pantlaoni hai??").category, "trousers");
+assert.equal(classifyCommerceIntent("Volgio dei pantaloni neri"), "product_discovery");
+assert.deepEqual(parseCommerceQuery("Volgio dei pantaloni neri").colors, ["nero"]);
+assert.equal(classifyCommerceIntent("Cosa mi consigli?"), "product_discovery");
+assert.equal(classifyCommerceIntent("Avete macchine da caffÃ¨?"), "product_discovery");
+assert.equal(needsProductDiscoveryClarification("Cosa mi consigli?"), true);
 assert.equal(parseCommerceQuery("Avete anche zaini?").category, "bag");
 assert.equal(needsProductDiscoveryClarification("Avete anche zaini?"), true);
 assert.equal(needsProductDiscoveryClarification("Mostrami gli zaini"), false);
@@ -90,6 +99,22 @@ assert.equal(
   "Avete anche zaini? Cerca nel catalogo",
 );
 assert.equal(buildCatalogFollowUpQuery("Cerca nel catalogo", ["Chi siete?"]), undefined);
+assert.equal(
+  buildConversationalCommerceQuery("neri da uomo", ["Che pantaloni hai?"]),
+  "Che pantaloni hai? neri da uomo",
+);
+assert.equal(
+  buildConversationalCommerceQuery("sotto 80 euro", ["Avete zaini?", "Mi servono per lavoro"]),
+  "Avete zaini? Mi servono per lavoro sotto 80 euro",
+);
+assert.equal(
+  buildConversationalCommerceQuery("eleganti", ["Che pantaloni hai?", "Da uomo"]),
+  "Che pantaloni hai? Da uomo eleganti",
+);
+assert.equal(
+  buildConversationalCommerceQuery("Avete giacche?", ["Che pantaloni hai?"]),
+  "Avete giacche?",
+);
 const cardFollowUp = parseCommerceQuery("Dammi le card del prodotto");
 assert.equal(cardFollowUp.wantsCards, true);
 assert.equal(cardFollowUp.maxCards, 5);

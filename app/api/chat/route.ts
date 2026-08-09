@@ -41,11 +41,12 @@ import {
   pageContextSchema,
   type ProductCard,
 } from "@/lib/commerce-types";
-import { searchVerifiedProducts } from "@/lib/product-search";
+import { hasVerifiedProductSource, searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
 import {
   buildCatalogFollowUpQuery,
+  buildConversationalCommerceQuery,
   classifyCommerceIntent,
   isGenericStyleAdviceRequest,
   needsProductDiscoveryClarification,
@@ -125,7 +126,9 @@ export async function POST(request: NextRequest) {
           where: { id: conversationId, botId },
           include: {
             messages: {
-              orderBy: { createdAt: "asc" },
+              // Fetch the latest window, not the first messages ever written.
+              // It is normalized back to chronological order below.
+              orderBy: { createdAt: "desc" },
               take: 20,
             },
             chatbot: true,
@@ -266,6 +269,11 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+
+    // Existing conversations are fetched newest-first so Prisma can apply the
+    // limit to the latest turns. Every downstream memory/routing component
+    // expects chronological order.
+    if (conversationId) conversation.messages.reverse();
 
     const previousAssistantText =
       [...conversation.messages]
@@ -476,7 +484,7 @@ export async function POST(request: NextRequest) {
 
     const chatbotSettings = (parseJSON(conversation.chatbot.settings) ||
       {}) as ChatbotSettings;
-    const businessMode = detectBusinessMode(
+    const configuredBusinessMode = detectBusinessMode(
       [
         conversation.chatbot.companyName,
         conversation.chatbot.systemPrompt,
@@ -488,22 +496,30 @@ export async function POST(request: NextRequest) {
         .join(" "),
     );
     const activeProductIds = latestActiveProductIds(conversation.messages);
-    const parsedCommerceQuery = parseCommerceQuery(
+    const hasCommerceSource = await hasVerifiedProductSource(botId);
+    const businessMode = hasCommerceSource ? "commerce" : configuredBusinessMode;
+    const previousUserMessages = conversation.messages
+      .filter((item) => item.role === MessageRole.USER)
+      .map((item) => item.content);
+    const conversationalCommerceQuery = buildConversationalCommerceQuery(
       message,
+      previousUserMessages,
+      businessMode === "commerce",
+    );
+    const parsedCommerceQuery = parseCommerceQuery(
+      conversationalCommerceQuery,
       businessMode === "commerce",
     );
     const classifiedCommerceIntent = classifyCommerceIntent(
-      message,
+      conversationalCommerceQuery,
       businessMode === "commerce",
     );
     const catalogFollowUpQuery = buildCatalogFollowUpQuery(
       message,
-      conversation.messages
-        .filter((item) => item.role === MessageRole.USER)
-        .map((item) => item.content),
+      previousUserMessages,
       businessMode === "commerce",
     );
-    const commerceSearchMessage = catalogFollowUpQuery || message;
+    const commerceSearchMessage = catalogFollowUpQuery || conversationalCommerceQuery;
     const commerceIntent =
       classifiedCommerceIntent !== "none"
         ? classifiedCommerceIntent
@@ -530,7 +546,7 @@ export async function POST(request: NextRequest) {
       isGenericStyleAdviceRequest(message);
     const needsProductClarification =
       commerceIntent === "product_discovery" &&
-      needsProductDiscoveryClarification(message, parsedCommerceQuery) &&
+      needsProductDiscoveryClarification(commerceSearchMessage, parsedCommerceQuery) &&
       (!parsedCommerceQuery.category || productSearch.selections.length > 0);
     const requiresCatalog = isVerifiedCatalogIntent(commerceIntent);
     if (
@@ -740,7 +756,7 @@ export async function POST(request: NextRequest) {
     if (policyDecision.action !== "allow")
       result.response = policyResponse(policyDecision, chatbotSettings);
     const resolvedProductCards: ProductCard[] =
-      policyDecision.action === "allow" && !groundingBlocked
+      policyDecision.action === "allow" && (!groundingBlocked || (requiresCatalog && productSearch.selections.length > 0))
         ? await hydrateProductCards(botId, productSearch.selections)
         : [];
     const productCardLimit = actionResult.forceProductCards
@@ -774,7 +790,7 @@ export async function POST(request: NextRequest) {
     // STEP 6: EXTRACT UX ENHANCEMENTS FROM ORCHESTRATOR
     // ========================================================================
 
-    const quickReplies = groundingBlocked
+    const quickReplies = groundingBlocked && !(requiresCatalog && resolvedProductCards.length > 0)
       ? [
           {
             id: "grounding-human",

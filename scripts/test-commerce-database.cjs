@@ -10,7 +10,7 @@ process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: "CommonJS", modu
 require("ts-node/register/transpile-only");
 
 const { prisma } = require("../lib/db.ts");
-const { searchVerifiedProducts } = require("../lib/product-search.ts");
+const { hasVerifiedProductSource, searchVerifiedProducts } = require("../lib/product-search.ts");
 const { hydrateProductCards } = require("../lib/commerce-catalog.ts");
 const { finalizeAuthoritativeSnapshot, persistExtractedProducts } = require("../lib/commerce-importer.ts");
 const {
@@ -61,6 +61,11 @@ async function main() {
     assert.equal(search.selections.length, 1);
     assert.equal(search.selections[0].productId, product.id);
     assert.match(search.promptContext, /CATALOGO COMMERCIALE VERIFICATO/);
+    assert.equal(await hasVerifiedProductSource(bot.id), true);
+
+    const typoSearch = await searchVerifiedProducts(bot.id, "Che scrapa hai?");
+    assert.equal(typoSearch.selections.length, 1, "Un refuso nella categoria deve ancora interrogare il catalogo verificato");
+    assert.equal(typoSearch.selections[0].productId, product.id);
 
     const cards = await hydrateProductCards(bot.id, search.selections);
     assert.equal(cards.length, 1);

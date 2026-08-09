@@ -32,6 +32,8 @@ for (const expected of [
   'Il cliente chiede un operatore',
   'Nome, Email, Consenso privacy',
   'Ti passo subito a un operatore.',
+  'interpreta refusi',
+  'conserva i vincoli',
 ]) assert(prompt.includes(expected), `Istruzione mancante nel prompt: ${expected}`)
 
 assert(appendAgentInstructions('Base', {}) === 'Base', 'Una configurazione vuota non deve modificare il prompt')

@@ -55,7 +55,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
     policyResponse: () => "Richiesta non consentita",
   };
   if (request === "@/lib/rate-limit") return { checkRateLimit: async () => ({ allowed: true, remaining: 29, resetAt: Date.now() + 60_000 }) };
-  if (request === "@/lib/product-search") return { searchVerifiedProducts: async (_botId, query) => query.includes("scarpa") ? ({ selections: [{ productId: productCard.productId, variantId: productCard.variantId, reason: "Disponibile" }], promptContext: "CATALOGO VERIFICATO" }) : ({ selections: [], promptContext: "" }) };
+  if (request === "@/lib/product-search") return {
+    hasVerifiedProductSource: async () => true,
+    searchVerifiedProducts: async (_botId, query) => query.includes("scarpa")
+      ? ({ selections: [{ productId: productCard.productId, variantId: productCard.variantId, reason: "Disponibile" }], promptContext: "CATALOGO VERIFICATO", catalogSize: 1, query: { maxCards: 5, wantsCards: true } })
+      : ({ selections: [], promptContext: "", catalogSize: 1, query: { maxCards: 0, wantsCards: false } }),
+  };
   if (request === "@/lib/commerce-catalog") return { hydrateProductCards: async (_botId, selections) => selections.length ? [productCard] : [] };
   if (request === "@/lib/woocommerce-order-tracking") return {
     parseOrderLookupMessage: () => ({ hasIntent: false, containsCredentials: false }),
@@ -131,7 +136,7 @@ const { buildMetaProductPayloads } = require("../lib/meta-payloads.ts");
   const element = instagramCards[0].message.attachment.payload.elements[0];
   assert.equal(element.image_url, card.imageUrl, "Foto prodotto assente dal carousel Instagram");
   assert.equal(element.default_action.url, card.productUrl, "La card Instagram non apre il prodotto verificato");
-  const commerceResult = await processIncomingChannelMessage({ botId: "bot-1", channel: "instagram", externalThreadId: "ig-user-1", externalMessageId: "ig-product-4", text: "Consigliami una scarpa" });
+  const commerceResult = await processIncomingChannelMessage({ botId: "bot-1", channel: "instagram", externalThreadId: "ig-user-1", externalMessageId: "ig-product-4", text: "Mostrami una scarpa" });
   assert.equal(commerceResult.productCards.length, 1, "Scheda prodotto non restituita dal motore canali");
   assert.equal(commerceEvents.length, 1, "Impression prodotto non attribuita alla conversazione");
   assert.match(createdMessages.at(-1).productCards, /Scarpa Pro/, "Scheda prodotto non salvata nel messaggio");

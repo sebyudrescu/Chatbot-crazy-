@@ -8,11 +8,11 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { detectSentiment } from "@/lib/sentiment";
 import { parseOrderLookupMessage, redactOrderLookupMessage } from "@/lib/woocommerce-order-tracking";
 import { tryVerifiedOrderLookup } from "@/lib/order-tracking";
-import { searchVerifiedProducts } from "@/lib/product-search";
+import { hasVerifiedProductSource, searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
-import { buildCatalogFollowUpQuery, classifyCommerceIntent, isGenericStyleAdviceRequest, needsProductDiscoveryClarification, parseCommerceQuery } from "@/lib/commerce-query";
+import { buildCatalogFollowUpQuery, buildConversationalCommerceQuery, classifyCommerceIntent, isGenericStyleAdviceRequest, needsProductDiscoveryClarification, parseCommerceQuery } from "@/lib/commerce-query";
 import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, productDiscoveryClarification, styleAdviceClarification } from "@/lib/conversation-guidance";
 
 const CHANNEL_RATE_LIMIT = 30;
@@ -129,19 +129,24 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       response,
     };
   }
-  const businessMode = detectBusinessMode([
+  const configuredBusinessMode = detectBusinessMode([
     conversation.chatbot.companyName,
     conversation.chatbot.systemPrompt,
     conversation.chatbot.promptTemplateId,
     settings.role,
     settings.objective,
   ].filter(Boolean).join(" "));
-  const classifiedCommerceIntent = classifyCommerceIntent(query, businessMode === "commerce");
+  const hasCommerceSource = await hasVerifiedProductSource(input.botId);
+  const businessMode = hasCommerceSource ? "commerce" : configuredBusinessMode;
+  const previousUserMessages = conversation.messages
+    .filter(message => message.role === "user")
+    .reverse()
+    .map(message => message.content);
+  const conversationalCommerceQuery = buildConversationalCommerceQuery(query, previousUserMessages, businessMode === "commerce");
+  const classifiedCommerceIntent = classifyCommerceIntent(conversationalCommerceQuery, businessMode === "commerce");
   const catalogFollowUpQuery = buildCatalogFollowUpQuery(
     query,
-    conversation.messages
-      .filter(message => message.role === "user")
-      .map(message => message.content),
+    previousUserMessages,
     businessMode === "commerce",
   );
   const commerceIntent = classifiedCommerceIntent !== "none"
@@ -149,12 +154,12 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     : catalogFollowUpQuery
       ? "product_discovery"
       : "none";
-  const commerceSearchQuery = catalogFollowUpQuery || query;
+  const commerceSearchQuery = catalogFollowUpQuery || conversationalCommerceQuery;
   const productSearch = await searchVerifiedProducts(input.botId, commerceSearchQuery, undefined, { intent: commerceIntent });
   const needsStyleClarification = commerceIntent === "fit_advice" && isGenericStyleAdviceRequest(query);
-  const parsedCommerceQuery = parseCommerceQuery(query, businessMode === "commerce");
+  const parsedCommerceQuery = parseCommerceQuery(commerceSearchQuery, businessMode === "commerce");
   const needsProductClarification = commerceIntent === "product_discovery"
-    && needsProductDiscoveryClarification(query, parsedCommerceQuery)
+    && needsProductDiscoveryClarification(commerceSearchQuery, parsedCommerceQuery)
     && (!parsedCommerceQuery.category || productSearch.selections.length > 0);
   const requiresCatalog = isVerifiedCatalogIntent(commerceIntent);
   if (needsStyleClarification || needsProductClarification || (requiresCatalog && productSearch.selections.length === 0)) {
@@ -229,7 +234,7 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const outgoingPolicy = enforceOutgoingPolicy(result.response, settings);
   const policyDecision = outgoingPolicy;
   if (policyDecision.action !== "allow") result.response = policyResponse(policyDecision, settings);
-  const productCards = policyDecision.action === "allow" && !groundingBlocked
+  const productCards = policyDecision.action === "allow" && (!groundingBlocked || (requiresCatalog && productSearch.selections.length > 0))
     ? await hydrateProductCards(input.botId, productSearch.selections)
     : [];
   if (requiresCatalog && productCards.length > 0) {

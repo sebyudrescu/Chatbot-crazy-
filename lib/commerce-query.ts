@@ -48,6 +48,8 @@ const VARIANT_ACTION = /\b(tagli[ae]|misur[ae]|variant[ei]|numero|color[ei])\b/i
 const GENERIC_STYLE_ADVICE = /\b(look|outfit|vestirmi|vestire|elegante|casual|cerimonia|matrimonio|serata)\b/i;
 const EXPLICIT_PRODUCT_BROWSE = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|foto|immagin[ei]|card|schede?|catalogo completo|tutti i modelli)\b/i;
 const STYLE_PREFERENCE = /\b(elegant\w*|casual|cerimoni\w*|matrimoni\w*|serat\w*|lavoro|sportiv\w*|streetwear|formal\w*)\b/i;
+const GENERIC_RECOMMENDATION = /\b(?:cosa|che cosa|qualcosa)\s+mi\s+consigli\b|\b(?:mi\s+)?consigli(?:ami|eresti)?\b/i;
+const MERCHANT_AVAILABILITY = /\b(?:avete|hai|vendete|trattate|disponete di)\b/i;
 
 const CATEGORY_PATTERNS: Array<[ProductCategory, RegExp]> = [
   ["shorts", /\b(pantaloncin[oi]|shorts?|bermuda)\b/i],
@@ -64,6 +66,22 @@ const CATEGORY_PATTERNS: Array<[ProductCategory, RegExp]> = [
   ["accessory", /\b(accessori?|caten[ae]|cintur[ae])\b/i],
   ["swimwear", /\b(costum[ei]|swimwear)\b/i],
 ];
+
+const CATEGORY_TERMS: Record<ProductCategory, string[]> = {
+  trousers: ["pantalone", "pantaloni", "jeans"],
+  shorts: ["pantaloncino", "pantaloncini", "short", "shorts", "bermuda"],
+  polo: ["polo"],
+  shirt: ["camicia", "camicie", "shirt", "tshirt"],
+  top: ["maglia", "maglie", "top"],
+  jacket: ["giacca", "giacche", "blazer"],
+  coat: ["cappotto", "cappotti", "trench"],
+  sweatshirt: ["felpa", "felpe", "hoodie"],
+  dress: ["abito", "abiti", "vestito", "vestiti"],
+  shoes: ["scarpa", "scarpe", "sneaker", "sneakers", "stivale", "stivali", "sandalo", "sandali"],
+  bag: ["borsa", "borse", "zaino", "zaini"],
+  accessory: ["accessorio", "accessori", "catena", "catene", "cintura", "cinture"],
+  swimwear: ["costume", "costumi", "swimwear"],
+};
 
 const CATEGORY_MATCHERS: Record<ProductCategory, RegExp> = {
   trousers: /\b(pantalon[ei]|jeans?)\b/i,
@@ -131,9 +149,12 @@ export function classifyCommerceIntent(message: string, commerceMode = true): Co
   if (/\b(spedizion\w*|consegn\w*|arriv\w*|corriere|tempi di consegna)\b/i.test(value)) return "shipping_policy";
   if (/\b(confronta|paragona|differenz[ae]|meglio tra|quale dei due)\b/i.test(value)) return "product_comparison";
   if (VARIANT_ACTION.test(value) && PRODUCT_WORD.test(value)) return "variant_availability";
+  if (/\b(garantis\w*|stara bene|vestira|vestibilita|che taglia devo|taglia consigli\w*|altezza|peso)\b/i.test(value) || GENERIC_STYLE_ADVICE.test(value)) return "fit_advice";
+  if (GENERIC_RECOMMENDATION.test(value)) return "product_discovery";
+  if (MERCHANT_AVAILABILITY.test(value) && !/\b(servizi?|assistenza|supporto|orari?|pagament[oi])\b/i.test(value)) return "product_discovery";
+  if (categoriesIn(value).length > 0 && (value.split(/\s+/).length <= 12 || /\b(?:che|quali|cosa|cerco|vorrei|voglio|volevo|mostra|consiglia)\b/i.test(value))) return "product_discovery";
   if (DISCOVERY_ACTION.test(value) && PRODUCT_WORD.test(value)) return "product_discovery";
   if (DETAIL_ACTION.test(value) && PRODUCT_WORD.test(value)) return "product_detail";
-  if (/\b(garantis\w*|stara bene|vestira|vestibilita|che taglia devo|taglia consigli\w*|altezza|peso)\b/i.test(value) || GENERIC_STYLE_ADVICE.test(value)) return "fit_advice";
   return "none";
 }
 
@@ -153,7 +174,58 @@ export function needsProductDiscoveryClarification(message: string, query = pars
   if (EXPLICIT_PRODUCT_BROWSE.test(normalized)) return false;
   if (query.colors.length || query.materials.length || query.size || query.minPrice !== undefined || query.maxPrice !== undefined || query.availableOnly) return false;
   if (query.gender && STYLE_PREFERENCE.test(normalized)) return false;
-  return Boolean(query.category) || /\bdesign\w*\b/i.test(normalized);
+  return Boolean(query.category) || /\bdesign\w*\b/i.test(normalized) || GENERIC_RECOMMENDATION.test(normalized);
+}
+
+/**
+ * Carries product constraints across short natural follow-ups without turning
+ * the whole conversation into a search query. The most recent verified
+ * commerce turn is the only inherited context, so a new product request starts
+ * a clean topic while replies such as "neri", "da uomo" or "sotto 80 euro"
+ * retain the category the customer was already discussing.
+ */
+export function buildConversationalCommerceQuery(
+  message: string,
+  previousUserMessages: string[],
+  commerceMode = true,
+) {
+  if (!commerceMode) return message;
+  const current = normalizeCommerceText(message);
+  const currentIntent = classifyCommerceIntent(message, commerceMode);
+  const currentCategory = primaryCategory(current);
+  const isShortFollowUp = current.split(/\s+/).filter(Boolean).length <= 10;
+  const hasRefinement = Boolean(
+    aliasesIn(current, COLOR_ALIASES).length ||
+      aliasesIn(current, MATERIAL_ALIASES).length ||
+      /\b(?:uomo|donna|bambin[oi]|men|women|kids?|taglia|size|numero|sotto|entro|massimo|budget|disponibil|elegant\w*|casual|sportiv\w*|lavoro|cerimoni\w*|matrimoni\w*|serat\w*)\b/i.test(current),
+  );
+  const refersBack = /\b(?:quelli?|quelle?|quest[oi]|queste|altro|altri|altre|simili|invece)\b/i.test(current);
+  const genericRecommendation = GENERIC_RECOMMENDATION.test(current);
+
+  // A complete, newly categorised request must not inherit stale constraints.
+  if (currentCategory && currentIntent !== "none") return message;
+  if (!isShortFollowUp || (!hasRefinement && !refersBack && !genericRecommendation && currentIntent !== "variant_availability")) return message;
+
+  for (let index = previousUserMessages.length - 1; index >= 0; index -= 1) {
+    const previous = previousUserMessages[index];
+    const previousIntent = classifyCommerceIntent(previous, commerceMode);
+    if (!isVerifiedCommerceConversationIntent(previousIntent)) continue;
+    if (!primaryCategory(normalizeCommerceText(previous)) && previousIntent !== "product_detail") continue;
+    const refinements = previousUserMessages.slice(index + 1).filter((candidate) => {
+      const value = normalizeCommerceText(candidate);
+      return value.split(/\s+/).length <= 10 && Boolean(
+        aliasesIn(value, COLOR_ALIASES).length ||
+          aliasesIn(value, MATERIAL_ALIASES).length ||
+          /\b(?:uomo|donna|bambin[oi]|men|women|kids?|taglia|size|numero|sotto|entro|massimo|budget|disponibil|elegant\w*|casual|sportiv\w*|lavoro|cerimoni\w*|matrimoni\w*|serat\w*)\b/i.test(value),
+      );
+    });
+    return [previous.trim(), ...refinements.map((item) => item.trim()), message.trim()].join(" ");
+  }
+  return message;
+}
+
+function isVerifiedCommerceConversationIntent(intent: CommerceIntent) {
+  return ["product_discovery", "product_detail", "variant_availability", "product_comparison", "fit_advice"].includes(intent);
 }
 
 /**
@@ -179,8 +251,35 @@ export function buildCatalogFollowUpQuery(
   return undefined;
 }
 
+function editDistance(left: string, right: string) {
+  const rows = Array.from({ length: left.length + 1 }, (_, index) => [index]);
+  for (let column = 1; column <= right.length; column += 1) rows[0][column] = column;
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      rows[row][column] = Math.min(
+        rows[row - 1][column] + 1,
+        rows[row][column - 1] + 1,
+        rows[row - 1][column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+      if (
+        row > 1 && column > 1 &&
+        left[row - 1] === right[column - 2] &&
+        left[row - 2] === right[column - 1]
+      ) {
+        rows[row][column] = Math.min(rows[row][column], rows[row - 2][column - 2] + 1);
+      }
+    }
+  }
+  return rows[left.length][right.length];
+}
+
 function categoriesIn(value: string) {
-  return CATEGORY_PATTERNS.filter(([, pattern]) => pattern.test(value)).map(([category]) => category);
+  const exact = CATEGORY_PATTERNS.filter(([, pattern]) => pattern.test(value)).map(([category]) => category);
+  if (exact.length > 0) return exact;
+  const words = value.split(/\s+/).filter((word) => word.length >= 5);
+  return (Object.entries(CATEGORY_TERMS) as Array<[ProductCategory, string[]]>)
+    .filter(([, terms]) => words.some((word) => terms.some((term) => term.length >= 5 && editDistance(word, term) <= (term.length >= 8 ? 2 : 1))))
+    .map(([category]) => category);
 }
 
 function primaryCategory(value: string) {
@@ -227,6 +326,14 @@ export function parseCommerceQuery(message: string, commerceMode = true): Parsed
     wantsCards,
     maxCards: intent === "product_comparison" ? 2 : intent === "product_discovery" || explicitlyRequestsPresentation ? 5 : 0,
   };
+}
+
+export function structuredCommerceSearchTerms(query: ParsedCommerceQuery) {
+  return [
+    ...(query.category ? CATEGORY_TERMS[query.category] : []),
+    ...query.colors.flatMap((color) => COLOR_ALIASES[color] || [color]),
+    ...query.materials.flatMap((material) => MATERIAL_ALIASES[material] || [material]),
+  ].map(normalizeCommerceText).filter(Boolean);
 }
 
 export function categoryMatches(category: ProductCategory, structuredText: string) {

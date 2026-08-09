@@ -5,6 +5,7 @@ import {
   matchesCommerceConstraints,
   normalizeCommerceText,
   parseCommerceQuery,
+  structuredCommerceSearchTerms,
   type CommerceIntent,
   type ParsedCommerceQuery,
 } from "./commerce-query";
@@ -174,6 +175,14 @@ export interface ProductSearchResult {
   query: ParsedCommerceQuery;
 }
 
+export async function hasVerifiedProductSource(botId: string) {
+  const source = await prisma.productSource.findFirst({
+    where: { botId, status: "active" },
+    select: { id: true },
+  });
+  return Boolean(source);
+}
+
 export async function searchVerifiedProducts(
   botId: string,
   query: string,
@@ -182,7 +191,7 @@ export async function searchVerifiedProducts(
 ): Promise<ProductSearchResult> {
   const parsed = parseCommerceQuery(query);
   if (options.intent) parsed.intent = options.intent;
-  const queryTokens = tokens(query);
+  const queryTokens = [...new Set([...tokens(query), ...structuredCommerceSearchTerms(parsed)])];
   const queryForms = [...new Set(queryTokens.flatMap(tokenForms))];
   const isCatalogIntent = [
     "product_discovery",
