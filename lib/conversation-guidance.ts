@@ -83,7 +83,7 @@ const CATEGORY_LABELS: Partial<Record<ProductCategory, string>> = {
 
 export function productDiscoveryClarification(category?: ProductCategory) {
   const label = category ? CATEGORY_LABELS[category] || "prodotti" : "prodotti";
-  return `Certo! Per proporti ${label} davvero adatti a te, cosa stai cercando di preciso? Dimmi se hai una preferenza di stile o occasione, colore, materiale e budget. Se vuoi invece solo esplorare, scrivi “mostrami ${label}” e ti faccio vedere i prodotti verificati disponibili.`;
+  return `Certo! Per ${label}, che stile ti piace o per quale occasione li cerchi? Hai un colore preferito o una fascia di budget? Se preferisci esplorare subito, scrivi “mostrami ${label}” e ti faccio vedere i prodotti verificati disponibili.`;
 }
 
 export function buildContextualQuickReplies(input: {

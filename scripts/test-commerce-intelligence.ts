@@ -83,6 +83,8 @@ assert.equal(needsProductDiscoveryClarification("Cerco zaini neri"), false);
 assert.equal(needsProductDiscoveryClarification("Avete pantaloni da uomo eleganti?"), false);
 assert.equal(needsProductDiscoveryClarification("Avete design?"), true);
 assert.match(productDiscoveryClarification("bag"), /zaini o borse/i);
+assert.match(productDiscoveryClarification("bag"), /che stile ti piace o per quale occasione/i);
+assert.match(productDiscoveryClarification("bag"), /colore preferito o una fascia di budget/i);
 assert.equal(
   buildCatalogFollowUpQuery("Cerca nel catalogo", ["Avete anche zaini?"]),
   "Avete anche zaini? Cerca nel catalogo",
