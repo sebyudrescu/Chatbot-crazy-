@@ -7,6 +7,14 @@ export const ActionTypeSchema = z.enum([
   "collect_lead",
   "webhook",
   "api_request",
+  "show_widget",
+]);
+
+export const WidgetTemplateSchema = z.enum([
+  "product_carousel",
+  "lead_capture",
+  "appointment",
+  "order_tracking",
 ]);
 
 export const ActionFieldsSchema = z.object({
@@ -26,14 +34,18 @@ export function validateActionDefinition(
   input: Pick<ActionFields, "type" | "config">,
 ) {
   if (
-    (input.type === "booking_link" || input.type === "webhook" || input.type === "api_request") &&
+    (input.type === "booking_link" ||
+      input.type === "webhook" ||
+      input.type === "api_request") &&
     !safeHttpsUrl(input.config.url || "")
   ) {
     throw new Error("È richiesto un URL HTTPS pubblico valido");
   }
   if (
     input.type === "api_request" &&
-    !["GET", "POST", "PUT", "PATCH"].includes((input.config.method || "POST").toUpperCase())
+    !["GET", "POST", "PUT", "PATCH"].includes(
+      (input.config.method || "POST").toUpperCase(),
+    )
   ) {
     throw new Error("Metodo API non supportato");
   }
@@ -50,5 +62,15 @@ export function validateActionDefinition(
     input.config.secret.length < 16
   ) {
     throw new Error("Il segreto webhook deve contenere almeno 16 caratteri");
+  }
+  if (input.type === "show_widget") {
+    const template = WidgetTemplateSchema.safeParse(input.config.template);
+    if (!template.success) throw new Error("Template widget non supportato");
+    if (
+      template.data === "appointment" &&
+      !safeHttpsUrl(input.config.url || "")
+    ) {
+      throw new Error("Il widget appuntamento richiede un URL HTTPS valido");
+    }
   }
 }

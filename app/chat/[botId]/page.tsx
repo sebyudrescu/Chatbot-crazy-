@@ -7,7 +7,6 @@ import {
   Bot,
   CheckCircle2,
   Database,
-  ExternalLink,
   Loader2,
   MessageSquare,
   RotateCcw,
@@ -21,9 +20,18 @@ import {
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/Button";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { SafeRichText, safeHttpUrl } from "@/components/chat/SafeRichText";
-import { OrderLookupForm, OrderStatusCardView } from "@/components/chat/OrderTracking";
+import { SafeRichText } from "@/components/chat/SafeRichText";
+import {
+  OrderLookupForm,
+  OrderStatusCardView,
+} from "@/components/chat/OrderTracking";
 import { ProductCarousel } from "@/components/chat/ProductCarousel";
+import { ActionCards } from "@/components/chat/ActionCards";
+import {
+  getLeadWidgetSession,
+  LeadCaptureForm,
+  type LeadFormDefinition,
+} from "@/components/chat/LeadCaptureForm";
 import type { OrderStatusCard, ProductCard } from "@/lib/commerce-types";
 import {
   buildInitialQuickReplies,
@@ -41,6 +49,12 @@ interface CTA {
   label: string;
   action: string;
   type: string;
+  metadata?: { title?: unknown; description?: unknown };
+}
+interface ProductWidgetPresentation {
+  title: string;
+  description: string;
+  label: string;
 }
 interface Source {
   id: string;
@@ -57,6 +71,8 @@ interface Message {
   ctas?: CTA[];
   sources?: Source[];
   productCards?: ProductCard[];
+  productWidget?: ProductWidgetPresentation | null;
+  leadForms?: LeadFormDefinition[];
   orderLookupForm?: boolean;
   orderStatusCard?: OrderStatusCard;
   error?: boolean;
@@ -114,6 +130,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [userSessionId, setUserSessionId] = useState("");
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -131,6 +148,9 @@ export default function ChatPage() {
     [bot],
   );
 
+  useEffect(() => {
+    setUserSessionId(`preview_${crypto.randomUUID()}`);
+  }, []);
   useEffect(() => {
     fetch(`/api/chatbots/${botId}`)
       .then((r) => r.json())
@@ -155,13 +175,22 @@ export default function ChatPage() {
       {
         id: `u-${Date.now()}`,
         role: "user",
-        content: privateEntry ? "[Dati ordine inviati in modo protetto]" : content,
+        content: privateEntry
+          ? "[Dati ordine inviati in modo protetto]"
+          : content,
         createdAt: new Date().toISOString(),
       },
     ]);
     setInput("");
     setSending(true);
     try {
+      let activeSessionId = userSessionId || `preview_${Date.now()}`;
+      try {
+        activeSessionId = (await getLeadWidgetSession(botId)).sessionId;
+      } catch {
+        // The private chat preview remains available before the agent is published.
+      }
+      setUserSessionId(activeSessionId);
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -169,7 +198,7 @@ export default function ChatPage() {
           botId,
           message: content,
           conversationId,
-          userSessionId: `preview_${Date.now()}`,
+          userSessionId: activeSessionId,
         }),
       });
       const result = await response.json();
@@ -202,6 +231,8 @@ export default function ChatPage() {
           ctas: data.ctas || [],
           sources: data.sources || [],
           productCards: data.productCards || [],
+          productWidget: data.productWidget || null,
+          leadForms: data.actions?.leadForms || [],
           orderLookupForm: Boolean(data.orderLookupForm),
           orderStatusCard: data.orderStatusCard,
         },
@@ -334,9 +365,32 @@ export default function ChatPage() {
                         message.content
                       )}
                     </div>
-                    <ProductCarousel cards={message.productCards} />
-                    {message.role === "assistant" && message.orderLookupForm ? <OrderLookupForm busy={sending} onLookup={(orderNumber, email) => send(`Ordine ${orderNumber}, ${email}`, true)} /> : null}
-                    {message.role === "assistant" ? <OrderStatusCardView card={message.orderStatusCard} /> : null}
+                    <ProductCarousel
+                      cards={message.productCards}
+                      presentation={message.productWidget ?? undefined}
+                    />
+                    {message.role === "assistant"
+                      ? message.leadForms?.map((definition) => (
+                          <LeadCaptureForm
+                            key={definition.id}
+                            botId={botId}
+                            conversationId={conversationId}
+                            userSessionId={userSessionId}
+                            definition={definition}
+                          />
+                        ))
+                      : null}
+                    {message.role === "assistant" && message.orderLookupForm ? (
+                      <OrderLookupForm
+                        busy={sending}
+                        onLookup={(orderNumber, email) =>
+                          send(`Ordine ${orderNumber}, ${email}`, true)
+                        }
+                      />
+                    ) : null}
+                    {message.role === "assistant" ? (
+                      <OrderStatusCardView card={message.orderStatusCard} />
+                    ) : null}
                     {message.role === "assistant" &&
                       !message.error &&
                       message.id !== "welcome" && (
@@ -375,25 +429,7 @@ export default function ChatPage() {
                         ))}
                       </div>
                     ) : null}
-                    {message.ctas?.length ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {message.ctas.slice(0, 3).map((item) => {
-                          const href = safeHttpUrl(item.action);
-                          return href ? (
-                            <a
-                              key={item.id}
-                              href={href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg bg-gray-950 px-3 py-1.5 text-[10px] font-semibold text-white"
-                            >
-                              {item.label}
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : null;
-                        })}
-                      </div>
-                    ) : null}
+                    <ActionCards actions={message.ctas} />
                   </div>
                 </div>
               ))}

@@ -16,9 +16,20 @@ const card = productCardsSchema.parse([{
   currency: "EUR",
   availability: "in_stock",
   reason: "Adatta alla richiesta",
+  variants: [{
+    variantId: "2ea40bf7-05da-4d6c-b7a8-0e919dc6c2ee",
+    label: "Nero / 42",
+    choices: [{ name: "Colore", value: "Nero" }, { name: "Taglia", value: "42" }],
+    price: 89.9,
+    currency: "EUR",
+    availability: "in_stock",
+    addToCartUrl: "https://shop.example.com/cart/add?id=123&quantity=1",
+  }],
   actions: [{ type: "view", label: "Vedi prodotto", url: "https://shop.example.com/products/shoe" }],
 }]);
 assert.equal(card.length, 1);
+assert.equal(card[0].variants[0].choices[1].value, "42");
+assert.equal(card[0].variants[0].addToCartUrl, "https://shop.example.com/cart/add?id=123&quantity=1");
 assert.equal(safeHttpsUrl("javascript:alert(1)"), undefined);
 assert.equal(safeHttpsUrl("http://shop.example.com/product"), undefined);
 
@@ -42,6 +53,20 @@ assert.throws(() => productCardsSchema.parse([{
   title: "Prodotto falso",
   productUrl: "javascript:alert(1)",
   availability: "in_stock",
+  actions: [],
+}]));
+
+assert.throws(() => productCardsSchema.parse([{
+  productId: "1ea40bf7-05da-4d6c-b7a8-0e919dc6c2ee",
+  title: "Variante non sicura",
+  productUrl: "https://shop.example.com/products/shoe",
+  availability: "in_stock",
+  variants: [{
+    variantId: "2ea40bf7-05da-4d6c-b7a8-0e919dc6c2ee",
+    label: "42",
+    availability: "in_stock",
+    addToCartUrl: "javascript:alert(1)",
+  }],
   actions: [],
 }]));
 

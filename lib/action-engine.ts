@@ -25,9 +25,13 @@ export interface ActionResult {
     title: string;
     description: string;
     fields: string[];
+    submitLabel?: string;
   }>;
   channelMessages: string[];
   handoffActivated: boolean;
+  forceProductCards: boolean;
+  orderLookupForm: boolean;
+  productWidget: { title: string; description: string; label: string } | null;
 }
 const parse = <T>(value: string, fallback: T): T => {
   try {
@@ -48,10 +52,19 @@ export async function runTriggeredActions(
   const actions = await prisma.agentAction.findMany({
     where: { botId: context.botId, enabled: true },
   });
-  const previousAssistant = actions.some(action => action.type === "collect_lead")
-    ? await prisma.message.findFirst({ where: { conversationId: context.conversationId, role: "assistant" }, orderBy: { createdAt: "desc" }, select: { content: true } })
+  const previousAssistant = actions.some(
+    (action) => action.type === "collect_lead",
+  )
+    ? await prisma.message.findFirst({
+        where: { conversationId: context.conversationId, role: "assistant" },
+        orderBy: { createdAt: "desc" },
+        select: { content: true },
+      })
     : null;
-  const pendingLeadConsent = /acconsent[io].*ricontatt|se acconsenti.*(?:email|telefono)|indicami.*(?:email|telefono)/i.test(previousAssistant?.content || "");
+  const pendingLeadConsent =
+    /acconsent[io].*ricontatt|se acconsenti.*(?:email|telefono)|indicami.*(?:email|telefono)/i.test(
+      previousAssistant?.content || "",
+    );
   const result: ActionResult = {
       executed: [],
       failed: [],
@@ -60,15 +73,26 @@ export async function runTriggeredActions(
       leadForms: [],
       channelMessages: [],
       handoffActivated: false,
+      forceProductCards: false,
+      orderLookupForm: false,
+      productWidget: null,
     },
     normalized = context.message.toLocaleLowerCase("it");
   for (const action of actions) {
     const keywords = parse<string[]>(action.triggerKeywords, []);
-    const keywordTriggered = keywords.some((keyword) => normalized.includes(keyword.toLocaleLowerCase("it")));
-    const pendingLeadReply = action.type === "collect_lead" && pendingLeadConsent && /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:\+?\d[\d\s().-]{7,}\d)/.test(context.message);
-    if (!keywords.length || (!keywordTriggered && !pendingLeadReply))
-      continue;
-    const config = decryptConfigSecrets(parse<Record<string, string>>(action.config, {})),
+    const keywordTriggered = keywords.some((keyword) =>
+      normalized.includes(keyword.toLocaleLowerCase("it")),
+    );
+    const pendingLeadReply =
+      action.type === "collect_lead" &&
+      pendingLeadConsent &&
+      /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:\+?\d[\d\s().-]{7,}\d)/.test(
+        context.message,
+      );
+    if (!keywords.length || (!keywordTriggered && !pendingLeadReply)) continue;
+    const config = decryptConfigSecrets(
+        parse<Record<string, string>>(action.config, {}),
+      ),
       started = Date.now();
     const idempotencyKey = `${action.id}:${context.messageId}`;
     let executionId = "";
@@ -115,7 +139,9 @@ export async function runTriggeredActions(
           action: url.toString(),
           variant: "primary",
         });
-        result.channelMessages.push(`${config.label || "Prenota appuntamento"}: ${url.toString()}`);
+        result.channelMessages.push(
+          `${config.label || "Prenota appuntamento"}: ${url.toString()}`,
+        );
         output = "CTA prenotazione mostrata";
         success = true;
       } else if (action.type === "handoff") {
@@ -140,7 +166,8 @@ export async function runTriggeredActions(
         });
         output = "Conversazione passata a operatore";
         result.handoffActivated = true;
-        if (config.message?.trim()) result.channelMessages.push(config.message.trim());
+        if (config.message?.trim())
+          result.channelMessages.push(config.message.trim());
         success = true;
       } else if (action.type === "collect_lead") {
         const email = context.message.match(
@@ -156,11 +183,14 @@ export async function runTriggeredActions(
               "Ti ricontatteremo per aiutarti con la tua richiesta.",
             fields: ["name", "email", "phone", "company"],
           });
-          result.channelMessages.push([
-            config.title || "Lascia i tuoi contatti",
-            config.description || "Ti ricontatteremo per aiutarti con la tua richiesta.",
-            "Se acconsenti a essere ricontattato per questa richiesta, indicami il tuo nome e almeno un indirizzo email o un numero di telefono.",
-          ].join("\n"));
+          result.channelMessages.push(
+            [
+              config.title || "Lascia i tuoi contatti",
+              config.description ||
+                "Ti ricontatteremo per aiutarti con la tua richiesta.",
+              "Se acconsenti a essere ricontattato per questa richiesta, indicami il tuo nome e almeno un indirizzo email o un numero di telefono.",
+            ].join("\n"),
+          );
           output = "Modulo contatto mostrato";
         } else {
           await prisma.conversation.update({
@@ -170,7 +200,9 @@ export async function runTriggeredActions(
               ...(phone ? { userPhone: phone.trim() } : {}),
             },
           });
-          await syncCRMContactFromConversation(context.conversationId, { consentStatus: "granted" });
+          await syncCRMContactFromConversation(context.conversationId, {
+            consentStatus: "granted",
+          });
           await emitIntegrationWebhook({
             botId: context.botId,
             event: "lead.captured",
@@ -223,8 +255,9 @@ export async function runTriggeredActions(
           if (Array.isArray(value)) return value.map(renderTemplate);
           if (value && typeof value === "object") {
             return Object.fromEntries(
-              Object.entries(value as Record<string, unknown>)
-                .map(([key, item]) => [key, renderTemplate(item)]),
+              Object.entries(value as Record<string, unknown>).map(
+                ([key, item]) => [key, renderTemplate(item)],
+              ),
             );
           }
           if (typeof value !== "string") return value;
@@ -234,15 +267,18 @@ export async function runTriggeredActions(
             value,
           );
         };
-        const template = config.bodyTemplate || JSON.stringify({
-          message: "{{message}}",
-          intent: "{{intent}}",
-          conversationId: "{{conversationId}}",
-          botId: "{{botId}}",
-        });
-        const body = method === "GET"
-          ? undefined
-          : JSON.stringify(renderTemplate(JSON.parse(template)));
+        const template =
+          config.bodyTemplate ||
+          JSON.stringify({
+            message: "{{message}}",
+            intent: "{{intent}}",
+            conversationId: "{{conversationId}}",
+            botId: "{{botId}}",
+          });
+        const body =
+          method === "GET"
+            ? undefined
+            : JSON.stringify(renderTemplate(JSON.parse(template)));
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 8_000);
         try {
@@ -252,7 +288,9 @@ export async function runTriggeredActions(
               "Content-Type": "application/json",
               "User-Agent": "LitX-Action/1.0",
               "Idempotency-Key": idempotencyKey,
-              ...(config.authorization ? { Authorization: config.authorization } : {}),
+              ...(config.authorization
+                ? { Authorization: config.authorization }
+                : {}),
             },
             body,
             redirect: "manual",
@@ -265,6 +303,66 @@ export async function runTriggeredActions(
         } finally {
           clearTimeout(timer);
         }
+      } else if (action.type === "show_widget") {
+        const template = config.template;
+        if (template === "product_carousel") {
+          result.forceProductCards = true;
+          result.productWidget = {
+            title: config.title || "Scelti per te",
+            description:
+              config.description ||
+              "Sfoglia i prodotti verificati e scegli quello che preferisci.",
+            label: config.label || "Aggiungi al carrello",
+          };
+          output = "Widget prodotti richiesto";
+        } else if (template === "lead_capture") {
+          result.leadForms.push({
+            id: `widget-${action.id}`,
+            title: config.title || "Lascia i tuoi contatti",
+            description:
+              config.description ||
+              "Ti ricontatteremo per aiutarti con la tua richiesta.",
+            fields: ["name", "email", "phone", "company"],
+            submitLabel: config.label || "Invia richiesta",
+          });
+          result.channelMessages.push(
+            [
+              config.title || "Lascia i tuoi contatti",
+              config.description ||
+                "Ti ricontatteremo per aiutarti con la tua richiesta.",
+              "Se acconsenti, indicami nome e almeno un indirizzo email o un numero di telefono.",
+            ].join("\n"),
+          );
+          output = "Widget contatto mostrato";
+        } else if (template === "appointment") {
+          const url = safeHttpsUrl(config.url);
+          if (!url) throw new Error("Link appuntamento non valido");
+          const label = config.label || "Prenota appuntamento";
+          result.ctas.push({
+            id: `widget-${action.id}`,
+            type: "link",
+            label,
+            action: url.toString(),
+            variant: "primary",
+            metadata: {
+              title: config.title || "Prenota un appuntamento",
+              description:
+                config.description ||
+                "Scegli il momento più comodo dal calendario.",
+            },
+          });
+          result.channelMessages.push(`${label}: ${url.toString()}`);
+          output = "Widget appuntamento mostrato";
+        } else if (template === "order_tracking") {
+          result.orderLookupForm = true;
+          result.channelMessages.push(
+            "Per controllare l’ordine, indicami numero ordine ed email usata durante l’acquisto.",
+          );
+          output = "Widget tracking ordine mostrato";
+        } else {
+          throw new Error("Template widget non supportato");
+        }
+        success = true;
       } else throw new Error("Tipo azione non supportato");
     } catch (caught) {
       error =

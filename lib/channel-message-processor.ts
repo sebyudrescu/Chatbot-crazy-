@@ -220,7 +220,7 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     : await import("@/lib/workflow-engine").then(({ runActiveWorkflows }) => runActiveWorkflows({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent, sentiment: currentSentiment }));
   if (workflow.responseOverride) result.response = workflow.responseOverride;
   const actionResult = groundingBlocked
-    ? { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: false }
+    ? { executed: [], failed: [], skipped: [], ctas: [], leadForms: [], channelMessages: [], handoffActivated: false, forceProductCards: false, orderLookupForm: false, productWidget: null }
     : await import("@/lib/action-engine").then(({ runTriggeredActions }) => runTriggeredActions({ botId: input.botId, conversationId: conversation.id, messageId: userMessage.id, message: automationMessage, intent: result.decision.intent.intent }));
   const channelActionText = actionResult.channelMessages.filter((message) => message.trim()).join("\n\n");
   if (channelActionText && !result.response.includes(channelActionText)) {

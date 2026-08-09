@@ -8,6 +8,7 @@ import {
   Clock3,
   Code2,
   Globe2,
+  LayoutPanelTop,
   Loader2,
   Pencil,
   Play,
@@ -52,6 +53,12 @@ interface Action {
 }
 const types = [
   {
+    id: "show_widget",
+    name: "Widget interattivo",
+    text: "Mostra un'esperienza interattiva nella chat.",
+    icon: LayoutPanelTop,
+  },
+  {
     id: "booking_link",
     name: "Prenotazione",
     text: "Mostra un pulsante verso Calendly o un calendario.",
@@ -82,6 +89,28 @@ const types = [
     icon: Globe2,
   },
 ];
+const widgetTemplates = [
+  {
+    id: "product_carousel",
+    name: "Carousel prodotti",
+    text: "Presenta prodotti verificati in schede sfogliabili.",
+  },
+  {
+    id: "lead_capture",
+    name: "Raccolta lead",
+    text: "Raccoglie i dati di contatto direttamente in chat.",
+  },
+  {
+    id: "appointment",
+    name: "Prenotazione",
+    text: "Porta il cliente verso un calendario o una consulenza.",
+  },
+  {
+    id: "order_tracking",
+    name: "Tracking ordine",
+    text: "Mostra stato e avanzamento di un ordine verificato.",
+  },
+];
 export default function ActionsPage() {
   const [agents, setAgents] = useState<Agent[]>([]),
     [botId, setBotId] = useState(""),
@@ -106,8 +135,12 @@ export default function ActionsPage() {
     event: "action.triggered",
     method: "POST",
     authorization: "",
-    bodyTemplate: '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
+    bodyTemplate:
+      '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
     resultMessage: "",
+    widgetTemplate: "product_carousel",
+    widgetTitle: "",
+    widgetDescription: "",
   });
   useEffect(() => {
     fetch("/api/chatbots")
@@ -140,8 +173,12 @@ export default function ActionsPage() {
       event: "action.triggered",
       method: "POST",
       authorization: "",
-      bodyTemplate: '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
+      bodyTemplate:
+        '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
       resultMessage: "",
+      widgetTemplate: "product_carousel",
+      widgetTitle: "",
+      widgetDescription: "",
     });
   const openCreate = () => {
     setEditing(null);
@@ -162,8 +199,13 @@ export default function ActionsPage() {
       event: action.config.event || "action.triggered",
       method: action.config.method || "POST",
       authorization: action.config.authorization || "",
-      bodyTemplate: action.config.bodyTemplate || '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
+      bodyTemplate:
+        action.config.bodyTemplate ||
+        '{"message":"{{message}}","intent":"{{intent}}","conversationId":"{{conversationId}}"}',
       resultMessage: action.config.resultMessage || "",
+      widgetTemplate: action.config.template || "product_carousel",
+      widgetTitle: action.config.title || "",
+      widgetDescription: action.config.description || "",
     });
     setError("");
     setOpen(true);
@@ -172,21 +214,41 @@ export default function ActionsPage() {
     setBusy(true);
     setError("");
     const config =
-      form.type === "booking_link"
-        ? { url: form.url, label: form.label || "Prenota appuntamento" }
-        : form.type === "webhook"
-          ? { url: form.url, secret: form.secret, event: form.event || "action.triggered" }
-          : form.type === "api_request"
+      form.type === "show_widget"
+        ? {
+            template: form.widgetTemplate,
+            title: form.widgetTitle,
+            description: form.widgetDescription,
+            label:
+              form.label ||
+              (form.widgetTemplate === "product_carousel"
+                ? "Aggiungi al carrello"
+                : ""),
+            ...(form.widgetTemplate === "appointment"
+              ? {
+                  url: form.url,
+                }
+              : {}),
+          }
+        : form.type === "booking_link"
+          ? { url: form.url, label: form.label || "Prenota appuntamento" }
+          : form.type === "webhook"
             ? {
                 url: form.url,
-                method: form.method,
-                authorization: form.authorization,
-                bodyTemplate: form.bodyTemplate,
-                resultMessage: form.resultMessage,
+                secret: form.secret,
+                event: form.event || "action.triggered",
               }
-          : form.type === "handoff"
-            ? { reason: form.reason || "Richiesta operatore" }
-            : {};
+            : form.type === "api_request"
+              ? {
+                  url: form.url,
+                  method: form.method,
+                  authorization: form.authorization,
+                  bodyTemplate: form.bodyTemplate,
+                  resultMessage: form.resultMessage,
+                }
+              : form.type === "handoff"
+                ? { reason: form.reason || "Richiesta operatore" }
+                : {};
     try {
       const response = await fetch(
         editing ? `/api/actions/${editing.id}` : "/api/actions",
@@ -372,16 +434,23 @@ export default function ActionsPage() {
         )}
         {open && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-hard">
+            <div
+              className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-hard"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="action-dialog-title"
+            >
               <p className="eyebrow">Nuova automazione</p>
-              <h2 className="mt-1 text-xl font-bold">
+              <h2 id="action-dialog-title" className="mt-1 text-xl font-bold">
                 {editing ? "Modifica azione" : "Configura un’azione"}
               </h2>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 {types.map((type) => (
                   <button
+                    type="button"
                     key={type.id}
                     onClick={() => setForm({ ...form, type: type.id })}
+                    aria-pressed={form.type === type.id}
                     className={`rounded-xl border p-4 text-left ${form.type === type.id ? "border-brand-400 bg-brand-50" : "border-gray-200"}`}
                   >
                     <type.icon className="h-4 w-4 text-brand-600" />
@@ -401,6 +470,107 @@ export default function ActionsPage() {
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                   />
                 </label>
+                {form.type === "show_widget" && (
+                  <div className="space-y-3 rounded-xl border border-gray-100 p-4">
+                    <label className="block">
+                      <span className="label">Template widget</span>
+                      <select
+                        className="input"
+                        value={form.widgetTemplate}
+                        onChange={(event) =>
+                          setForm({
+                            ...form,
+                            widgetTemplate: event.target.value,
+                          })
+                        }
+                      >
+                        {widgetTemplates.map((template) => (
+                          <option key={template.id} value={template.id}>
+                            {template.name}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="mt-1 block text-[10px] leading-4 text-gray-400">
+                        {
+                          widgetTemplates.find(
+                            (template) => template.id === form.widgetTemplate,
+                          )?.text
+                        }
+                      </span>
+                    </label>
+                    <label className="block">
+                      <span className="label">Titolo widget</span>
+                      <input
+                        className="input"
+                        value={form.widgetTitle}
+                        onChange={(event) =>
+                          setForm({ ...form, widgetTitle: event.target.value })
+                        }
+                        placeholder="Scopri i prodotti consigliati"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="label">Descrizione</span>
+                      <textarea
+                        className="textarea"
+                        rows={3}
+                        value={form.widgetDescription}
+                        onChange={(event) =>
+                          setForm({
+                            ...form,
+                            widgetDescription: event.target.value,
+                          })
+                        }
+                        placeholder="Spiega in modo breve cosa può fare il cliente."
+                      />
+                    </label>
+                    {(form.widgetTemplate === "product_carousel" ||
+                      form.widgetTemplate === "lead_capture") && (
+                      <label className="block">
+                        <span className="label">Testo pulsante</span>
+                        <input
+                          className="input"
+                          value={form.label}
+                          onChange={(event) =>
+                            setForm({ ...form, label: event.target.value })
+                          }
+                          placeholder={
+                            form.widgetTemplate === "product_carousel"
+                              ? "Aggiungi al carrello"
+                              : "Invia richiesta"
+                          }
+                        />
+                      </label>
+                    )}
+                    {form.widgetTemplate === "appointment" && (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="label">URL calendario HTTPS</span>
+                          <input
+                            className="input"
+                            type="url"
+                            value={form.url}
+                            onChange={(event) =>
+                              setForm({ ...form, url: event.target.value })
+                            }
+                            placeholder="https://..."
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="label">Testo pulsante</span>
+                          <input
+                            className="input"
+                            value={form.label}
+                            onChange={(event) =>
+                              setForm({ ...form, label: event.target.value })
+                            }
+                            placeholder="Prenota ora"
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <label className="block">
                   <span className="label">
                     Parole di attivazione, separate da virgola
@@ -414,7 +584,9 @@ export default function ActionsPage() {
                     placeholder="prenota, appuntamento, consulenza"
                   />
                 </label>
-                {(form.type === "booking_link" || form.type === "webhook" || form.type === "api_request") && (
+                {(form.type === "booking_link" ||
+                  form.type === "webhook" ||
+                  form.type === "api_request") && (
                   <label className="block">
                     <span className="label">URL HTTPS</span>
                     <input
@@ -461,25 +633,61 @@ export default function ActionsPage() {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="block">
                         <span className="label">Metodo</span>
-                        <select className="input" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
-                          {["GET", "POST", "PUT", "PATCH"].map((method) => <option key={method}>{method}</option>)}
+                        <select
+                          className="input"
+                          value={form.method}
+                          onChange={(e) =>
+                            setForm({ ...form, method: e.target.value })
+                          }
+                        >
+                          {["GET", "POST", "PUT", "PATCH"].map((method) => (
+                            <option key={method}>{method}</option>
+                          ))}
                         </select>
                       </label>
                       <label className="block">
                         <span className="label">Authorization (opzionale)</span>
-                        <input className="input" type="password" autoComplete="new-password" value={form.authorization} onChange={(e) => setForm({ ...form, authorization: e.target.value })} placeholder="Bearer ..." />
+                        <input
+                          className="input"
+                          type="password"
+                          autoComplete="new-password"
+                          value={form.authorization}
+                          onChange={(e) =>
+                            setForm({ ...form, authorization: e.target.value })
+                          }
+                          placeholder="Bearer ..."
+                        />
                       </label>
                     </div>
                     {form.method !== "GET" && (
                       <label className="block">
                         <span className="label">Body JSON</span>
-                        <textarea className="textarea font-mono text-[11px]" rows={5} value={form.bodyTemplate} onChange={(e) => setForm({ ...form, bodyTemplate: e.target.value })} />
-                        <span className="mt-1 block text-[9px] text-gray-400">Variabili: {"{{message}}"}, {"{{intent}}"}, {"{{conversationId}}"}, {"{{botId}}"}</span>
+                        <textarea
+                          className="textarea font-mono text-[11px]"
+                          rows={5}
+                          value={form.bodyTemplate}
+                          onChange={(e) =>
+                            setForm({ ...form, bodyTemplate: e.target.value })
+                          }
+                        />
+                        <span className="mt-1 block text-[9px] text-gray-400">
+                          Variabili: {"{{message}}"}, {"{{intent}}"},{" "}
+                          {"{{conversationId}}"}, {"{{botId}}"}
+                        </span>
                       </label>
                     )}
                     <label className="block">
-                      <span className="label">Messaggio nel log (opzionale)</span>
-                      <input className="input" value={form.resultMessage} onChange={(e) => setForm({ ...form, resultMessage: e.target.value })} placeholder="Lead inviato al CRM" />
+                      <span className="label">
+                        Messaggio nel log (opzionale)
+                      </span>
+                      <input
+                        className="input"
+                        value={form.resultMessage}
+                        onChange={(e) =>
+                          setForm({ ...form, resultMessage: e.target.value })
+                        }
+                        placeholder="Lead inviato al CRM"
+                      />
                     </label>
                   </div>
                 )}
@@ -520,7 +728,16 @@ export default function ActionsPage() {
                 </Button>
                 <Button
                   onClick={saveAction}
-                  disabled={busy || !form.name.trim() || !form.keywords.trim()}
+                  disabled={
+                    busy ||
+                    !form.name.trim() ||
+                    !form.keywords.trim() ||
+                    (form.type === "show_widget" &&
+                      (!form.widgetTitle.trim() ||
+                        !form.widgetDescription.trim() ||
+                        (form.widgetTemplate === "appointment" &&
+                          !form.url.trim())))
+                  }
                   icon={
                     busy ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

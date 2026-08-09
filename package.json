@@ -23,6 +23,7 @@
         "test:shopify-sync": "node scripts/test-shopify-sync.cjs",
         "test:shopify-orders": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-shopify-order-tracking.ts",
         "test:shopify-widget": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-shopify-widget.ts",
+        "test:interactive-widgets": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-interactive-widgets.ts",
         "test:woocommerce-sync": "node scripts/test-woocommerce-sync.cjs",
         "test:crawler": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler.ts",
         "test:crawler-pages": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler-pages.ts",

@@ -2,6 +2,12 @@
   if (window.__litxShopifyWidgetLoading) return;
   window.__litxShopifyWidgetLoading = true;
 
+  window.addEventListener('litx:cart:updated', function (event) {
+    // Themes use different cart components. Expose a standard refresh signal
+    // without reading customer data or assuming a particular theme implementation.
+    document.dispatchEvent(new CustomEvent('cart:refresh', { detail: event.detail }));
+  });
+
   var context = document.getElementById('litx-shop-context');
   if (!context) return;
 

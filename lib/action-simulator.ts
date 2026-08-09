@@ -65,6 +65,24 @@ export function simulateAction(input: SimulationInput): ActionSimulation {
     };
   }
 
+  if (input.type === "show_widget") {
+    const labels: Record<string, string> = {
+      product_carousel: "carosello prodotti verificati",
+      lead_capture: "modulo raccolta contatto",
+      appointment: "prenotazione appuntamento",
+      order_tracking: "tracking ordine",
+    };
+    const template = input.config.template || "";
+    return {
+      matched: true,
+      effect: labels[template]
+        ? `Mostrerebbe il widget: ${labels[template]}`
+        : "Template widget non supportato",
+      extracted: labels[template] ? { template } : {},
+      safePreview: true,
+    };
+  }
+
   if (input.type === "api_request") {
     const url = safeHttpsUrl(input.config.url || "");
     const method = (input.config.method || "POST").toUpperCase();

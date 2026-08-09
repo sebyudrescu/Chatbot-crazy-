@@ -14,6 +14,7 @@ const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", 
 const { window } = dom;
 const requests = [];
 let staleConversationRejected = false;
+let openedStoreUrl = "";
 
 window.ChatbotConfig = {
   botId: "00000000-0000-4000-8000-000000000001",
@@ -23,6 +24,10 @@ window.ChatbotConfig = {
   primaryColor: "#633cff",
   iconType: "logo",
   iconValue: "https://litx.example/assets/client-logo.png",
+};
+window.open = (url) => {
+  openedStoreUrl = String(url);
+  return null;
 };
 window.fetch = async (url, options = {}) => {
   const requestUrl = String(url);
@@ -57,6 +62,18 @@ window.fetch = async (url, options = {}) => {
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
+  }
+  if (requestUrl === "https://cliente.example/cart/add.js") {
+    return new Response(JSON.stringify({ id: 1001 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (requestUrl === "https://cliente.example/cart.js") {
+    return new Response(JSON.stringify({ token: "cart-token", item_count: 1 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
   if (
     requests.at(-1)?.body?.message === "Ripristina sessione" &&
@@ -105,6 +122,11 @@ window.fetch = async (url, options = {}) => {
           { id: "reply-1", text: "Mostrami gli orari" },
           { id: "reply-2", text: "Parla con un operatore" },
         ],
+        productWidget: {
+          title: "Scelti per te",
+          description: "Scegli la variante prima di continuare.",
+          label: "Compra ora",
+        },
         ctas: [
           {
             id: "cta-1",
@@ -136,6 +158,32 @@ window.fetch = async (url, options = {}) => {
             currency: "EUR",
             availability: "in_stock",
             badge: "In offerta",
+            reason: "Rientra nel budget indicato ed è disponibile.",
+            variantId: "00000000-0000-4000-8000-000000000120",
+            variants: [
+              {
+                variantId: "00000000-0000-4000-8000-000000000120",
+                label: "M",
+                choices: [{ name: "Taglia", value: "M" }],
+                price: 89.9,
+                currency: "EUR",
+                availability: "in_stock",
+                addToCartUrl: "https://cliente.example/cart/add?id=1001&quantity=1",
+              },
+              {
+                variantId: "00000000-0000-4000-8000-000000000121",
+                label: "L",
+                choices: [{ name: "Taglia", value: "L" }],
+                price: 94.9,
+                currency: "EUR",
+                availability: "in_stock",
+                addToCartUrl: "https://cliente.example/cart/add?id=1002&quantity=1",
+              },
+            ],
+            actions: [
+              { type: "view", label: "Vedi prodotto", url: "https://cliente.example/products/verified" },
+              { type: "add_to_cart", label: "Aggiungi al carrello", url: "https://cliente.example/cart/add?id=1001&quantity=1" },
+            ],
           },
           {
             productId: "00000000-0000-4000-8000-000000000022",
@@ -146,6 +194,15 @@ window.fetch = async (url, options = {}) => {
             price: 74.5,
             currency: "EUR",
             availability: "preorder",
+            variants: [{
+              variantId: "00000000-0000-4000-8000-000000000122",
+              label: "Unica",
+              choices: [{ name: "Variante", value: "Unica" }],
+              price: 74.5,
+              currency: "EUR",
+              availability: "preorder",
+              addToCartUrl: "https://negozio-esterno.example/cart/add?id=2001&quantity=1",
+            }],
           },
           {
             productId: "00000000-0000-4000-8000-000000000021",
@@ -254,8 +311,11 @@ assert.equal(
   "La foto prodotto non punta alla pagina canonica",
 );
 assert.match(productCards[0].textContent || "", /89,90|€89\.90|89\.90/, "Il prezzo prodotto non viene mostrato");
+assert.match(productCards[0].textContent || "", /Perché è adatto a te/, "La motivazione verificata del consiglio non viene mostrata");
 const productCarousel = window.document.querySelector(".chatbot-product-carousel-shell");
 assert.equal(productCarousel?.getAttribute("aria-roledescription"), "carosello", "Il carosello prodotti non è annunciato correttamente");
+assert.match(productCarousel?.textContent || "", /Scelti per te/, "Il titolo configurato del widget non viene mostrato");
+assert.match(productCarousel?.textContent || "", /Scegli la variante prima di continuare/, "La descrizione configurata del widget non viene mostrata");
 const carouselButtons = productCarousel?.querySelectorAll(".chatbot-product-nav") || [];
 assert.equal(carouselButtons.length, 2, "Le frecce del carosello prodotti non vengono mostrate");
 assert.equal(carouselButtons[0].getAttribute("aria-label"), "Prodotto precedente");
@@ -264,6 +324,8 @@ assert.equal(carouselButtons[0].disabled, true, "La freccia precedente deve part
 carouselButtons[1].click();
 assert.equal(carouselButtons[1].disabled, true, "La freccia successiva non aggiorna la pagina attiva");
 assert.equal(productCarousel?.querySelector(".chatbot-product-counter")?.textContent, "2 / 2", "Il contatore del carosello non si aggiorna");
+const externalCartButton = productCards[1].querySelector(".chatbot-product-cart");
+assert.equal(externalCartButton?.textContent, "Apri nel negozio", "Una superficie cross-origin promette un'aggiunta al carrello non verificabile");
 const sources = window.document.querySelectorAll(".chatbot-source");
 assert.equal(sources.length, 3, "Le fonti della risposta non vengono mostrate");
 assert.equal(
@@ -383,6 +445,30 @@ assert.deepEqual(requests[6]?.body, {
   company: "Rossi SRL",
   consent: true,
 });
+
+const cartButton = productCards[0].querySelector(".chatbot-product-cart");
+assert.ok(cartButton, "Il prodotto Shopify non mostra il pulsante Aggiungi al carrello");
+assert.equal(cartButton.textContent, "Compra ora", "La label configurata del widget non viene applicata");
+const variantSelect = productCards[0].querySelector(".chatbot-product-variant select");
+assert.ok(variantSelect, "La card non permette di scegliere una variante verificata");
+assert.deepEqual([...variantSelect.options].map((option) => option.textContent), ["M", "L"], "Le opzioni variante non corrispondono al catalogo");
+variantSelect.value = "00000000-0000-4000-8000-000000000121";
+variantSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+assert.match(productCards[0].querySelector(".chatbot-product-price")?.textContent || "", /94,90|94\.90/, "Il prezzo non segue la variante scelta");
+let cartUpdate;
+window.addEventListener("litx:cart:updated", (event) => { cartUpdate = event.detail; }, { once: true });
+cartButton.click();
+for (let attempt = 0; attempt < 40 && !cartUpdate; attempt += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}
+assert.equal(requests.some((request) => request.url === "https://cliente.example/cart/add.js"), true, "Il widget non usa l'API Ajax del carrello Shopify");
+assert.equal(requests.some((request) => request.url === "https://cliente.example/cart.js"), true, "Il widget non aggiorna lo stato del carrello Shopify");
+assert.equal(requests.find((request) => request.url === "https://cliente.example/cart/add.js")?.body?.items?.[0]?.id, 1002, "Il carrello non usa esclusivamente la variante scelta");
+assert.equal(cartUpdate?.itemCount, 1, "L'evento del carrello non espone il conteggio aggiornato");
+assert.equal(cartUpdate?.variantId, "00000000-0000-4000-8000-000000000121", "L'evento carrello non identifica la variante scelta");
+externalCartButton.click();
+assert.equal(openedStoreUrl, "https://negozio-esterno.example/cart/add?id=2001&quantity=1", "Il fallback cross-origin non apre il negozio verificato");
+assert.doesNotMatch(externalCartButton.textContent || "", /Aggiunto/i, "Il fallback cross-origin dichiara un falso successo");
 
 const restoredDom = new JSDOM(
   "<!doctype html><html><head></head><body></body></html>",
@@ -589,6 +675,7 @@ console.log(
         "page-context",
         "verified-product-cards",
         "accessible-product-carousel",
+        "shopify-ajax-cart",
         "standalone-public-page",
       ],
     },

@@ -24,6 +24,7 @@ import {
   Menu,
   X,
   ShoppingBag,
+  PanelsTopLeft,
 } from 'lucide-react'
 import { Sidebar, SidebarLink, SidebarSection } from './ui/Sidebar'
 import { Button } from './ui/Button'
@@ -124,6 +125,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <SidebarLink href="/evaluations" icon={ShieldCheck} label="Evaluations" />
           <SidebarLink href="/workflow" icon={WorkflowIcon} label="Workflow" />
           <SidebarLink href="/actions" icon={Zap} label="Actions" />
+          <SidebarLink href="/widgets" icon={PanelsTopLeft} label="Widgets" />
           <SidebarLink href="/conversations" icon={MessageSquare} label="Chat Logs" />
           <SidebarLink href="/contacts" icon={Users} label="Contacts (CRM)" />
           <SidebarLink href="/analytics" icon={BarChart3} label="Analytics" />
@@ -201,6 +203,7 @@ function MobileNavigation({ onNavigate }: { onNavigate: () => void }) {
         <SidebarLink href="/evaluations" icon={ShieldCheck} label="Evaluations" onClick={onNavigate} />
         <SidebarLink href="/workflow" icon={WorkflowIcon} label="Workflow" onClick={onNavigate} />
         <SidebarLink href="/actions" icon={Zap} label="Actions" onClick={onNavigate} />
+        <SidebarLink href="/widgets" icon={PanelsTopLeft} label="Widgets" onClick={onNavigate} />
         <SidebarLink href="/conversations" icon={MessageSquare} label="Chat Logs" onClick={onNavigate} />
         <SidebarLink href="/contacts" icon={Users} label="Contacts (CRM)" onClick={onNavigate} />
         <SidebarLink href="/analytics" icon={BarChart3} label="Analytics" onClick={onNavigate} />

@@ -12,7 +12,9 @@ import {
 function parseStringArray(value: string) {
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
   } catch {
     return [];
   }
@@ -21,24 +23,38 @@ function parseStringArray(value: string) {
 function parseAttributes(value: string) {
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, string> : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
   } catch {
     return {};
   }
 }
 
 function sortOptionValues(values: Iterable<string>) {
-  return [...values].sort((left, right) => left.localeCompare(right, "it", {
-    numeric: true,
-    sensitivity: "base",
-  }));
+  return [...values].sort((left, right) =>
+    left.localeCompare(right, "it", {
+      numeric: true,
+      sensitivity: "base",
+    }),
+  );
 }
 
-function optionAvailability(variants: Array<{ attributes: string; available: boolean }>) {
-  const options = new Map<string, { available: Set<string>; unavailable: Set<string> }>();
+function optionAvailability(
+  variants: Array<{ attributes: string; available: boolean }>,
+) {
+  const options = new Map<
+    string,
+    { available: Set<string>; unavailable: Set<string> }
+  >();
   for (const variant of variants) {
-    for (const [name, value] of Object.entries(parseAttributes(variant.attributes))) {
-      const option = options.get(name) ?? { available: new Set<string>(), unavailable: new Set<string>() };
+    for (const [name, value] of Object.entries(
+      parseAttributes(variant.attributes),
+    )) {
+      const option = options.get(name) ?? {
+        available: new Set<string>(),
+        unavailable: new Set<string>(),
+      };
       (variant.available ? option.available : option.unavailable).add(value);
       options.set(name, option);
     }
@@ -57,13 +73,37 @@ function availability(available: boolean, stockQuantity: number | null) {
   return "in_stock" as const;
 }
 
+function variantAddToCartUrl(input: {
+  available: boolean;
+  externalId: string | null;
+  productUrl: string;
+  sourceType: string | null | undefined;
+}) {
+  const commerceId = input.externalId?.split("/").pop();
+  if (!input.available || !commerceId || !/^\d+$/.test(commerceId || ""))
+    return undefined;
+  if (input.sourceType !== "shopify" && input.sourceType !== "woocommerce")
+    return undefined;
+  return safeHttpsUrl(
+    new URL(
+      input.sourceType === "shopify"
+        ? `/cart/add?id=${encodeURIComponent(commerceId)}&quantity=1`
+        : `/?add-to-cart=${encodeURIComponent(commerceId)}&quantity=1`,
+      input.productUrl,
+    ).toString(),
+  );
+}
+
 export async function hydrateProductCards(
   botId: string,
   rawSelections: ProductSelection[],
 ): Promise<ProductCard[]> {
   const selections = rawSelections
     .map((selection) => productSelectionSchema.safeParse(selection))
-    .filter((result): result is { success: true; data: ProductSelection } => result.success)
+    .filter(
+      (result): result is { success: true; data: ProductSelection } =>
+        result.success,
+    )
     .map((result) => result.data)
     .slice(0, 5);
 
@@ -75,7 +115,10 @@ export async function hydrateProductCards(
       id: { in: selections.map((selection) => selection.productId) },
       status: "active",
     },
-    include: { source: { select: { sourceType: true } }, variants: { orderBy: { position: "asc" } } },
+    include: {
+      source: { select: { sourceType: true } },
+      variants: { orderBy: { position: "asc" } },
+    },
   });
   const byId = new Map(products.map((product) => [product.id, product]));
 
@@ -84,48 +127,101 @@ export async function hydrateProductCards(
     if (!product) return [];
     const selectedVariant = selection.variantId
       ? product.variants.find((variant) => variant.id === selection.variantId)
-      : product.variants.find((variant) => variant.available) ?? product.variants[0];
+      : (product.variants.find((variant) => variant.available) ??
+        product.variants[0]);
     if (selection.variantId && !selectedVariant) return [];
 
-    const productUrl = safeHttpsUrl(selectedVariant?.productUrl) ?? safeHttpsUrl(product.canonicalUrl);
+    const productUrl =
+      safeHttpsUrl(selectedVariant?.productUrl) ??
+      safeHttpsUrl(product.canonicalUrl);
     if (!productUrl) return [];
-    const imageUrl = safeHttpsUrl(selectedVariant?.imageUrl)
-      ?? safeHttpsUrl(product.mainImageUrl)
-      ?? parseStringArray(product.imageUrls).map(safeHttpsUrl).find(Boolean);
-    const isAvailable = product.availableForSale && (selectedVariant?.available ?? true);
+    const imageUrl =
+      safeHttpsUrl(selectedVariant?.imageUrl) ??
+      safeHttpsUrl(product.mainImageUrl) ??
+      parseStringArray(product.imageUrls).map(safeHttpsUrl).find(Boolean);
+    const isAvailable =
+      product.availableForSale && (selectedVariant?.available ?? true);
     const price = selectedVariant?.price ?? undefined;
     const compareAtPrice = selectedVariant?.compareAtPrice ?? undefined;
-    const onSale = price !== undefined && compareAtPrice !== undefined && compareAtPrice > price;
-    const commerceId = selectedVariant?.externalId?.split("/").pop() ?? product.externalId?.split("/").pop();
-    const supportsCart = product.source?.sourceType === "shopify" || product.source?.sourceType === "woocommerce";
-    const addToCartUrl = isAvailable && supportsCart && commerceId && /^\d+$/.test(commerceId)
-      ? safeHttpsUrl(new URL(
-          product.source?.sourceType === "shopify"
-            ? `/cart/add?id=${encodeURIComponent(commerceId)}&quantity=1`
-            : `/?add-to-cart=${encodeURIComponent(commerceId)}&quantity=1`,
-          productUrl,
-        ).toString())
+    const onSale =
+      price !== undefined &&
+      compareAtPrice !== undefined &&
+      compareAtPrice > price;
+    const orderedVariants = selectedVariant
+      ? [
+          selectedVariant,
+          ...product.variants.filter(
+            (variant) => variant.id !== selectedVariant.id,
+          ),
+        ]
+      : product.variants;
+    const variants = orderedVariants.slice(0, 100).map((variant, index) => {
+      const choices = Object.entries(parseAttributes(variant.attributes)).map(
+        ([name, value]) => ({ name, value }),
+      );
+      const variantProductUrl = safeHttpsUrl(variant.productUrl) ?? productUrl;
+      const variantIsAvailable =
+        product.availableForSale &&
+        variant.available &&
+        variant.stockQuantity !== 0;
+      return {
+        variantId: variant.id,
+        label:
+          variant.title?.trim() ||
+          choices.map((choice) => choice.value).join(" / ") ||
+          `Variante ${index + 1}`,
+        choices,
+        price: variant.price ?? undefined,
+        compareAtPrice: variant.compareAtPrice ?? undefined,
+        currency: variant.currency?.toUpperCase(),
+        availability: availability(variantIsAvailable, variant.stockQuantity),
+        addToCartUrl: variantAddToCartUrl({
+          available: variantIsAvailable,
+          externalId: variant.externalId,
+          productUrl: variantProductUrl,
+          sourceType: product.source?.sourceType,
+        }),
+      };
+    });
+    const addToCartUrl = selectedVariant
+      ? variants.find((variant) => variant.variantId === selectedVariant.id)
+          ?.addToCartUrl
       : undefined;
 
-    return [{
-      productId: product.id,
-      variantId: selectedVariant?.id,
-      title: product.title,
-      shortDescription: product.description.slice(0, 500),
-      imageUrl,
-      productUrl,
-      price,
-      compareAtPrice,
-      currency: selectedVariant?.currency?.toUpperCase(),
-      availability: availability(isAvailable, selectedVariant?.stockQuantity ?? null),
-      badge: onSale ? "In offerta" : undefined,
-      reason: selection.reason,
-      options: optionAvailability(product.variants),
-      actions: [
-        { type: "view" as const, label: "Vedi prodotto", url: productUrl },
-        ...(addToCartUrl ? [{ type: "add_to_cart" as const, label: "Aggiungi al carrello", url: addToCartUrl, variantId: selectedVariant?.id }] : []),
-      ],
-    }];
+    return [
+      {
+        productId: product.id,
+        variantId: selectedVariant?.id,
+        title: product.title,
+        shortDescription: product.description.slice(0, 500),
+        imageUrl,
+        productUrl,
+        price,
+        compareAtPrice,
+        currency: selectedVariant?.currency?.toUpperCase(),
+        availability: availability(
+          isAvailable,
+          selectedVariant?.stockQuantity ?? null,
+        ),
+        badge: onSale ? "In offerta" : undefined,
+        reason: selection.reason,
+        options: optionAvailability(product.variants),
+        variants,
+        actions: [
+          { type: "view" as const, label: "Vedi prodotto", url: productUrl },
+          ...(addToCartUrl
+            ? [
+                {
+                  type: "add_to_cart" as const,
+                  label: "Aggiungi al carrello",
+                  url: addToCartUrl,
+                  variantId: selectedVariant?.id,
+                },
+              ]
+            : []),
+        ],
+      },
+    ];
   });
 
   return productCardsSchema.parse(cards);

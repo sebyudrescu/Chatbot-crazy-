@@ -25,6 +25,16 @@ export function configuredCtasOnly(ctas: SafeCTA[]) {
     if (!url || !label || seen.has(url)) return false;
     cta.action = url;
     cta.label = label.slice(0, 100);
+    if (cta.metadata) {
+      cta.metadata = {
+        ...(typeof cta.metadata.title === "string"
+          ? { title: cta.metadata.title.trim().slice(0, 120) }
+          : {}),
+        ...(typeof cta.metadata.description === "string"
+          ? { description: cta.metadata.description.trim().slice(0, 500) }
+          : {}),
+      };
+    }
     seen.add(url);
     return true;
   });

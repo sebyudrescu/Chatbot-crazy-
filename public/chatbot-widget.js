@@ -313,6 +313,8 @@
       outline: 2px solid ${config.primaryColor}55;
       outline-offset: 2px;
     }
+    .chatbot-action-copy { grid-column: 1 / -1; padding: 8px 10px; border-radius: 10px; background: ${config.theme === 'dark' ? '#273449' : '#f8fafc'}; color: ${config.theme === 'dark' ? '#e2e8f0' : '#475569'}; font-size: 10px; line-height: 1.45; }
+    .chatbot-action-copy strong { display: block; margin-bottom: 2px; color: ${config.theme === 'dark' ? '#ffffff' : '#111827'}; font-size: 11px; }
 
     .chatbot-product-carousel-shell { position: relative; min-width: 0; margin-top: 10px; }
     .chatbot-product-carousel-heading {
@@ -329,6 +331,7 @@
       text-transform: uppercase;
     }
     .chatbot-product-counter { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .chatbot-product-presentation { margin: 0 2px 8px; color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'}; font-size: 10px; line-height: 1.45; }
     .chatbot-product-carousel {
       display: grid;
       grid-auto-flow: column;
@@ -423,23 +426,39 @@
       font-size: 10px;
       line-height: 1.4;
     }
+    .chatbot-product-reason {
+      padding: 8px 9px;
+      border-radius: 9px;
+      background: ${config.theme === 'dark' ? 'rgba(99, 60, 255, 0.14)' : `${config.primaryColor}0d`};
+      color: ${config.theme === 'dark' ? '#ddd6fe' : '#475569'};
+      font-size: 10px;
+      line-height: 1.45;
+    }
+    .chatbot-product-reason strong { display: block; margin-bottom: 2px; color: ${config.theme === 'dark' ? '#f5f3ff' : '#312e81'}; font-size: 9px; }
     .chatbot-product-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .chatbot-product-price { color: ${config.theme === 'dark' ? '#ffffff' : '#0f172a'}; font-size: 14px; font-weight: 800; }
     .chatbot-product-compare { margin-left: 5px; color: #94a3b8; font-size: 10px; font-weight: 500; text-decoration: line-through; }
     .chatbot-product-stock { color: #059669; font-size: 9px; font-weight: 700; }
     .chatbot-product-stock.out { color: #dc2626; }
+    .chatbot-product-variant { display: grid; gap: 4px; color: ${config.theme === 'dark' ? '#cbd5e1' : '#475569'}; font-size: 9px; font-weight: 700; }
+    .chatbot-product-variant select { width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid ${config.theme === 'dark' ? '#475569' : '#dbe2ea'}; border-radius: 9px; box-sizing: border-box; background: ${config.theme === 'dark' ? '#172033' : '#ffffff'}; color: inherit; font: inherit; font-size: 10px; }
+    .chatbot-product-variant select:focus-visible { outline: 2px solid ${config.primaryColor}55; outline-offset: 2px; }
     .chatbot-product-open {
       display: flex;
       min-height: 34px;
       align-items: center;
       justify-content: center;
+      border: 0;
       border-radius: 9px;
       background: ${config.primaryColor};
       color: #ffffff;
+      cursor: pointer;
+      font-family: inherit;
       font-size: 11px;
       font-weight: 750;
       text-decoration: none;
     }
+    .chatbot-product-open:disabled { cursor: wait; opacity: 0.72; }
     .chatbot-product-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; }
     .chatbot-product-open.secondary { border: 1px solid ${config.primaryColor}; background: transparent; color: ${config.theme === 'dark' ? '#e9d5ff' : config.primaryColor}; }
     .chatbot-product-open:hover, .chatbot-product-open:focus-visible { filter: brightness(0.94); outline: 2px solid ${config.primaryColor}55; outline-offset: 2px; }
@@ -1179,6 +1198,23 @@
     } catch { return `${price.toFixed(2)} ${currency || ''}`.trim(); }
   }
 
+  function variantChoiceLabel(variant) {
+    const choices = Array.isArray(variant && variant.choices) ? variant.choices : [];
+    const values = choices.map((choice) => String(choice && choice.value || '').trim()).filter(Boolean);
+    return (values.join(' / ') || String(variant && variant.label || 'Variante')).slice(0, 240);
+  }
+
+  function variantSelectorLabel(variants) {
+    const names = new Set();
+    variants.forEach((variant) => {
+      (Array.isArray(variant && variant.choices) ? variant.choices : []).forEach((choice) => {
+        const name = String(choice && choice.name || '').trim();
+        if (name) names.add(name);
+      });
+    });
+    return names.size === 1 ? String(Array.from(names)[0]).slice(0, 80) : 'Variante';
+  }
+
   async function trackCommerceEvent(eventType, card, messageId) {
     if (!conversationId || !userSessionId || !card || !card.productId) return;
     try {
@@ -1199,7 +1235,47 @@
     } catch {}
   }
 
-  function addProductCards(contentElement, productCards, messageId) {
+  function sameStoreCartAction(actionUrl) {
+    const url = safeProductUrl(actionUrl);
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      if (parsed.origin !== window.location.origin || !/^\/cart\/add\/?$/i.test(parsed.pathname)) return null;
+      const variantId = parsed.searchParams.get('id');
+      return variantId && /^\d+$/.test(variantId) ? { url: parsed, variantId } : null;
+    } catch { return null; }
+  }
+
+  function announceCartUpdate(card, commerceVariantId, cart) {
+    const detail = {
+      source: 'litx-widget',
+      productId: card.productId,
+      variantId: card.variantId || commerceVariantId,
+      itemCount: Number(cart && cart.item_count) || undefined,
+      cartToken: typeof (cart && cart.token) === 'string' ? cart.token : undefined,
+    };
+    window.dispatchEvent(new CustomEvent('litx:cart:updated', { detail }));
+    document.dispatchEvent(new CustomEvent('litx:cart:updated', { detail }));
+  }
+
+  async function addToCurrentStoreCart(actionUrl, card, messageId) {
+    const action = sameStoreCartAction(actionUrl);
+    if (!action) return false;
+    const response = await fetch(`${window.location.origin}/cart/add.js`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ items: [{ id: Number(action.variantId), quantity: 1 }] }),
+    });
+    if (!response.ok) throw new Error('Il prodotto non è più disponibile');
+    const cartResponse = await fetch(`${window.location.origin}/cart.js`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    const cart = cartResponse.ok ? await cartResponse.json().catch(() => null) : null;
+    announceCartUpdate(card, action.variantId, cart);
+    void trackCommerceEvent('add_to_cart', card, messageId);
+    return true;
+  }
+
+  function addProductCards(contentElement, productCards, messageId, presentation) {
     const cards = Array.isArray(productCards) ? productCards.slice(0, 5) : [];
     if (!cards.length) return;
     const shell = document.createElement('section');
@@ -1210,17 +1286,34 @@
     const heading = document.createElement('div');
     heading.className = 'chatbot-product-carousel-heading';
     const headingLabel = document.createElement('span');
-    headingLabel.textContent = 'Prodotti';
+    headingLabel.textContent = String(presentation && presentation.title || 'Prodotti').slice(0, 160);
     const counter = document.createElement('span');
     counter.className = 'chatbot-product-counter';
     heading.append(headingLabel, counter);
     const carousel = document.createElement('div');
     carousel.className = 'chatbot-product-carousel';
-    shell.append(heading, carousel);
+    shell.appendChild(heading);
+    if (presentation && presentation.description) {
+      const presentationDescription = document.createElement('p');
+      presentationDescription.className = 'chatbot-product-presentation';
+      presentationDescription.textContent = String(presentation.description).slice(0, 500);
+      shell.appendChild(presentationDescription);
+    }
+    shell.appendChild(carousel);
 
     cards.forEach((card) => {
       const productUrl = safeProductUrl(card && card.productUrl);
       if (!productUrl || !card.title) return;
+      const variants = (Array.isArray(card.variants) ? card.variants : []).slice(0, 100).filter((variant) => (
+        variant
+        && typeof variant.variantId === 'string'
+        && typeof variant.label === 'string'
+        && ['in_stock', 'out_of_stock', 'preorder', 'unknown'].includes(variant.availability)
+      ));
+      let selectedVariant = variants.find((variant) => variant.variantId === card.variantId)
+        || variants.find((variant) => variant.availability !== 'out_of_stock')
+        || variants[0]
+        || null;
       const article = document.createElement('article');
       article.className = 'chatbot-product-card';
       const imageLink = document.createElement('a');
@@ -1265,21 +1358,38 @@
         description.textContent = String(card.shortDescription).slice(0, 500);
         body.appendChild(description);
       }
+      if (card.reason) {
+        const reason = document.createElement('div');
+        reason.className = 'chatbot-product-reason';
+        const reasonLabel = document.createElement('strong');
+        reasonLabel.textContent = 'Perché è adatto a te';
+        const reasonText = document.createElement('span');
+        reasonText.textContent = String(card.reason).slice(0, 300);
+        reason.append(reasonLabel, reasonText);
+        body.appendChild(reason);
+      }
+      let variantSelect = null;
+      if (variants.length) {
+        const variantLabel = document.createElement('label');
+        variantLabel.className = 'chatbot-product-variant';
+        variantLabel.appendChild(document.createTextNode(variantSelectorLabel(variants)));
+        variantSelect = document.createElement('select');
+        variants.forEach((variant) => {
+          const option = document.createElement('option');
+          option.value = variant.variantId;
+          option.textContent = `${variantChoiceLabel(variant)}${variant.availability === 'out_of_stock' ? ' — Esaurito' : ''}`;
+          option.disabled = variant.availability === 'out_of_stock';
+          option.selected = variant === selectedVariant;
+          variantSelect.appendChild(option);
+        });
+        variantLabel.appendChild(variantSelect);
+        body.appendChild(variantLabel);
+      }
       const meta = document.createElement('div');
       meta.className = 'chatbot-product-meta';
       const price = document.createElement('div');
       price.className = 'chatbot-product-price';
-      price.textContent = formatProductPrice(card.price, card.currency) || 'Prezzo sul sito';
-      const comparePrice = formatProductPrice(card.compareAtPrice, card.currency);
-      if (comparePrice) {
-        const compare = document.createElement('span');
-        compare.className = 'chatbot-product-compare';
-        compare.textContent = comparePrice;
-        price.appendChild(compare);
-      }
       const stock = document.createElement('span');
-      stock.className = `chatbot-product-stock ${card.availability === 'out_of_stock' ? 'out' : ''}`;
-      stock.textContent = card.availability === 'out_of_stock' ? 'Esaurito' : card.availability === 'preorder' ? 'Preordine' : 'Disponibile';
       meta.appendChild(price);
       meta.appendChild(stock);
       body.appendChild(meta);
@@ -1288,18 +1398,89 @@
       const cardActions = Array.isArray(card.actions) && card.actions.length
         ? card.actions
         : [{ type: 'view', label: 'Vedi prodotto', url: productUrl }];
+      let cartButton = null;
+      let fallbackCartAction = null;
       cardActions.slice(0, 3).forEach((action) => {
         const actionUrl = safeProductUrl(action && action.url);
         if (!actionUrl || !action.label) return;
+        if (action.type === 'add_to_cart') {
+          fallbackCartAction = { url: actionUrl, label: String(action.label).slice(0, 80) };
+          return;
+        }
         const link = document.createElement('a');
-        link.className = `chatbot-product-open ${action.type === 'view' ? '' : 'secondary'}`;
+        link.className = `chatbot-product-open ${action.type === 'view' ? 'secondary' : ''}`;
         link.href = actionUrl;
-        link.target = action.type === 'add_to_cart' ? '_self' : '_blank';
+        link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = String(action.label).slice(0, 80);
-        link.onclick = () => { void trackCommerceEvent(action.type === 'add_to_cart' ? 'add_to_cart' : 'click', card, messageId); };
+        link.onclick = () => { void trackCommerceEvent('click', card, messageId); };
         actions.appendChild(link);
       });
+      const selectedCartUrl = () => selectedVariant
+        ? safeProductUrl(selectedVariant.addToCartUrl)
+        : fallbackCartAction && fallbackCartAction.url;
+      const selectedAvailability = () => selectedVariant ? selectedVariant.availability : card.availability;
+      const updateVariantPresentation = () => {
+        const currentPrice = selectedVariant && typeof selectedVariant.price === 'number' ? selectedVariant.price : card.price;
+        const currentCurrency = selectedVariant && selectedVariant.currency || card.currency;
+        const currentCompareAtPrice = selectedVariant && typeof selectedVariant.compareAtPrice === 'number' ? selectedVariant.compareAtPrice : card.compareAtPrice;
+        price.textContent = formatProductPrice(currentPrice, currentCurrency) || 'Prezzo sul sito';
+        const comparePrice = formatProductPrice(currentCompareAtPrice, currentCurrency);
+        if (comparePrice) {
+          const compare = document.createElement('span');
+          compare.className = 'chatbot-product-compare';
+          compare.textContent = comparePrice;
+          price.appendChild(compare);
+        }
+        const currentAvailability = selectedAvailability();
+        stock.className = `chatbot-product-stock ${currentAvailability === 'out_of_stock' ? 'out' : ''}`;
+        stock.textContent = currentAvailability === 'out_of_stock' ? 'Esaurito' : currentAvailability === 'preorder' ? 'Preordine' : currentAvailability === 'unknown' ? 'Verifica disponibilità' : 'Disponibile';
+        if (cartButton) {
+          const actionUrl = selectedCartUrl();
+          const canAddInPlace = actionUrl ? Boolean(sameStoreCartAction(actionUrl)) : false;
+          cartButton.disabled = !actionUrl || currentAvailability === 'out_of_stock';
+          cartButton.textContent = canAddInPlace
+            ? String(presentation && presentation.label || fallbackCartAction && fallbackCartAction.label || 'Aggiungi al carrello').slice(0, 80)
+            : 'Apri nel negozio';
+          cartButton.setAttribute('aria-label', `${cartButton.textContent}: ${String(card.title).slice(0, 160)}`);
+        }
+      };
+      if (variants.some((variant) => safeProductUrl(variant.addToCartUrl)) || fallbackCartAction) {
+        cartButton = document.createElement('button');
+        cartButton.type = 'button';
+        cartButton.className = 'chatbot-product-open chatbot-product-cart';
+        cartButton.setAttribute('aria-label', `Acquista: ${String(card.title).slice(0, 160)}`);
+        cartButton.onclick = async () => {
+          if (cartButton.disabled) return;
+          const actionUrl = selectedCartUrl();
+          if (!actionUrl) return;
+          const selectedCard = selectedVariant ? { ...card, variantId: selectedVariant.variantId } : card;
+          if (!sameStoreCartAction(actionUrl)) {
+            void trackCommerceEvent('click', selectedCard, messageId);
+            window.open(actionUrl, '_blank', 'noopener,noreferrer');
+            return;
+          }
+          cartButton.disabled = true;
+          cartButton.textContent = 'Aggiunta in corso…';
+          try {
+            if (await addToCurrentStoreCart(actionUrl, selectedCard, messageId)) {
+              cartButton.textContent = 'Aggiunto ✓';
+              window.setTimeout(() => { updateVariantPresentation(); }, 2200);
+            }
+          } catch {
+            cartButton.textContent = 'Riprova';
+            cartButton.disabled = false;
+          }
+        };
+        actions.appendChild(cartButton);
+      }
+      if (variantSelect) {
+        variantSelect.onchange = () => {
+          selectedVariant = variants.find((variant) => variant.variantId === variantSelect.value) || selectedVariant;
+          updateVariantPresentation();
+        };
+      }
+      updateVariantPresentation();
       body.appendChild(actions);
       article.appendChild(body);
       carousel.appendChild(article);
@@ -1593,6 +1774,23 @@
       const url = safeActionUrl(cta && cta.action);
       const label = cta && typeof cta.label === 'string' ? cta.label.trim() : '';
       if (!url || !label) return;
+      const title = cta && cta.metadata && typeof cta.metadata.title === 'string' ? cta.metadata.title.trim() : '';
+      const description = cta && cta.metadata && typeof cta.metadata.description === 'string' ? cta.metadata.description.trim() : '';
+      if (title || description) {
+        const copy = document.createElement('div');
+        copy.className = 'chatbot-action-copy';
+        if (title) {
+          const heading = document.createElement('strong');
+          heading.textContent = title.slice(0, 120);
+          copy.appendChild(heading);
+        }
+        if (description) {
+          const text = document.createElement('span');
+          text.textContent = description.slice(0, 500);
+          copy.appendChild(text);
+        }
+        extras.appendChild(copy);
+      }
       const link = document.createElement('a');
       link.className = `chatbot-action ${index > 0 || cta.variant === 'secondary' ? 'secondary' : ''}`;
       link.href = url;
@@ -1727,7 +1925,7 @@
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'chatbot-lead-submit';
-    submit.textContent = 'Invia richiesta';
+    submit.textContent = String(definition.submitLabel || 'Invia richiesta').slice(0, 80);
     form.appendChild(status);
     form.appendChild(submit);
 
@@ -1825,7 +2023,7 @@
         const contentElement = addMessage(sender, message.content, { id: message.id });
         if (sender !== 'bot') return;
         addSources(contentElement, message.sources);
-        addProductCards(contentElement, message.productCards, message.id);
+        addProductCards(contentElement, message.productCards, message.id, message.productWidget);
         if (!message.feedback) addFeedbackControls(contentElement, message.id);
         if (index === lastAssistantIndex) {
           addResponseExtras(contentElement, message.quickReplies, message.ctas);
@@ -1973,7 +2171,7 @@
           id: data.data.assistantMessage.id,
         });
         addSources(responseContent, data.data.sources);
-        addProductCards(responseContent, data.data.productCards, data.data.assistantMessage.id);
+        addProductCards(responseContent, data.data.productCards, data.data.assistantMessage.id, data.data.productWidget);
         addOrderLookupForm(responseContent, data.data.orderLookupForm);
         addOrderStatusCard(responseContent, data.data.orderStatusCard);
         addFeedbackControls(responseContent, data.data.assistantMessage.id);
