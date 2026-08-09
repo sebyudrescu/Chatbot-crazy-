@@ -184,6 +184,7 @@ jobs:
           npm run test:conversation-guidance
           npm run test:grounding-policy
           npm run test:rag-retrieval
+          npm run test:readiness-metrics
 
       - name: Operational observability safety tests
         id: observability
