@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
   const widgetPath = path.join(process.cwd(), 'public', 'chatbot-widget.js')
   const widgetScript = fs.readFileSync(widgetPath, 'utf-8')
   const fullScript = `window.ChatbotConfig = Object.assign({}, window.ChatbotConfig || {}, ${JSON.stringify(config)});\n${widgetScript}`
-  const response = new NextResponse(fullScript, { status: 200, headers: { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300' } })
+  const response = new NextResponse(fullScript, { status: 200, headers: { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'private, no-store', 'Vary': 'Origin, Referer' } })
   response.headers.set('Access-Control-Allow-Origin', '*')
   return response
 }
