@@ -98,7 +98,7 @@ async function testAgentPublicationReadiness() {
     answerAccuracy: 0.9,
     grounded: true,
     safe: true,
-    retrieval: { precisionAtK: 0.6, recallAtK: 0.8, reciprocalRank: 1, ndcgAtK: 0.9, k: 5 },
+    retrieval: { applicable: true, precisionAtK: 0.6, recallAtK: 0.8, reciprocalRank: 1, ndcgAtK: 0.9, k: 5 },
   });
   const productionPolicyMetrics = JSON.stringify({
     benchmarkType: "policy",

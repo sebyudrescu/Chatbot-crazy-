@@ -10,6 +10,7 @@ import { evaluationJudgeSchema } from "@/lib/evaluation-judge-contract";
 import { deterministicPassForBenchmark, inferEvaluationBenchmarkType, judgedPassForBenchmark } from "@/lib/evaluation-benchmark-policy";
 import { formatBusinessContextForPrompt, getCachedBusinessContext } from "@/lib/business-context";
 import { partitionEvaluationContextRelevance } from "@/lib/evaluation-context-relevance";
+import { matchesIdentityQuestion } from "@/lib/intent-patterns";
 
 const InputSchema = z.object({
   botId: z.string().uuid(),
@@ -31,11 +32,12 @@ function deterministicRelevantIndexes(question: string, expectedKeywords: string
   });
 }
 
-function retrievalBenchmark(candidateIds: string[], relevantIndexes: number[], k = 5) {
+function retrievalBenchmark(candidateIds: string[], relevantIndexes: number[], applicable: boolean, k = 5) {
   const relevantIds = relevantIndexes.map((index) => candidateIds[index]).filter(Boolean);
   return {
     ...calculateRetrievalMetrics({ retrievedIds: candidateIds.slice(0, k), relevantIds }, k),
     k,
+    applicable,
     candidatePoolSize: candidateIds.length,
     relevantInPool: relevantIds.length,
     topRetrievalScore: null as number | null,
@@ -46,6 +48,7 @@ export async function POST(request: NextRequest) {
   try {
     const input = InputSchema.parse(await request.json());
     const benchmarkType = inferEvaluationBenchmarkType(input.expectedKeywords, input.forbiddenKeywords);
+    const retrievalApplicable = benchmarkType === "grounded" && !matchesIdentityQuestion(input.question);
     const candidates = await retrieveBenchmarkCandidates({ botId: input.botId, query: input.question, topK: 20 });
     const businessContext = formatBusinessContextForPrompt(await getCachedBusinessContext(input.botId)).trim();
     const includesAuthoritativeBusinessContext = Boolean(businessContext);
@@ -62,7 +65,7 @@ export async function POST(request: NextRequest) {
       retrievalCandidateCount: candidateIds.length,
     });
     const fallbackRetrieval = {
-      ...retrievalBenchmark(candidateIds, fallbackRelevance.retrievalRelevantIndexes),
+      ...retrievalBenchmark(candidateIds, fallbackRelevance.retrievalRelevantIndexes, retrievalApplicable),
       topRetrievalScore: candidates[0]?.finalScore ?? null,
     };
     const deterministicPassed = deterministicPassForBenchmark(benchmarkType, deterministic);
@@ -167,7 +170,7 @@ export async function POST(request: NextRequest) {
         retrievalCandidateCount: candidateIds.length,
       });
       const retrieval = {
-        ...retrievalBenchmark(candidateIds, judgedRelevance.retrievalRelevantIndexes),
+        ...retrievalBenchmark(candidateIds, judgedRelevance.retrievalRelevantIndexes, retrievalApplicable),
         topRetrievalScore: candidates[0]?.finalScore ?? null,
       };
       const passed = judgedPassForBenchmark(benchmarkType, deterministic.passed, judged);

@@ -32,7 +32,8 @@ export function productionEvaluationMetricType(value: string | null | undefined)
   const reciprocalRank = Number(retrieval?.reciprocalRank)
   const safety = metrics.safe ?? metrics.policySafe
   const grounded = metrics.grounded
-  return faithfulness >= 0.7 && faithfulness <= 1 &&
+  return retrieval?.applicable === true &&
+    faithfulness >= 0.7 && faithfulness <= 1 &&
     answerAccuracy >= 0.7 && answerAccuracy <= 1 &&
     [precisionAtK, recallAtK, reciprocalRank].every(metric => Number.isFinite(metric) && metric >= 0 && metric <= 1) &&
     safety === true &&

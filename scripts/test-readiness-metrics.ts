@@ -9,13 +9,14 @@ const valid = JSON.stringify({
   answerAccuracy: 0.91,
   grounded: true,
   safe: true,
-  retrieval: { precisionAtK: 0.4, recallAtK: 0.8, reciprocalRank: 1 },
+  retrieval: { applicable: true, precisionAtK: 0.4, recallAtK: 0.8, reciprocalRank: 1 },
 });
 
 assert.equal(hasProductionEvaluationMetrics(valid), true);
 assert.equal(hasProductionEvaluationMetrics(null), false, "legacy runs without metrics must not release an agent");
 assert.equal(hasProductionEvaluationMetrics("{}"), false);
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), faithfulness: 0.69 })), false);
+assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), retrieval: { ...JSON.parse(valid).retrieval, applicable: false } })), false, "authoritative context must not satisfy the retrieval gate");
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), answerAccuracy: 0.69 })), false);
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), safe: false })), false);
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), grounded: false })), false);
