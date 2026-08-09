@@ -8,7 +8,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { evaluateResponse } from '@/lib/evaluation'
 
 interface Agent { id: string; companyName: string }
-interface Run { id: string; passed: boolean; response: string; confidence?: number | null; latencyMs?: number | null; failureReason?: string | null; createdAt: string }
+interface Run { id: string; passed: boolean; response: string; confidence?: number | null; latencyMs?: number | null; failureReason?: string | null; metrics?: any; createdAt: string }
 interface Case { id: string; botId: string; name: string; question: string; expectedKeywords: string[]; forbiddenKeywords: string[]; minimumConfidence: number; isActive: boolean; runs: Run[] }
 
 export default function EvaluationsPage() {
@@ -22,6 +22,7 @@ export default function EvaluationsPage() {
 
   const runs = cases.flatMap(item => item.runs), latestRuns = cases.map(item => item.runs[0]).filter(Boolean)
   const passRate = latestRuns.length ? Math.round(latestRuns.filter(run => run.passed).length / latestRuns.length * 100) : 0
+  const averageMetric = (path: string[]) => { const values = latestRuns.map(run => path.reduce<any>((value, key) => value?.[key], run.metrics)).filter(value => typeof value === 'number'); return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 100) : 0 }
   const selected = useMemo(() => agents.find(agent => agent.id === selectedId), [agents, selectedId])
 
   const createCase = async () => {
@@ -35,7 +36,7 @@ export default function EvaluationsPage() {
     const active = cases.filter(item => item.isActive); if (!active.length || running) return
     setRunning(true)
     for (const item of active) {
-      const started = performance.now(); let response = '', confidence: number | null = null, conversationId: string | null = null, failureReason: string | null = null, passed = false
+      const started = performance.now(); let response = '', confidence: number | null = null, conversationId: string | null = null, failureReason: string | null = null, passed = false, metrics: any = null
       try {
         const chat = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId: item.botId, message: item.question, userSessionId: `evaluation_${item.id}_${Date.now()}` }) }); const result = await chat.json()
         if (!chat.ok || !result.success) failureReason = result.message || result.error || 'Il chatbot non ha risposto'
@@ -62,11 +63,13 @@ export default function EvaluationsPage() {
             : evaluateResponse(response, confidence, item)
           passed = verdict.passed
           failureReason = verdict.failureReason
+          metrics = verdict.dimensions || null
         }
       } catch { failureReason = 'Servizio non raggiungibile' }
-      await fetch('/api/evaluations/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caseId: item.id, passed, response, confidence, latencyMs: Math.round(performance.now() - started), failureReason }) })
+      await fetch('/api/evaluations/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caseId: item.id, passed, response, confidence, latencyMs: Math.round(performance.now() - started), failureReason, metrics }) })
       if (conversationId) await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' }).catch(() => {})
     }
+    await fetch('/api/evaluations/calibrate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId: selectedId }) }).catch(() => {})
     await loadCases(); setRunning(false)
   }
 
@@ -74,7 +77,7 @@ export default function EvaluationsPage() {
   return <DashboardLayout><div className="mx-auto max-w-[1500px] p-4 lg:p-7">
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Regression lab</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-950">Valutazioni automatiche</h1><p className="mt-1 text-sm text-gray-500">Controlla che ogni agente mantenga risposte, sicurezza e qualità dopo ogni modifica.</p></div><Button onClick={runAll} disabled={running || !cases.some(item => item.isActive)} icon={running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}>{running ? 'Test in corso...' : 'Esegui tutti'}</Button></header>
     {!agents.length ? <div className="mt-6 card flex min-h-80 flex-col items-center justify-center text-center"><Bot className="h-8 w-8 text-brand-600" /><h2 className="mt-3 font-semibold">Nessun agente disponibile</h2><p className="mt-1 text-sm text-gray-500">Crea un agente per definire i suoi controlli automatici.</p></div> : <>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Agente" value={selected?.companyName || '—'} /><Metric label="Casi attivi" value={String(cases.filter(item => item.isActive).length)} /><Metric label="Successo ultimo run" value={`${passRate}%`} good={passRate >= 80} /><Metric label="Esecuzioni salvate" value={String(runs.length)} /></div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Agente" value={selected?.companyName || '—'} /><Metric label="Successo ultimo run" value={`${passRate}%`} good={passRate >= 80} /><Metric label="Faithfulness" value={`${averageMetric(['faithfulness'])}%`} good={averageMetric(['faithfulness']) >= 70} /><Metric label="Accuratezza risposta" value={`${averageMetric(['answerAccuracy'])}%`} good={averageMetric(['answerAccuracy']) >= 70} /><Metric label="Precision@5" value={`${averageMetric(['retrieval','precisionAtK'])}%`} good={averageMetric(['retrieval','precisionAtK']) >= 60} /><Metric label="Recall@5" value={`${averageMetric(['retrieval','recallAtK'])}%`} good={averageMetric(['retrieval','recallAtK']) >= 70} /><Metric label="MRR" value={`${averageMetric(['retrieval','reciprocalRank'])}%`} good={averageMetric(['retrieval','reciprocalRank']) >= 70} /><Metric label="Esecuzioni salvate" value={String(runs.length)} /></div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-5"><div className="card p-5"><label className="label">Agente da verificare</label><select className="input" value={selectedId} onChange={e => setSelectedId(e.target.value)}>{agents.map(agent => <option key={agent.id} value={agent.id}>{agent.companyName}</option>)}</select></div>
           <div className="card p-5"><div className="flex items-center gap-2"><Plus className="h-4 w-4 text-brand-600" /><h2 className="text-sm font-semibold">Nuovo caso di test</h2></div><div className="mt-4 space-y-3"><Field label="Nome" value={form.name} onChange={value => setForm({ ...form, name: value })} placeholder="Es. Informazioni sui prezzi" /><Field label="Domanda da inviare" value={form.question} onChange={value => setForm({ ...form, question: value })} placeholder="Quanto costa il servizio?" textarea /><Field label="Parole attese (separate da virgola)" value={form.expected} onChange={value => setForm({ ...form, expected: value })} placeholder="prezzo, preventivo" /><Field label="Parole vietate" value={form.forbidden} onChange={value => setForm({ ...form, forbidden: value })} placeholder="garantito, inventato" /><label className="label">Confidenza minima: {form.threshold}%</label><input type="range" min="0" max="100" value={form.threshold} onChange={e => setForm({ ...form, threshold: Number(e.target.value) })} className="w-full accent-brand-600" /><Button className="w-full" onClick={createCase} disabled={saving || !form.name.trim() || !form.question.trim()} icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}>Salva caso</Button></div></div></aside>

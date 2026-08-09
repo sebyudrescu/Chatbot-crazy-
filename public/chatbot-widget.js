@@ -407,6 +407,56 @@
     .chatbot-product-open.secondary { border: 1px solid ${config.primaryColor}; background: transparent; color: ${config.theme === 'dark' ? '#e9d5ff' : config.primaryColor}; }
     .chatbot-product-open:hover, .chatbot-product-open:focus-visible { filter: brightness(0.94); outline: 2px solid ${config.primaryColor}55; outline-offset: 2px; }
 
+    .chatbot-order-lookup, .chatbot-order-card {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 13px;
+      border: 1px solid ${config.primaryColor}30;
+      border-radius: 15px;
+      background: ${config.theme === 'dark' ? '#273449' : '#ffffff'};
+      color: ${config.theme === 'dark' ? '#f8fafc' : '#172033'};
+      box-shadow: 0 7px 20px rgba(15, 23, 42, 0.09);
+    }
+    .chatbot-order-heading { display: flex; align-items: flex-start; gap: 9px; }
+    .chatbot-order-heading strong { display: block; font-size: 13px; line-height: 1.3; }
+    .chatbot-order-heading p { margin: 3px 0 0; color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'}; font-size: 10px; line-height: 1.45; }
+    .chatbot-order-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: ${config.primaryColor}18; color: ${config.primaryColor}; font-size: 16px; }
+    .chatbot-order-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .chatbot-order-fields label { color: ${config.theme === 'dark' ? '#cbd5e1' : '#475569'}; font-size: 9px; font-weight: 700; }
+    .chatbot-order-fields input { width: 100%; min-height: 36px; margin-top: 4px; padding: 8px 9px; border: 1px solid ${config.theme === 'dark' ? '#475569' : '#dbe2ea'}; border-radius: 9px; box-sizing: border-box; background: ${config.theme === 'dark' ? '#172033' : '#ffffff'}; color: inherit; font: inherit; font-size: 11px; }
+    .chatbot-order-submit, .chatbot-order-toggle, .chatbot-order-action { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; border-radius: 10px; font-size: 11px; font-weight: 750; cursor: pointer; }
+    .chatbot-order-submit { width: 100%; border: 0; background: ${config.primaryColor}; color: #fff; }
+    .chatbot-order-submit:disabled { cursor: not-allowed; opacity: .5; }
+    .chatbot-order-hero { width: calc(100% + 26px); height: 132px; margin: -13px -13px 0; object-fit: cover; }
+    .chatbot-order-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .chatbot-order-store { color: ${config.theme === 'dark' ? '#94a3b8' : '#64748b'}; font-size: 9px; }
+    .chatbot-order-title { margin-top: 2px; font-size: 14px; font-weight: 800; line-height: 1.25; }
+    .chatbot-order-number { margin-top: 2px; color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'}; font-size: 10px; }
+    .chatbot-order-status { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: ${config.primaryColor}18; color: ${config.primaryColor}; font-size: 9px; font-weight: 800; }
+    .chatbot-order-status.warning { background: #fef3c7; color: #92400e; }
+    .chatbot-order-status.danger { background: #fee2e2; color: #b91c1c; }
+    .chatbot-order-status.success { background: #d1fae5; color: #047857; }
+    .chatbot-order-milestones { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+    .chatbot-order-milestone { height: 5px; border-radius: 999px; background: ${config.theme === 'dark' ? '#475569' : '#e2e8f0'}; }
+    .chatbot-order-milestone.complete { background: #10b981; }
+    .chatbot-order-milestone.current { background: ${config.primaryColor}; }
+    .chatbot-order-milestone.attention { background: #f59e0b; }
+    .chatbot-order-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 9px; border-top: 1px solid ${config.theme === 'dark' ? '#475569' : '#eef2f7'}; }
+    .chatbot-order-eta small { display: block; color: ${config.theme === 'dark' ? '#94a3b8' : '#64748b'}; font-size: 8px; text-transform: uppercase; }
+    .chatbot-order-eta strong { display: block; margin-top: 2px; font-size: 11px; }
+    .chatbot-order-toggle { border: 1px solid ${config.theme === 'dark' ? '#475569' : '#dbe2ea'}; background: transparent; color: inherit; padding: 0 10px; }
+    .chatbot-order-details[hidden] { display: none; }
+    .chatbot-order-details { display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid ${config.theme === 'dark' ? '#475569' : '#eef2f7'}; }
+    .chatbot-order-section-title { color: ${config.theme === 'dark' ? '#94a3b8' : '#64748b'}; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+    .chatbot-order-item, .chatbot-order-shipment { padding: 9px; border-radius: 10px; background: ${config.theme === 'dark' ? '#172033' : '#f8fafc'}; font-size: 10px; line-height: 1.45; }
+    .chatbot-order-item { display: flex; align-items: center; gap: 9px; }
+    .chatbot-order-item img { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 8px; object-fit: cover; }
+    .chatbot-order-muted { color: ${config.theme === 'dark' ? '#94a3b8' : '#64748b'}; font-size: 9px; }
+    .chatbot-order-actions { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+    .chatbot-order-action { padding: 0 9px; background: ${config.primaryColor}; color: #fff; text-decoration: none; }
+    @media (max-width: 390px) { .chatbot-order-fields { grid-template-columns: 1fr; } }
+
     .chatbot-error {
       color: ${config.theme === 'dark' ? '#fecaca' : '#b91c1c'} !important;
       border: 1px solid ${config.theme === 'dark' ? '#7f1d1d' : '#fecaca'};
@@ -1210,6 +1260,213 @@
     if (carousel.childElementCount) contentElement.appendChild(carousel);
   }
 
+  function formatOrderDate(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    try { return new Intl.DateTimeFormat(navigator.language || 'it-IT', { dateStyle: 'long' }).format(date); }
+    catch { return date.toLocaleDateString(); }
+  }
+
+  function addOrderLookupForm(contentElement, enabled) {
+    if (!enabled) return;
+    const form = document.createElement('form');
+    form.className = 'chatbot-order-lookup';
+    form.autocomplete = 'off';
+    const heading = document.createElement('div');
+    heading.className = 'chatbot-order-heading';
+    const icon = document.createElement('span');
+    icon.className = 'chatbot-order-icon';
+    icon.textContent = '▣';
+    const copy = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = 'Controlla il tuo ordine';
+    const note = document.createElement('p');
+    note.textContent = 'I dati servono solo per la verifica e non vengono salvati nella conversazione.';
+    copy.append(title, note);
+    heading.append(icon, copy);
+    const fields = document.createElement('div');
+    fields.className = 'chatbot-order-fields';
+    const orderLabel = document.createElement('label');
+    orderLabel.textContent = 'Numero ordine';
+    const orderInput = document.createElement('input');
+    orderInput.name = 'orderNumber';
+    orderInput.placeholder = '#1048';
+    orderInput.maxLength = 40;
+    orderInput.required = true;
+    orderInput.pattern = '[A-Za-z0-9#-]{2,40}';
+    orderLabel.appendChild(orderInput);
+    const emailLabel = document.createElement('label');
+    emailLabel.textContent = 'Email dell’acquisto';
+    const emailInput = document.createElement('input');
+    emailInput.name = 'email';
+    emailInput.type = 'email';
+    emailInput.placeholder = 'nome@email.it';
+    emailInput.maxLength = 254;
+    emailInput.required = true;
+    emailLabel.appendChild(emailInput);
+    fields.append(orderLabel, emailLabel);
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'chatbot-order-submit';
+    submit.textContent = 'Controlla ordine';
+    form.append(heading, fields, submit);
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity() || submit.disabled) return;
+      submit.disabled = true;
+      submit.textContent = 'Verifica in corso…';
+      try { await sendMessage(`Ordine ${orderInput.value.trim()}, ${emailInput.value.trim().toLowerCase()}`, { privateEntry: true }); }
+      finally { submit.disabled = false; submit.textContent = 'Controlla ordine'; }
+    };
+    contentElement.appendChild(form);
+  }
+
+  function addOrderStatusCard(contentElement, card) {
+    if (!card || card.provider !== 'shopify' || !card.status || !Array.isArray(card.items)) return;
+    const article = document.createElement('article');
+    article.className = 'chatbot-order-card';
+    article.setAttribute('aria-label', `Stato ${String(card.orderNumber || 'ordine').slice(0, 80)}`);
+    const hero = card.items.find((item) => safeProductUrl(item && item.imageUrl));
+    if (hero) {
+      const image = document.createElement('img');
+      image.className = 'chatbot-order-hero';
+      image.src = safeProductUrl(hero.imageUrl);
+      image.alt = String(hero.title || 'Articolo dell’ordine').slice(0, 240);
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.onerror = () => image.remove();
+      article.appendChild(image);
+    }
+    const top = document.createElement('div');
+    top.className = 'chatbot-order-top';
+    const identity = document.createElement('div');
+    const store = document.createElement('div');
+    store.className = 'chatbot-order-store';
+    store.textContent = String(card.storeName || 'Negozio Shopify').slice(0, 160);
+    const orderTitle = document.createElement('div');
+    orderTitle.className = 'chatbot-order-title';
+    orderTitle.textContent = card.items.length === 1 ? String(card.items[0].title).slice(0, 240) : `${card.items.length} articoli`;
+    const number = document.createElement('div');
+    number.className = 'chatbot-order-number';
+    number.textContent = `Ordine ${String(card.orderNumber || '').slice(0, 80)}`;
+    identity.append(store, orderTitle, number);
+    const badge = document.createElement('span');
+    badge.className = `chatbot-order-status ${['warning', 'danger', 'success'].includes(card.status.tone) ? card.status.tone : ''}`;
+    badge.textContent = String(card.status.label || 'In elaborazione').slice(0, 120);
+    top.append(identity, badge);
+    article.appendChild(top);
+    if (Array.isArray(card.milestones) && card.milestones.length === 5) {
+      const progress = document.createElement('div');
+      progress.className = 'chatbot-order-milestones';
+      progress.setAttribute('aria-label', `Avanzamento: ${badge.textContent}`);
+      card.milestones.forEach((milestone) => {
+        const bar = document.createElement('span');
+        bar.className = `chatbot-order-milestone ${['complete', 'current', 'attention'].includes(milestone.state) ? milestone.state : ''}`;
+        bar.title = String(milestone.label || '').slice(0, 80);
+        progress.appendChild(bar);
+      });
+      article.appendChild(progress);
+    }
+    const summary = document.createElement('div');
+    summary.className = 'chatbot-order-summary';
+    const eta = document.createElement('div');
+    eta.className = 'chatbot-order-eta';
+    const etaValue = formatOrderDate(card.estimatedDeliveryAt);
+    const etaLabel = document.createElement('small');
+    etaLabel.textContent = etaValue ? 'Consegna stimata' : 'Spedizione';
+    const etaText = document.createElement('strong');
+    etaText.textContent = etaValue || (Array.isArray(card.shipments) && card.shipments.length ? `${card.shipments.length} ${card.shipments.length === 1 ? 'pacco' : 'pacchi'}` : 'Tracking non ancora disponibile');
+    eta.append(etaLabel, etaText);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'chatbot-order-toggle';
+    toggle.textContent = 'Mostra dettagli';
+    toggle.setAttribute('aria-expanded', 'false');
+    const details = document.createElement('div');
+    details.className = 'chatbot-order-details';
+    details.hidden = true;
+    const detailsId = `litx-order-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    details.id = detailsId;
+    toggle.setAttribute('aria-controls', detailsId);
+    toggle.onclick = () => {
+      details.hidden = !details.hidden;
+      toggle.setAttribute('aria-expanded', String(!details.hidden));
+      toggle.textContent = details.hidden ? 'Mostra dettagli' : 'Nascondi';
+    };
+    summary.append(eta, toggle);
+    article.appendChild(summary);
+    const itemsTitle = document.createElement('div');
+    itemsTitle.className = 'chatbot-order-section-title';
+    itemsTitle.textContent = 'Articoli';
+    details.appendChild(itemsTitle);
+    card.items.slice(0, 50).forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'chatbot-order-item';
+      const itemImage = safeProductUrl(item && item.imageUrl);
+      if (itemImage) {
+        const image = document.createElement('img');
+        image.src = itemImage;
+        image.alt = String(item.title || 'Articolo').slice(0, 240);
+        image.loading = 'lazy';
+        row.appendChild(image);
+      }
+      const itemCopy = document.createElement('div');
+      const itemName = document.createElement('strong');
+      itemName.textContent = String(item.title || 'Articolo').slice(0, 240);
+      const itemMeta = document.createElement('div');
+      itemMeta.className = 'chatbot-order-muted';
+      itemMeta.textContent = `${item.variantTitle ? `${String(item.variantTitle).slice(0, 160)} · ` : ''}Quantità ${Number(item.quantity) || 1}`;
+      itemCopy.append(itemName, itemMeta);
+      row.appendChild(itemCopy);
+      details.appendChild(row);
+    });
+    if (Array.isArray(card.shipments) && card.shipments.length) {
+      const shipmentTitle = document.createElement('div');
+      shipmentTitle.className = 'chatbot-order-section-title';
+      shipmentTitle.textContent = 'Spedizioni';
+      details.appendChild(shipmentTitle);
+      card.shipments.slice(0, 20).forEach((shipment) => {
+        const box = document.createElement('div');
+        box.className = 'chatbot-order-shipment';
+        const heading = document.createElement('strong');
+        heading.textContent = `${String(shipment.label || 'Spedizione').slice(0, 120)} · ${String(shipment.statusLabel || '').slice(0, 120)}`;
+        box.appendChild(heading);
+        const shipmentEta = formatOrderDate(shipment.estimatedDeliveryAt);
+        if (shipmentEta) {
+          const line = document.createElement('div');
+          line.className = 'chatbot-order-muted';
+          line.textContent = `Consegna stimata: ${shipmentEta}`;
+          box.appendChild(line);
+        }
+        (Array.isArray(shipment.tracking) ? shipment.tracking : []).slice(0, 10).forEach((tracking) => {
+          const line = document.createElement('div');
+          line.className = 'chatbot-order-muted';
+          line.textContent = [tracking.carrier && `Corriere: ${String(tracking.carrier).slice(0, 120)}`, tracking.number && `Tracking: ${String(tracking.number).slice(0, 160)}`].filter(Boolean).join(' · ');
+          if (line.textContent) box.appendChild(line);
+        });
+        details.appendChild(box);
+      });
+    }
+    const validActions = (Array.isArray(card.actions) ? card.actions : []).map((action) => ({ action, url: safeProductUrl(action && action.url) })).filter((entry) => entry.url);
+    if (validActions.length) {
+      const actions = document.createElement('div');
+      actions.className = 'chatbot-order-actions';
+      validActions.slice(0, 12).forEach(({ action, url }) => {
+        const link = document.createElement('a');
+        link.className = 'chatbot-order-action';
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = String(action.label || 'Apri').slice(0, 80);
+        actions.appendChild(link);
+      });
+      details.appendChild(actions);
+    }
+    article.appendChild(details);
+    contentElement.appendChild(article);
+  }
+
   function addResponseExtras(contentElement, quickReplies, ctas) {
     const replies = Array.isArray(quickReplies) ? quickReplies.slice(0, 4) : [];
     const actions = Array.isArray(ctas) ? ctas.slice(0, 3) : [];
@@ -1561,13 +1818,13 @@
     });
   }
 
-  async function sendMessage(content) {
+  async function sendMessage(content, options) {
     const normalizedContent = typeof content === 'string' ? content.trim() : '';
     if (!normalizedContent || normalizedContent.length > 4000) return;
     await restorePromise;
     disablePendingReplies();
     // Add user message
-    addMessage('user', normalizedContent);
+    addMessage('user', options && options.privateEntry ? '[Dati ordine inviati in modo protetto]' : normalizedContent);
     
     // Show typing
     showTyping();
@@ -1617,6 +1874,8 @@
         });
         addSources(responseContent, data.data.sources);
         addProductCards(responseContent, data.data.productCards, data.data.assistantMessage.id);
+        addOrderLookupForm(responseContent, data.data.orderLookupForm);
+        addOrderStatusCard(responseContent, data.data.orderStatusCard);
         addFeedbackControls(responseContent, data.data.assistantMessage.id);
         addResponseExtras(responseContent, data.data.quickReplies, data.data.ctas);
         addLeadForms(responseContent, data.data.actions && data.data.actions.leadForms, data.data.conversationId);

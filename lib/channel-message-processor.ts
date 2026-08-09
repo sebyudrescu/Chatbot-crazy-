@@ -6,7 +6,8 @@ import type { ChatbotSettings } from "@/lib/types";
 import { enforceOutgoingPolicy, evaluateIncomingPolicy, policyResponse } from "@/lib/agent-policy";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { detectSentiment } from "@/lib/sentiment";
-import { parseOrderLookupMessage, redactOrderLookupMessage, tryWooCommerceOrderLookup } from "@/lib/woocommerce-order-tracking";
+import { parseOrderLookupMessage, redactOrderLookupMessage } from "@/lib/woocommerce-order-tracking";
+import { tryVerifiedOrderLookup } from "@/lib/order-tracking";
 import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
@@ -46,7 +47,7 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     return { duplicate: false as const, handoff: false as const, handoffActivated: false, conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: CHANNEL_RATE_LIMIT_MESSAGE };
   }
 
-  const orderLookup = await tryWooCommerceOrderLookup({
+  const orderLookup = await tryVerifiedOrderLookup({
     botId: input.botId,
     text: input.text,
     previousAssistantText,
@@ -57,10 +58,10 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       data: {
         conversationId: conversation.id,
         role: "assistant",
-        content: orderLookup.response,
+        content: orderLookup.persistedResponse || orderLookup.response,
         channel: input.channel,
         deliveryStatus: "pending",
-        sourcesUsed: stringifyJSON({ sources: [], metadata: { responseType: "verified_order_lookup", verified: orderLookup.verified } }),
+        sourcesUsed: stringifyJSON({ sources: [], metadata: { responseType: "verified_order_lookup", verified: orderLookup.verified, provider: orderLookup.provider, capability: orderLookup.capability } }),
       },
     });
     await prisma.conversation.update({

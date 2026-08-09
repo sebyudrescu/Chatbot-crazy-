@@ -15,6 +15,7 @@ import {
   JobType 
 } from './ingestion-queue'
 import { processAndStoreDocument } from './rag-pipeline'
+import { recordPipelineStage } from './pipeline-telemetry'
 import { SourceType } from './types'
 import { prisma } from './db'
 import fs from 'fs/promises'
@@ -134,6 +135,7 @@ async function processJob(job: any) {
  * Process CRAWL job
  */
 async function processCrawlJob(job: any, params: any) {
+  const crawlStartedAt = Date.now()
   const { url, maxPages = 50, maxDepth = 4 } = params
   const botId = job.botId
   
@@ -224,6 +226,7 @@ async function processCrawlJob(job: any, params: any) {
   }
   
   console.log(`[Worker] ✅ Crawled ${pages.length} pages using ${usedCrawler}`)
+  await recordPipelineStage({ botId, jobId: job.id, stage: 'crawl', durationMs: Date.now() - crawlStartedAt, provider: usedCrawler, inputCount: 1, outputCount: pages.length })
   
   pages = deduplicateCrawledPages(pages, url)
 
@@ -252,6 +255,7 @@ async function processCrawlJob(job: any, params: any) {
       logPagePreProcessing(page, { jobId: job.id })
       
       // Validate content with detailed checking
+      const cleaningStartedAt = Date.now()
       const validation = validateAndSanitizeContent(page.textContent, {
         url: page.url,
         sourceId: 'pending',
@@ -259,6 +263,7 @@ async function processCrawlJob(job: any, params: any) {
       })
       
       if (!validation.valid) {
+        await recordPipelineStage({ botId, jobId: job.id, stage: 'cleaning', durationMs: Date.now() - cleaningStartedAt, success: false, inputCount: 1, outputCount: 0, metadata: { reason: validation.reason } })
         console.log(`[Worker] ⚠️ SKIPPING ${page.url}`)
         console.log(`[Worker]    Reason: ${validation.reason}`)
         console.log(`[Worker]    Metadata:`, validation.metadata)
@@ -271,6 +276,7 @@ async function processCrawlJob(job: any, params: any) {
       
       // Use sanitized content
       page.textContent = validation.sanitized!
+      await recordPipelineStage({ botId, jobId: job.id, stage: 'cleaning', durationMs: Date.now() - cleaningStartedAt, inputCount: 1, outputCount: 1 })
       
       // Keep the last working version until this replacement is indexed.
       const previousSources = await prisma.knowledgeSource.findMany({
@@ -292,12 +298,14 @@ async function processCrawlJob(job: any, params: any) {
       })
       
       // Process and store
+      const embeddingStartedAt = Date.now()
       const result = await processAndStoreDocument(
         botId,
         source.id,
         SourceType.URL,
         page.textContent
       )
+      await recordPipelineStage({ botId, jobId: job.id, stage: 'embedding', durationMs: Date.now() - embeddingStartedAt, success: result.success, inputCount: 1, outputCount: result.chunkCount })
       
       if (result.success) {
         sourcesCreated++

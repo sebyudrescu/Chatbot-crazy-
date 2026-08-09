@@ -1,5 +1,6 @@
 import 'server-only'
 import { prisma } from './db'
+import { recordPipelineStage } from './pipeline-telemetry'
 
 type Usage = {
   prompt_tokens?: number
@@ -41,7 +42,7 @@ export async function recordAIUsage(input: {
   const outputTokens = input.usage?.completion_tokens || 0
   const cachedInputTokens = input.usage?.prompt_tokens_details?.cached_tokens || 0
   try {
-    return await prisma.aIUsageEvent.create({
+    const event = await prisma.aIUsageEvent.create({
       data: {
         botId: input.botId || null,
         conversationId: input.conversationId || null,
@@ -57,6 +58,18 @@ export async function recordAIUsage(input: {
         errorCode: input.errorCode,
       },
     })
+    await recordPipelineStage({
+      botId: input.botId || undefined,
+      conversationId: input.conversationId || undefined,
+      stage: input.feature.includes('embedding') ? 'embedding' : 'generation',
+      durationMs: input.durationMs || 0,
+      success: input.success ?? true,
+      provider: 'openai',
+      model: input.model,
+      estimatedCostUsd: event.estimatedCostUsd,
+      metadata: { feature: input.feature, totalTokens: event.totalTokens },
+    })
+    return event
   } catch (error) {
     console.error('[AI Usage] Unable to persist usage event:', error)
     return null

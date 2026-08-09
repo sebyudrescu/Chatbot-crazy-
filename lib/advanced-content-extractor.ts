@@ -6,6 +6,8 @@
  */
 
 import * as cheerio from 'cheerio'
+import { JSDOM } from 'jsdom'
+import { Readability } from '@mozilla/readability'
 
 export interface ExtractedContent {
   title: string
@@ -294,6 +296,20 @@ function extractWithCheerio(html: string, $: cheerio.CheerioAPI): { title: strin
   return { title, content }
 }
 
+function extractWithReadability(html: string, url: string): { title: string; content: string } | null {
+  try {
+    const dom = new JSDOM(html, { url })
+    const article = new Readability(dom.window.document).parse()
+    const result = article?.textContent?.trim()
+      ? { title: article.title || 'Untitled', content: article.textContent }
+      : null
+    dom.window.close()
+    return result
+  } catch {
+    return null
+  }
+}
+
 /**
  * MAIN EXTRACTION FUNCTION
  */
@@ -326,6 +342,12 @@ export async function extractAdvancedContent(
     // Cheerio is deterministic in Node/serverless runtimes and covers the
     // article/main selectors above without requiring a browser DOM polyfill.
     extracted = extractWithCheerio(html, $)
+    const readability = contentType === 'product' ? null : extractWithReadability(html, url)
+    if (readability) {
+      const cheerioScore = extracted ? calculateQuality(cleanNoiseFromText(extracted.content), {}) : 0
+      const readabilityScore = calculateQuality(cleanNoiseFromText(readability.content), {})
+      if (!extracted || readabilityScore > cheerioScore) extracted = readability
+    }
 
     if (!extracted) {
       console.log('[Extractor] No content extracted')

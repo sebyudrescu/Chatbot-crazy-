@@ -57,6 +57,7 @@ export interface EventData {
   errorMessage?: string
   errorStack?: string
   metadata?: Record<string, any>
+  durable?: boolean
 }
 
 // ============================================================================
@@ -74,7 +75,7 @@ class EventStoreManager {
     try {
       // Async fire-and-forget for most events
       // Only critical events should use await
-      const shouldWait = data.severity === EventSeverity.CRITICAL || 
+      const shouldWait = data.durable || data.severity === EventSeverity.CRITICAL ||
                         data.severity === EventSeverity.ERROR
 
       const eventPromise = prisma.event.create({

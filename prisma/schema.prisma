@@ -274,6 +274,7 @@ model EvaluationRun {
   latencyMs      Int?
   failureReason  String?
   conversationId String?
+  metrics        String?
   createdAt      DateTime @default(now())
 
   evaluationCase EvaluationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)

@@ -3,7 +3,20 @@
  * Multi-stage retrieval: Semantic + Keyword + Fusion + Reranking
  */
 
-import { generateEmbedding } from './embeddings'
+import { rankBm25 } from './bm25'
+import { rerankWithCrossEncoder } from './cross-encoder-reranker'
+
+export interface RagStageMetric {
+  stage: 'semantic' | 'bm25' | 'fusion' | 'contextual_rerank' | 'deduplication' | 'cross_encoder'
+  durationMs: number
+  inputCount: number
+  outputCount: number
+  provider?: string
+  model?: string | null
+  usageTokens?: number
+  fallback?: boolean
+  error?: string
+}
 
 export interface RetrievedChunk {
   id: string
@@ -21,44 +34,7 @@ export interface RerankResult extends RetrievedChunk {
   semanticScore: number
   keywordScore: number
   fusionScore: number
-}
-
-/**
- * Calculate keyword/BM25-like score
- * Simple implementation: term frequency with IDF approximation
- */
-export function calculateKeywordScore(
-  query: string,
-  text: string
-): number {
-  const queryTerms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((term) => term.length > 2) // Ignore short words
-
-  if (queryTerms.length === 0) return 0
-
-  const textLower = text.toLowerCase()
-  let matchCount = 0
-  let totalWeight = 0
-
-  for (const term of queryTerms) {
-    // Count occurrences
-    const occurrences = (textLower.match(new RegExp(term, 'g')) || []).length
-    
-    if (occurrences > 0) {
-      matchCount++
-      // Simple TF calculation (capped for normalization)
-      const tf = Math.min(occurrences, 5) / 5
-      totalWeight += tf
-    }
-  }
-
-  // Score: (matched terms / total terms) * average TF
-  const termCoverage = matchCount / queryTerms.length
-  const avgTF = totalWeight / queryTerms.length
-
-  return termCoverage * 0.6 + avgTF * 0.4
+  crossEncoderScore?: number
 }
 
 /**
@@ -239,6 +215,9 @@ export async function advancedRetrieve(
     enableDeduplication?: boolean
     conversationContext?: string[]
     minSemanticScore?: number
+    keywordCandidates?: RetrievedChunk[]
+    enableCrossEncoder?: boolean
+    stageMetrics?: RagStageMetric[]
   } = {}
 ): Promise<RerankResult[]> {
   const {
@@ -247,15 +226,20 @@ export async function advancedRetrieve(
     enableDeduplication = true,
     conversationContext = [],
     minSemanticScore = 0.3,
+    keywordCandidates = allChunks,
+    enableCrossEncoder = false,
+    stageMetrics,
   } = options
 
   console.log(`🔍 Advanced RAG retrieval for query: "${query}"`)
   console.log(`📊 Total chunks available: ${allChunks.length}`)
 
   // STAGE 1: Semantic search (already done by vector store)
+  let stageStartedAt = Date.now()
   const semanticResults = allChunks
     .filter((chunk) => chunk.score >= minSemanticScore)
     .slice(0, 20) // Top 20 candidates
+  stageMetrics?.push({ stage: 'semantic', durationMs: Date.now() - stageStartedAt, inputCount: allChunks.length, outputCount: semanticResults.length })
 
   console.log(`✅ Stage 1 - Semantic: ${semanticResults.length} chunks (min score: ${minSemanticScore})`)
 
@@ -263,35 +247,55 @@ export async function advancedRetrieve(
   let keywordResults: RetrievedChunk[] = []
   
   if (enableKeywordSearch) {
-    keywordResults = allChunks
-      .map((chunk) => ({
-        ...chunk,
-        score: calculateKeywordScore(query, chunk.text),
-      }))
-      .filter((chunk) => chunk.score > 0.1) // Minimum keyword relevance
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10) // Top 10 by keyword
+    stageStartedAt = Date.now()
+    keywordResults = rankBm25(query, keywordCandidates, { topK: 20 })
+      .map(({ document, score }) => ({ ...document, score }))
+    stageMetrics?.push({ stage: 'bm25', durationMs: Date.now() - stageStartedAt, inputCount: keywordCandidates.length, outputCount: keywordResults.length, provider: 'local' })
 
     console.log(`✅ Stage 2 - Keyword: ${keywordResults.length} chunks`)
   }
 
   // STAGE 3: Reciprocal Rank Fusion
+  stageStartedAt = Date.now()
   let fusedResults = reciprocalRankFusion(semanticResults, keywordResults)
+  stageMetrics?.push({ stage: 'fusion', durationMs: Date.now() - stageStartedAt, inputCount: semanticResults.length + keywordResults.length, outputCount: fusedResults.length })
   
   console.log(`✅ Stage 3 - Fusion: ${fusedResults.length} chunks combined`)
 
   // STAGE 4: Contextual reranking
   if (conversationContext.length > 0) {
+    stageStartedAt = Date.now()
     fusedResults = contextualRerank(fusedResults, query, conversationContext)
+    stageMetrics?.push({ stage: 'contextual_rerank', durationMs: Date.now() - stageStartedAt, inputCount: fusedResults.length, outputCount: fusedResults.length, provider: 'local' })
     console.log(`✅ Stage 4 - Contextual rerank: applied conversation context`)
   }
 
   // STAGE 5: Deduplication
   if (enableDeduplication) {
+    stageStartedAt = Date.now()
     const beforeDedup = fusedResults.length
     fusedResults = deduplicateChunks(fusedResults, 0.85)
+    stageMetrics?.push({ stage: 'deduplication', durationMs: Date.now() - stageStartedAt, inputCount: beforeDedup, outputCount: fusedResults.length, provider: 'local' })
     console.log(`✅ Stage 5 - Deduplication: ${beforeDedup} → ${fusedResults.length} chunks`)
   }
+
+  const crossEncoderInputCount = fusedResults.length
+  const crossEncoder = await rerankWithCrossEncoder(query, fusedResults, {
+    enabled: enableCrossEncoder,
+    topK: Math.max(topK, 10),
+  })
+  fusedResults = crossEncoder.documents
+  stageMetrics?.push({
+    stage: 'cross_encoder',
+    durationMs: crossEncoder.durationMs,
+    inputCount: crossEncoderInputCount,
+    outputCount: fusedResults.length,
+    provider: crossEncoder.provider,
+    model: crossEncoder.model,
+    usageTokens: crossEncoder.usageTokens,
+    fallback: !crossEncoder.applied,
+    error: crossEncoder.error,
+  })
 
   // Return top K results
   const finalResults = fusedResults.slice(0, topK)

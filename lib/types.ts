@@ -44,6 +44,17 @@ export const ChatbotSettingsSchema = z.object({
   maxTokens: z.number().int().min(64).max(4096).optional(),
   dataRetentionDays: z.number().int().min(30).max(3650).optional(),
   knowledgeSyncDays: z.number().int().min(1).max(365).optional(),
+  retrievalMinScore: z.number().min(0).max(1).optional(),
+  groundingThreshold: z.number().min(0).max(1).optional(),
+  rerankerEnabled: z.boolean().optional(),
+  liveWebSearchEnabled: z.boolean().optional(),
+  liveWebAllowedDomains: z.array(z.string().trim().min(1).max(253)).max(20).optional(),
+  ragCalibration: z.object({
+    retrievalMinScore: z.number().min(0).max(1),
+    groundingThreshold: z.number().min(0).max(1),
+    sampleCount: z.number().int().min(1),
+    calibratedAt: z.string().datetime(),
+  }).optional(),
 });
 
 export const CreateChatbotSchema = z.object({

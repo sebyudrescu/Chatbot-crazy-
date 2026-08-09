@@ -96,6 +96,17 @@ export interface OrchestratorContext {
     aiModel?: string
     temperature?: number
     maxTokens?: number
+    retrievalMinScore?: number
+    groundingThreshold?: number
+    rerankerEnabled?: boolean
+    liveWebSearchEnabled?: boolean
+    liveWebAllowedDomains?: string[]
+    ragCalibration?: {
+      retrievalMinScore: number
+      groundingThreshold: number
+      sampleCount: number
+      calibratedAt: string
+    }
   }
 }
 
@@ -222,6 +233,11 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
     topics,
     conversationLength: context.conversationHistory.length
   })
+  const configuredGroundingThreshold = context.botConfig.ragCalibration?.groundingThreshold
+    ?? context.botConfig.groundingThreshold
+  if (configuredGroundingThreshold !== undefined) {
+    decision.confidenceThreshold = Math.max(0, Math.min(1, configuredGroundingThreshold))
+  }
   
   console.log(`   Strategy: ${decision.responseStrategy}`)
   console.log(`   Use RAG: ${decision.shouldUseRAG}`)
@@ -257,7 +273,12 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
       intent: intent.intent,
       entities,
       topics,
-      recentMessages: context.conversationHistory
+      recentMessages: context.conversationHistory,
+      minSemanticScore: context.botConfig.ragCalibration?.retrievalMinScore
+        ?? context.botConfig.retrievalMinScore,
+      rerankerEnabled: context.botConfig.rerankerEnabled,
+      liveWebSearchEnabled: context.botConfig.liveWebSearchEnabled,
+      liveWebAllowedDomains: context.botConfig.liveWebAllowedDomains,
     })
     
     console.log(`   Retrieved:`)
@@ -692,7 +713,7 @@ async function generateResponse(params: {
   })
   await recordAIUsage({ botId: context.botId, conversationId: context.conversationId, feature: 'chat_response_rag', model, usage: completion.usage, durationMs: Date.now() - aiStartedAt })
   
-  const response = completion.choices[0]?.message?.content || 'Mi dispiace, non riesco a rispondere.'
+  let response = completion.choices[0]?.message?.content || 'Mi dispiace, non riesco a rispondere.'
   
   // Extract sources
   const sourcesUsed: any[] = []
@@ -703,9 +724,19 @@ async function generateResponse(params: {
       sourcesUsed.push({
         sourceId: chunk.metadata.sourceId,
         sourceType: chunk.metadata.sourceType,
-        score: chunk.score
+        score: chunk.score,
+        sourceUrl: chunk.metadata.sourceUrl,
+        title: chunk.metadata.title,
       })
     }
+  }
+
+  const liveSources = sourcesUsed.filter((source) => source.sourceType === 'live_web' && source.sourceUrl)
+  if (liveSources.length) {
+    const citationLines = liveSources
+      .slice(0, 3)
+      .map((source) => `- [${source.title || source.sourceUrl}](${source.sourceUrl})`)
+    response = `${response.trim()}\n\nFonti verificate:\n${citationLines.join('\n')}`
   }
   
   // Calculate confidence
@@ -744,7 +775,6 @@ function calculateResponseConfidence(params: {
                        retrievalResult.knowledgeChunks.length
     confidence += avgKBScore * 0.3
   }
-
   if (graphEntities > 0) {
     confidence += Math.min(0.1, graphEntities * 0.025)
   }

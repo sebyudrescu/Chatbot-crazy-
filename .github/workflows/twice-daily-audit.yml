@@ -154,6 +154,7 @@ jobs:
           npm run test:product-extractor
           npm run test:commerce-security
           npm run test:shopify-sync
+          npm run test:shopify-orders
           npm run test:woocommerce-sync
           npm run test:commerce-db
 
@@ -182,6 +183,7 @@ jobs:
           npm run test:quality
           npm run test:conversation-guidance
           npm run test:grounding-policy
+          npm run test:rag-retrieval
 
       - name: Operational observability safety tests
         id: observability

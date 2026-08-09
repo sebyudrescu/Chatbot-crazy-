@@ -37,7 +37,7 @@ import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { buildVerifiedProductResponse } from '@/lib/verified-product-response'
 import { classifyCommerceIntent } from '@/lib/commerce-query'
-import { tryWooCommerceOrderLookup } from '@/lib/woocommerce-order-tracking'
+import { tryVerifiedOrderLookup } from '@/lib/order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import {
   buildContextualQuickReplies,
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
     const previousAssistantText = [...conversation.messages]
       .reverse()
       .find((item) => item.role === MessageRole.ASSISTANT)?.content || ''
-    const orderLookup = await tryWooCommerceOrderLookup({
+    const orderLookup = await tryVerifiedOrderLookup({
       botId,
       text: message,
       previousAssistantText,
@@ -199,10 +199,10 @@ export async function POST(request: NextRequest) {
           data: {
             conversationId: conversation.id,
             role: MessageRole.ASSISTANT,
-            content: orderLookup.response,
+            content: orderLookup.persistedResponse || orderLookup.response,
             sourcesUsed: stringifyJSON({
               sources: [],
-              metadata: { responseType: 'verified_order_lookup', verified: orderLookup.verified },
+              metadata: { responseType: 'verified_order_lookup', verified: orderLookup.verified, provider: orderLookup.provider, capability: orderLookup.capability },
             }),
           },
         }),
@@ -230,11 +230,11 @@ export async function POST(request: NextRequest) {
         data: {
           conversationId: conversation.id,
           userMessage: { id: userMessage.id, content: userMessage.content, createdAt: userMessage.createdAt },
-          assistantMessage: { id: assistantMessage.id, content: assistantMessage.content, createdAt: assistantMessage.createdAt },
+          assistantMessage: { id: assistantMessage.id, content: orderLookup.response, createdAt: assistantMessage.createdAt },
           sources: [],
-          intent: { type: 'order_tracking', confidence: 1, reasoning: 'Flusso deterministico con verifica WooCommerce' },
+          intent: { type: 'order_tracking', confidence: 1, reasoning: `Flusso deterministico con verifica ${orderLookup.provider || 'commerce'}` },
           queryClassification: { type: 'transactional', complexity: 'simple' },
-          decision: { strategy: 'verified_order_lookup', sources: ['woocommerce'], reasoning: 'Verifica diretta sul negozio collegato' },
+          decision: { strategy: 'verified_order_lookup', sources: orderLookup.provider ? [orderLookup.provider] : [], reasoning: 'Verifica diretta sul negozio collegato' },
           confidence: { score: orderLookup.verified ? 1 : 0.8, isCoherent: true },
           handoffRequested: Boolean(orderLookup.handoff),
           memory: { persistentFactsUsed: 0, knowledgeChunksUsed: 0, factsExtracted: 0 },
@@ -245,6 +245,8 @@ export async function POST(request: NextRequest) {
           quickReplies: [],
           ctas: [],
           productCards: [],
+          orderLookupForm: Boolean(orderLookup.orderLookupForm),
+          orderStatusCard: orderLookup.orderStatusCard,
         },
       })
     }
@@ -429,6 +431,12 @@ export async function POST(request: NextRequest) {
         aiModel: chatbotSettings.aiModel,
         temperature: chatbotSettings.temperature,
         maxTokens: chatbotSettings.maxTokens,
+        retrievalMinScore: chatbotSettings.retrievalMinScore,
+        groundingThreshold: chatbotSettings.groundingThreshold,
+        rerankerEnabled: chatbotSettings.rerankerEnabled,
+        liveWebSearchEnabled: chatbotSettings.liveWebSearchEnabled,
+        liveWebAllowedDomains: chatbotSettings.liveWebAllowedDomains,
+        ragCalibration: chatbotSettings.ragCalibration,
       }
     }
     

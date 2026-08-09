@@ -1,7 +1,10 @@
+import { calculateAnswerAccuracy, calculateFaithfulness } from "./retrieval-metrics";
+
 export interface EvaluationCriteria {
   expectedKeywords: string[];
   forbiddenKeywords: string[];
   minimumConfidence: number;
+  contexts?: string[];
 }
 
 export function evaluateResponse(
@@ -31,13 +34,16 @@ export function evaluateResponse(
     : 1;
   const confidenceScore = confidence == null ? 0.5 : confidence;
   const completeness = clean.length >= 40 ? 1 : clean.length / 40;
+  const faithfulness = criteria.contexts ? calculateFaithfulness(clean, criteria.contexts) : 0.5;
+  const answerAccuracy = calculateAnswerAccuracy(clean, criteria.expectedKeywords, criteria.forbiddenKeywords);
   const score = Math.max(
     0,
     Math.min(
       1,
-      expectedCoverage * 0.5
-        + confidenceScore * 0.3
-        + completeness * 0.2
+      answerAccuracy * 0.35
+        + faithfulness * 0.3
+        + confidenceScore * 0.2
+        + completeness * 0.15
         - (forbidden.length ? 0.5 : 0),
     ),
   );
@@ -50,6 +56,8 @@ export function evaluateResponse(
       confidence: confidenceScore,
       completeness,
       policySafe: forbidden.length === 0,
+      faithfulness,
+      answerAccuracy,
     },
   };
 }

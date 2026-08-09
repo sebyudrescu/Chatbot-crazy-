@@ -34,6 +34,53 @@ export const productCardSchema = z.object({
 
 export const productCardsSchema = z.array(productCardSchema).max(5);
 
+const orderHttpsUrl = z.string().url().max(2048).refine((value) => new URL(value).protocol === "https:", {
+  message: "Only HTTPS URLs are allowed",
+});
+
+export const orderStatusCardSchema = z.object({
+  version: z.literal(1),
+  provider: z.literal("shopify"),
+  storeName: z.string().trim().min(1).max(160),
+  orderNumber: z.string().trim().min(1).max(80),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime().optional(),
+  estimatedDeliveryAt: z.string().datetime().optional(),
+  status: z.object({
+    code: z.string().trim().min(1).max(80),
+    label: z.string().trim().min(1).max(120),
+    tone: z.enum(["neutral", "info", "success", "warning", "danger"]),
+  }),
+  milestones: z.array(z.object({
+    key: z.enum(["confirmed", "preparing", "shipped", "in_transit", "delivered"]),
+    label: z.string().trim().min(1).max(80),
+    state: z.enum(["complete", "current", "pending", "attention"]),
+  })).length(5),
+  items: z.array(z.object({
+    title: z.string().trim().min(1).max(240),
+    variantTitle: z.string().trim().max(160).optional(),
+    quantity: z.number().int().positive().max(10_000),
+    imageUrl: orderHttpsUrl.optional(),
+  })).max(50),
+  shipments: z.array(z.object({
+    label: z.string().trim().min(1).max(120),
+    statusCode: z.string().trim().min(1).max(80),
+    statusLabel: z.string().trim().min(1).max(120),
+    estimatedDeliveryAt: z.string().datetime().optional(),
+    updatedAt: z.string().datetime().optional(),
+    tracking: z.array(z.object({
+      carrier: z.string().trim().max(120).optional(),
+      number: z.string().trim().max(160).optional(),
+      url: orderHttpsUrl.optional(),
+    })).max(10),
+  })).max(20),
+  actions: z.array(z.object({
+    type: z.enum(["track", "order_status"]),
+    label: z.string().trim().min(1).max(80),
+    url: orderHttpsUrl,
+  })).max(12),
+});
+
 export const productSelectionSchema = z.object({
   productId: z.string().uuid(),
   variantId: z.string().uuid().optional(),
@@ -55,6 +102,7 @@ export const pageContextSchema = z.object({
 });
 
 export type ProductCard = z.infer<typeof productCardSchema>;
+export type OrderStatusCard = z.infer<typeof orderStatusCardSchema>;
 export type ProductSelection = z.infer<typeof productSelectionSchema>;
 export type PageContext = z.infer<typeof pageContextSchema>;
 

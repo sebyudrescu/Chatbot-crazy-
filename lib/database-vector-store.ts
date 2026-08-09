@@ -71,6 +71,30 @@ export async function searchDatabaseVectors(
     .slice(0, topK);
 }
 
+export async function listDatabaseTextChunks(botId: string, limit = Number.POSITIVE_INFINITY) {
+  const chunks: Array<{ id: string; text: string; metadata: string }> = [];
+  let cursor: string | undefined;
+  const maximum = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : Number.POSITIVE_INFINITY;
+  while (chunks.length < maximum) {
+    const page = await prisma.knowledgeChunk.findMany({
+      where: { botId },
+      select: { id: true, text: true, metadata: true },
+      orderBy: { id: "asc" },
+      take: Math.min(1_000, maximum - chunks.length),
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    chunks.push(...page);
+    if (page.length < 1_000) break;
+    cursor = page[page.length - 1]?.id;
+    if (!cursor) break;
+  }
+  return chunks.map((chunk) => {
+    let metadata: Record<string, unknown> = {};
+    try { metadata = JSON.parse(chunk.metadata); } catch {}
+    return { id: chunk.id, text: chunk.text, score: 0, metadata };
+  });
+}
+
 export async function deleteDatabaseVectorsForBot(botId: string) {
   await prisma.knowledgeChunk.deleteMany({ where: { botId } });
 }

@@ -5,7 +5,7 @@ import { prisma } from "./db";
 import { decryptConfigSecrets, encryptConfigSecrets } from "./secret-config";
 import { normalizeShopDomain } from "./shopify-signatures";
 
-export const SHOPIFY_SCOPES = ["read_products"] as const;
+export const SHOPIFY_SCOPES = ["read_products", "read_orders"] as const;
 export const SHOPIFY_API_VERSION = "2026-07";
 
 export interface ShopifyTokenResponse {
@@ -27,6 +27,7 @@ export interface ShopifyConnectionConfig extends Record<string, unknown> {
   refreshTokenExpiresAt?: string;
   scopes?: string;
   authMode?: "oauth" | "manual";
+  orderTrackingPcdStatus?: "unknown" | "ready" | "required";
 }
 
 export function shopifyEnvironment(env: NodeJS.ProcessEnv = process.env) {

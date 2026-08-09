@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
   try {
     const token = await exchangeShopifyAuthorizationCode(shop, code);
     const grantedScopes = new Set(token.scope.split(",").map((scope) => scope.trim()));
-    if (SHOPIFY_SCOPES.some((scope) => !grantedScopes.has(scope))) throw new Error("Shopify non ha concesso il permesso read_products");
+    const missingScopes = SHOPIFY_SCOPES.filter((scope) => !grantedScopes.has(scope));
+    if (missingScopes.length) throw new Error(`Shopify non ha concesso i permessi richiesti: ${missingScopes.join(", ")}`);
     const config = shopifyConfigFromToken(shop, token);
     const connection = await prisma.integrationConnection.upsert({
       where: { botId_provider: { botId: decoded.botId, provider: "shopify" } },

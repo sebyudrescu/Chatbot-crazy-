@@ -5,7 +5,8 @@ import { parseKeywords } from '@/lib/evaluation'
 
 const Schema = z.object({ botId: z.string().uuid(), name: z.string().trim().min(1).max(120), question: z.string().trim().min(1).max(2000), expectedKeywords: z.array(z.string().trim().min(1).max(100)).max(20).default([]), forbiddenKeywords: z.array(z.string().trim().min(1).max(100)).max(20).default([]), minimumConfidence: z.number().min(0).max(1).default(0.5), isActive: z.boolean().default(true) })
 
-const serialize = (item: any) => ({ ...item, expectedKeywords: parseKeywords(item.expectedKeywords), forbiddenKeywords: parseKeywords(item.forbiddenKeywords) })
+const parseMetrics = (value: string | null | undefined) => { try { return value ? JSON.parse(value) : null } catch { return null } }
+const serialize = (item: any) => ({ ...item, expectedKeywords: parseKeywords(item.expectedKeywords), forbiddenKeywords: parseKeywords(item.forbiddenKeywords), runs: item.runs?.map((run: any) => ({ ...run, metrics: parseMetrics(run.metrics) })) })
 
 export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')

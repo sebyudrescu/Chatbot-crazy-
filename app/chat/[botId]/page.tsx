@@ -22,6 +22,8 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/Button";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { SafeRichText, safeHttpUrl } from "@/components/chat/SafeRichText";
+import { OrderLookupForm, OrderStatusCardView } from "@/components/chat/OrderTracking";
+import type { OrderStatusCard } from "@/lib/commerce-types";
 import {
   buildInitialQuickReplies,
   detectBusinessMode,
@@ -65,6 +67,8 @@ interface Message {
   ctas?: CTA[];
   sources?: Source[];
   productCards?: ProductCard[];
+  orderLookupForm?: boolean;
+  orderStatusCard?: OrderStatusCard;
   error?: boolean;
 }
 interface BotData {
@@ -153,7 +157,7 @@ export default function ChatPage() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
-  const send = async (text?: string) => {
+  const send = async (text?: string, privateEntry = false) => {
     const content = (text || input).trim();
     if (!content || sending || !bot) return;
     setMessages((current) => [
@@ -161,7 +165,7 @@ export default function ChatPage() {
       {
         id: `u-${Date.now()}`,
         role: "user",
-        content,
+        content: privateEntry ? "[Dati ordine inviati in modo protetto]" : content,
         createdAt: new Date().toISOString(),
       },
     ]);
@@ -208,6 +212,8 @@ export default function ChatPage() {
           ctas: data.ctas || [],
           sources: data.sources || [],
           productCards: data.productCards || [],
+          orderLookupForm: Boolean(data.orderLookupForm),
+          orderStatusCard: data.orderStatusCard,
         },
       ]);
       setDiagnostics({
@@ -339,6 +345,8 @@ export default function ChatPage() {
                       )}
                     </div>
                     <ProductCards cards={message.productCards} />
+                    {message.role === "assistant" && message.orderLookupForm ? <OrderLookupForm busy={sending} onLookup={(orderNumber, email) => send(`Ordine ${orderNumber}, ${email}`, true)} /> : null}
+                    {message.role === "assistant" ? <OrderStatusCardView card={message.orderStatusCard} /> : null}
                     {message.role === "assistant" &&
                       !message.error &&
                       message.id !== "welcome" && (
