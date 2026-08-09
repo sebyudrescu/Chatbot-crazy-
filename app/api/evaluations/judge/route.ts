@@ -8,6 +8,7 @@ import { calculateRetrievalMetrics } from "@/lib/retrieval-metrics";
 import { tokenizeForRetrieval } from "@/lib/bm25";
 import { evaluationJudgeSchema } from "@/lib/evaluation-judge-contract";
 import { deterministicPassForBenchmark, inferEvaluationBenchmarkType, judgedPassForBenchmark } from "@/lib/evaluation-benchmark-policy";
+import { formatBusinessContextForPrompt, getCachedBusinessContext } from "@/lib/business-context";
 
 const InputSchema = z.object({
   botId: z.string().uuid(),
@@ -45,8 +46,15 @@ export async function POST(request: NextRequest) {
     const input = InputSchema.parse(await request.json());
     const benchmarkType = inferEvaluationBenchmarkType(input.expectedKeywords, input.forbiddenKeywords);
     const candidates = await retrieveBenchmarkCandidates({ botId: input.botId, query: input.question, topK: 20 });
-    const contexts = candidates.map((candidate) => candidate.text);
-    const candidateIds = candidates.map((candidate) => candidate.id);
+    const businessContext = formatBusinessContextForPrompt(await getCachedBusinessContext(input.botId)).trim();
+    const contexts = [
+      ...(businessContext ? [businessContext] : []),
+      ...candidates.map((candidate) => candidate.text),
+    ];
+    const candidateIds = [
+      ...(businessContext ? [`business-context:${input.botId}`] : []),
+      ...candidates.map((candidate) => candidate.id),
+    ];
     const deterministic = evaluateResponse(input.response, input.confidence, { ...input, contexts: contexts.slice(0, 5) });
     const fallbackRelevantIndexes = deterministicRelevantIndexes(input.question, input.expectedKeywords, contexts);
     const fallbackRetrieval = {
