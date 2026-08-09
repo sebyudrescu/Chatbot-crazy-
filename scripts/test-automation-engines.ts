@@ -92,6 +92,13 @@ async function testWebhookDelivery() {
 }
 
 async function testAgentPublicationReadiness() {
+  const productionMetrics = JSON.stringify({
+    faithfulness: 0.9,
+    answerAccuracy: 0.9,
+    grounded: true,
+    safe: true,
+    retrieval: { precisionAtK: 0.6, recallAtK: 0.8, reciprocalRank: 1, ndcgAtK: 0.9, k: 5 },
+  });
   const bot = await prisma.chatbot.create({
     data: {
       companyName: "Readiness test",
@@ -189,6 +196,7 @@ async function testAgentPublicationReadiness() {
         caseId: evaluationCase.id,
         passed: true,
         response: "Risposta aggiornata",
+        metrics: productionMetrics,
         createdAt: new Date(configurationChangedAt.getTime() + 1_000),
       },
     });
@@ -212,6 +220,37 @@ async function testAgentPublicationReadiness() {
       ready?.status === "published" && ready.attentionRequired === false,
       "A fully verified active agent has the wrong release status",
     );
+
+    const knowledgeChangedAt = new Date(Date.now() + 2_000);
+    await prisma.chatbot.update({
+      where: { id: bot.id },
+      data: { kbLastIndexed: knowledgeChangedAt },
+    });
+    const staleKnowledge = await getAgentReadiness(bot.id);
+    assert(
+      staleKnowledge?.checks.find((check) => check.key === "conversation")?.done === false &&
+        staleKnowledge.checks.find((check) => check.key === "evaluations")?.done === false,
+      "Readiness accepted verification evidence older than the knowledge base",
+    );
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: "assistant",
+        content: "Risposta verificata dopo il nuovo indice.",
+        createdAt: new Date(knowledgeChangedAt.getTime() + 1_000),
+      },
+    });
+    await prisma.evaluationRun.create({
+      data: {
+        caseId: evaluationCase.id,
+        passed: true,
+        response: "Risposta verificata con metriche RAG moderne",
+        metrics: productionMetrics,
+        createdAt: new Date(knowledgeChangedAt.getTime() + 1_000),
+      },
+    });
+    const refreshedKnowledge = await getAgentReadiness(bot.id);
+    assert(refreshedKnowledge?.ready === true, "Fresh production metrics did not restore readiness");
 
     const productSource = await prisma.productSource.create({
       data: {

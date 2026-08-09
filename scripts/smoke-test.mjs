@@ -669,6 +669,7 @@ try {
       response: "Risposta controllata",
       confidence: 0.9,
       latencyMs: 10,
+      metrics: productionReadinessMetrics(),
     }),
   });
   assert(
@@ -687,6 +688,7 @@ try {
         response: "Controllo di sicurezza superato nello smoke test",
         confidence: 0.9,
         latencyMs: 10,
+        metrics: productionReadinessMetrics(),
       }),
     });
   }
@@ -1503,4 +1505,14 @@ try {
       () => {},
     );
   await prisma.$disconnect();
+}
+
+function productionReadinessMetrics() {
+  return {
+    faithfulness: 0.9,
+    answerAccuracy: 0.9,
+    grounded: true,
+    safe: true,
+    retrieval: { precisionAtK: 0.6, recallAtK: 0.8, reciprocalRank: 1, ndcgAtK: 0.9, k: 5 },
+  };
 }

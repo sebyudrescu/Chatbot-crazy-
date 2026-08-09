@@ -1,6 +1,7 @@
 import 'server-only'
 import { prisma } from './db'
 import { parseJSON } from './utils'
+import { hasProductionEvaluationMetrics, latestReadinessDate } from './readiness-metrics'
 
 export type ReadinessCheckKey = 'instructions' | 'knowledge' | 'conversation' | 'evaluations' | 'channel' | 'commerce'
 
@@ -19,8 +20,9 @@ export async function getAgentReadiness(botId: string) {
       embedSettings: { select: { enabled: true, allowedDomains: true } },
       knowledgeSources: {
         where: { status: 'completed', chunkCount: { gt: 0 } },
-        select: { id: true },
-        take: 1,
+        select: { id: true, createdAt: true, processedAt: true },
+        orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
+        take: 20,
       },
       conversations: {
         where: { messages: { some: { role: 'assistant' } } },
@@ -46,7 +48,7 @@ export async function getAgentReadiness(botId: string) {
         select: {
           id: true,
           runs: {
-            select: { passed: true, createdAt: true },
+            select: { passed: true, createdAt: true, metrics: true },
             orderBy: { createdAt: 'desc' },
             take: 1,
           },
@@ -80,16 +82,22 @@ export async function getAgentReadiness(botId: string) {
     (agent.systemPrompt?.trim() || agent.promptTemplateId)
   )
   const configurationChangedAt = agent.promptVersions[0]?.createdAt || null
+  const knowledgeChangedAt = latestReadinessDate(
+    agent.kbLastIndexed,
+    ...agent.knowledgeSources.map(source => source.processedAt || source.createdAt),
+  )
+  const verificationChangedAt = latestReadinessDate(configurationChangedAt, knowledgeChangedAt)
   const latestAssistantAt = agent.conversations[0]?.messages[0]?.createdAt || null
   const conversationPassed = Boolean(
     latestAssistantAt &&
-    (!configurationChangedAt || latestAssistantAt >= configurationChangedAt)
+    (!verificationChangedAt || latestAssistantAt >= verificationChangedAt)
   )
   const evaluationsPassed = agent.evaluationCases.length > 0 &&
     agent.evaluationCases.every(test => {
       const latestRun = test.runs[0]
       return latestRun?.passed === true &&
-        (!configurationChangedAt || latestRun.createdAt >= configurationChangedAt)
+        hasProductionEvaluationMetrics(latestRun.metrics) &&
+        (!verificationChangedAt || latestRun.createdAt >= verificationChangedAt)
     })
   const allowedDomains = agent.embedSettings?.allowedDomains
     ?.split(/[\n,]/)
@@ -122,14 +130,14 @@ export async function getAgentReadiness(botId: string) {
     {
       key: 'conversation',
       label: 'Prova conversazione',
-      description: 'È stata ottenuta una risposta completa dopo l’ultima modifica alle istruzioni.',
+      description: 'È stata ottenuta una risposta completa dopo l’ultimo aggiornamento di istruzioni o fonti.',
       done: conversationPassed,
       href: `/chat/${botId}`,
     },
     {
       key: 'evaluations',
       label: 'Valutazioni automatiche',
-      description: 'Tutti i controlli attivi sono stati superati dopo l’ultima modifica alle istruzioni.',
+      description: 'I controlli recenti includono faithfulness, accuratezza, Precision@K, Recall@K, MRR e sicurezza.',
       done: evaluationsPassed,
       href: `/evaluations?botId=${botId}`,
     },
@@ -167,6 +175,8 @@ export async function getAgentReadiness(botId: string) {
     completed,
     total: checks.length,
     configurationChangedAt,
+    knowledgeChangedAt,
+    verificationChangedAt,
     checks,
   }
 }
