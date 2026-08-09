@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   categoryConflicts,
   categoryMatches,
+  buildCatalogFollowUpQuery,
   classifyCommerceIntent,
   isGenericStyleAdviceRequest,
   matchesCommerceConstraints,
@@ -75,6 +76,11 @@ assert.equal(classifyCommerceIntent("Che taglie ha?"), "variant_availability");
 assert.equal(classifyCommerceIntent("Volevo qualcosa di nero come pantaloni"), "product_discovery");
 assert.equal(classifyCommerceIntent("Avete anche zaini?"), "product_discovery");
 assert.equal(parseCommerceQuery("Avete anche zaini?").category, "bag");
+assert.equal(
+  buildCatalogFollowUpQuery("Cerca nel catalogo", ["Avete anche zaini?"]),
+  "Avete anche zaini? Cerca nel catalogo",
+);
+assert.equal(buildCatalogFollowUpQuery("Cerca nel catalogo", ["Chi siete?"]), undefined);
 const cardFollowUp = parseCommerceQuery("Dammi le card del prodotto");
 assert.equal(cardFollowUp.wantsCards, true);
 assert.equal(cardFollowUp.maxCards, 5);

@@ -36,7 +36,7 @@ import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { buildVerifiedProductResponse } from '@/lib/verified-product-response'
-import { classifyCommerceIntent, isGenericStyleAdviceRequest, parseCommerceQuery } from '@/lib/commerce-query'
+import { buildCatalogFollowUpQuery, classifyCommerceIntent, isGenericStyleAdviceRequest, parseCommerceQuery } from '@/lib/commerce-query'
 import { tryVerifiedOrderLookup } from '@/lib/order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import {
@@ -344,12 +344,22 @@ export async function POST(request: NextRequest) {
     const activeProductIds = latestActiveProductIds(conversation.messages)
     const parsedCommerceQuery = parseCommerceQuery(message, businessMode === 'commerce')
     const classifiedCommerceIntent = classifyCommerceIntent(message, businessMode === 'commerce')
+    const catalogFollowUpQuery = buildCatalogFollowUpQuery(
+      message,
+      conversation.messages
+        .filter((item) => item.role === MessageRole.USER)
+        .map((item) => item.content),
+      businessMode === 'commerce',
+    )
+    const commerceSearchMessage = catalogFollowUpQuery || message
     const commerceIntent = classifiedCommerceIntent !== 'none'
       ? classifiedCommerceIntent
+      : catalogFollowUpQuery
+        ? 'product_discovery'
       : activeProductIds.length > 0 && parsedCommerceQuery.wantsCards
         ? 'product_discovery'
         : 'none'
-    const productSearch = await searchVerifiedProducts(botId, message, pageContext, {
+    const productSearch = await searchVerifiedProducts(botId, commerceSearchMessage, pageContext, {
       intent: commerceIntent,
       activeProductIds,
     })

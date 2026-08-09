@@ -140,6 +140,29 @@ export function isGenericStyleAdviceRequest(message: string) {
   return GENERIC_STYLE_ADVICE.test(normalized) && categoriesIn(normalized).length === 0;
 }
 
+/**
+ * A follow-up such as "cerca nel catalogo" is not meaningful on its own,
+ * but it must keep the product category from the immediately relevant user
+ * request. Otherwise it can fall through to RAG and surface an unverified
+ * collection/crawler page instead of the connected commerce catalogue.
+ */
+export function buildCatalogFollowUpQuery(
+  message: string,
+  previousUserMessages: string[],
+  commerceMode = true,
+) {
+  if (!commerceMode || classifyCommerceIntent(message, commerceMode) !== "none") return undefined;
+  const normalized = normalizeCommerceText(message);
+  if (!/\b(?:cerca|cercate|controlla|verifica|guard[ae])\b.*\bcatalog\w*\b/i.test(normalized)) return undefined;
+
+  for (const previous of [...previousUserMessages].reverse()) {
+    if (parseCommerceQuery(previous, commerceMode).category) {
+      return `${previous.trim()} ${message.trim()}`;
+    }
+  }
+  return undefined;
+}
+
 function categoriesIn(value: string) {
   return CATEGORY_PATTERNS.filter(([, pattern]) => pattern.test(value)).map(([category]) => category);
 }

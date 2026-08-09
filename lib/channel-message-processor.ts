@@ -12,7 +12,7 @@ import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
-import { classifyCommerceIntent, isGenericStyleAdviceRequest } from "@/lib/commerce-query";
+import { buildCatalogFollowUpQuery, classifyCommerceIntent, isGenericStyleAdviceRequest } from "@/lib/commerce-query";
 import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, styleAdviceClarification } from "@/lib/conversation-guidance";
 
 const CHANNEL_RATE_LIMIT = 30;
@@ -136,8 +136,21 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     settings.role,
     settings.objective,
   ].filter(Boolean).join(" "));
-  const commerceIntent = classifyCommerceIntent(query, businessMode === "commerce");
-  const productSearch = await searchVerifiedProducts(input.botId, query, undefined, { intent: commerceIntent });
+  const classifiedCommerceIntent = classifyCommerceIntent(query, businessMode === "commerce");
+  const catalogFollowUpQuery = buildCatalogFollowUpQuery(
+    query,
+    conversation.messages
+      .filter(message => message.role === "user")
+      .map(message => message.content),
+    businessMode === "commerce",
+  );
+  const commerceIntent = classifiedCommerceIntent !== "none"
+    ? classifiedCommerceIntent
+    : catalogFollowUpQuery
+      ? "product_discovery"
+      : "none";
+  const commerceSearchQuery = catalogFollowUpQuery || query;
+  const productSearch = await searchVerifiedProducts(input.botId, commerceSearchQuery, undefined, { intent: commerceIntent });
   const needsStyleClarification = commerceIntent === "fit_advice" && isGenericStyleAdviceRequest(query);
   const requiresCatalog = isVerifiedCatalogIntent(commerceIntent);
   if ((needsStyleClarification || requiresCatalog) && productSearch.selections.length === 0) {
