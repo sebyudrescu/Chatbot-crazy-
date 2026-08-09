@@ -1215,6 +1215,20 @@
     return names.size === 1 ? String(Array.from(names)[0]).slice(0, 80) : 'Variante';
   }
 
+  function isTechnicalDefaultVariant(variant) {
+    const choices = Array.isArray(variant && variant.choices) ? variant.choices : [];
+    if (choices.length !== 1) return false;
+    return String(choices[0] && choices[0].name || '').trim().toLowerCase() === 'title'
+      && String(choices[0] && choices[0].value || '').trim().toLowerCase() === 'default title';
+  }
+
+  function isGenericProductReason(value) {
+    const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    if (!normalized) return true;
+    const parts = normalized.split(/\s*[·|]\s*/).filter(Boolean);
+    return parts.length > 0 && parts.every((part) => /^(brand\s*:|prezzo\s*:|price\s*:|vendor\s*:|disponibile$|non disponibile$|esaurito$)/.test(part));
+  }
+
   async function trackCommerceEvent(eventType, card, messageId) {
     if (!conversationId || !userSessionId || !card || !card.productId) return;
     try {
@@ -1310,7 +1324,11 @@
         && typeof variant.label === 'string'
         && ['in_stock', 'out_of_stock', 'preorder', 'unknown'].includes(variant.availability)
       ));
-      let selectedVariant = variants.find((variant) => variant.variantId === card.variantId)
+      const customerVariants = variants.filter((variant) => !isTechnicalDefaultVariant(variant));
+      const selectableVariants = customerVariants.length > 1 ? customerVariants : [];
+      let selectedVariant = customerVariants.find((variant) => variant.variantId === card.variantId)
+        || customerVariants.find((variant) => variant.availability !== 'out_of_stock')
+        || variants.find((variant) => variant.variantId === card.variantId)
         || variants.find((variant) => variant.availability !== 'out_of_stock')
         || variants[0]
         || null;
@@ -1358,7 +1376,7 @@
         description.textContent = String(card.shortDescription).slice(0, 500);
         body.appendChild(description);
       }
-      if (card.reason) {
+      if (!isGenericProductReason(card.reason)) {
         const reason = document.createElement('div');
         reason.className = 'chatbot-product-reason';
         const reasonLabel = document.createElement('strong');
@@ -1369,12 +1387,12 @@
         body.appendChild(reason);
       }
       let variantSelect = null;
-      if (variants.length) {
+      if (selectableVariants.length) {
         const variantLabel = document.createElement('label');
         variantLabel.className = 'chatbot-product-variant';
-        variantLabel.appendChild(document.createTextNode(variantSelectorLabel(variants)));
+        variantLabel.appendChild(document.createTextNode(variantSelectorLabel(selectableVariants)));
         variantSelect = document.createElement('select');
-        variants.forEach((variant) => {
+        selectableVariants.forEach((variant) => {
           const option = document.createElement('option');
           option.value = variant.variantId;
           option.textContent = `${variantChoiceLabel(variant)}${variant.availability === 'out_of_stock' ? ' — Esaurito' : ''}`;

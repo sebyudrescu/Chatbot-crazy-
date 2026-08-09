@@ -37,6 +37,33 @@ function variantOptionLabel(variant: ProductCard["variants"][number]) {
     : variant.label;
 }
 
+function isTechnicalDefaultVariant(variant: ProductCard["variants"][number]) {
+  if (variant.choices.length !== 1) return false;
+  const choice = variant.choices[0];
+  return (
+    choice.name.trim().toLocaleLowerCase("en") === "title" &&
+    choice.value.trim().toLocaleLowerCase("en") === "default title"
+  );
+}
+
+function isGenericProductReason(value: string | undefined) {
+  const normalized = (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("it")
+    .trim();
+  if (!normalized) return true;
+  const parts = normalized.split(/\s*[·|]\s*/).filter(Boolean);
+  return (
+    parts.length > 0 &&
+    parts.every((part) =>
+      /^(brand\s*:|prezzo\s*:|price\s*:|vendor\s*:|disponibile$|non disponibile$|esaurito$)/.test(
+        part,
+      ),
+    )
+  );
+}
+
 function availabilityLabel(value: ProductCard["availability"]) {
   if (value === "in_stock") return "Disponibile";
   if (value === "out_of_stock") return "Esaurito";
@@ -201,10 +228,21 @@ export function ProductCarousel({
             const cartAction = card.actions.find(
               (item) => item.type === "add_to_cart" && item.url,
             );
+            const customerVariants = card.variants.filter(
+              (variant) => !isTechnicalDefaultVariant(variant),
+            );
+            const selectableVariants =
+              customerVariants.length > 1 ? customerVariants : [];
             const selectedVariant =
-              card.variants.find(
+              customerVariants.find(
                 (variant) =>
                   variant.variantId === selectedVariantIds[card.productId],
+              ) ??
+              customerVariants.find(
+                (variant) => variant.variantId === card.variantId,
+              ) ??
+              customerVariants.find(
+                (variant) => variant.availability !== "out_of_stock",
               ) ??
               card.variants.find(
                 (variant) => variant.variantId === card.variantId,
@@ -292,7 +330,7 @@ export function ProductCarousel({
                       {card.shortDescription}
                     </p>
                   ) : null}
-                  {card.reason ? (
+                  {!isGenericProductReason(card.reason) ? (
                     <div className="mt-2 rounded-lg bg-brand-50 px-2.5 py-2 text-[10px] leading-4 text-gray-600">
                       <span className="block text-[9px] font-bold text-brand-800">
                         Perché è adatto a te
@@ -300,9 +338,9 @@ export function ProductCarousel({
                       {card.reason}
                     </div>
                   ) : null}
-                  {card.variants.length ? (
+                  {selectableVariants.length ? (
                     <label className="mt-3 block text-[9px] font-semibold text-gray-600">
-                      {variantSelectorLabel(card.variants)}
+                      {variantSelectorLabel(selectableVariants)}
                       <select
                         className="mt-1 min-h-9 w-full rounded-lg border border-gray-200 bg-white px-2.5 text-[10px] text-gray-800 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                         value={selectedVariant?.variantId || ""}
@@ -313,7 +351,7 @@ export function ProductCarousel({
                           }))
                         }
                       >
-                        {card.variants.map((variant) => (
+                        {selectableVariants.map((variant) => (
                           <option
                             key={variant.variantId}
                             value={variant.variantId}
