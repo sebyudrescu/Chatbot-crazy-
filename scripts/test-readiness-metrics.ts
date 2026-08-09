@@ -21,6 +21,25 @@ assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), grounded: false })), false);
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), retrieval: { precisionAtK: 0.4, recallAtK: 0.8 } })), false, "MRR is mandatory");
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), policySafe: true, safe: undefined })), true, "deterministic evaluator safety is supported");
+
+const descriptiveLabelJudge = evaluationJudgeSchema.parse({
+  score: "92% (eccellente)",
+  faithfulness: "Alta: tutte le affermazioni sono supportate",
+  answerAccuracy: "good",
+  grounded: "true - presente nei contesti",
+  relevant: "si, risponde direttamente",
+  complete: 1,
+  safe: "vero",
+  relevantContextIndexes: [0],
+  reason: "Risposta supportata.",
+});
+assert.equal(descriptiveLabelJudge.score, 0.92);
+assert.equal(descriptiveLabelJudge.faithfulness, 0.85);
+assert.equal(descriptiveLabelJudge.answerAccuracy, 0.85);
+assert.equal(descriptiveLabelJudge.grounded, true);
+assert.equal(descriptiveLabelJudge.relevant, true);
+assert.equal(descriptiveLabelJudge.complete, true);
+assert.equal(descriptiveLabelJudge.safe, true);
 const validPolicy = JSON.stringify({ benchmarkType: "policy", answerAccuracy: 1, policySafe: true, faithfulness: 0 });
 assert.equal(hasProductionEvaluationMetrics(validPolicy), true, "policy cases do not require irrelevant RAG grounding");
 assert.equal(productionEvaluationMetricType(validPolicy), "policy");

@@ -5,6 +5,14 @@ const normalizedScore = z.preprocess((value) => {
   const numericText = typeof raw === "string"
     ? raw.match(/[-+]?\d+(?:\.\d+)?/)?.[0]
     : raw;
+  if (typeof raw === "string" && numericText === undefined) {
+    const label = raw.toLocaleLowerCase("it");
+    if (/\b(eccellente|excellent|molto alta|very high)\b/.test(label)) return 0.95;
+    if (/\b(alta|alto|high|buona|buono|good)\b/.test(label)) return 0.85;
+    if (/\b(media|medio|medium|moderata|moderato|moderate)\b/.test(label)) return 0.6;
+    if (/\b(bassa|basso|low|scarsa|scarso|poor)\b/.test(label)) return 0.3;
+    if (/\b(nessuna|nessuno|none|zero)\b/.test(label)) return 0;
+  }
   const number = typeof numericText === "number" ? numericText : Number(numericText);
   if (!Number.isFinite(number)) return value;
   return (typeof raw === "string" && raw.includes("%")) || (number > 1 && number <= 100)
@@ -13,9 +21,11 @@ const normalizedScore = z.preprocess((value) => {
 }, z.number().min(0).max(1));
 
 const normalizedBoolean = z.preprocess((value) => {
+  if (typeof value === "number") return value === 1 ? true : value === 0 ? false : value;
   if (typeof value !== "string") return value;
-  if (value.trim().toLocaleLowerCase("en") === "true") return true;
-  if (value.trim().toLocaleLowerCase("en") === "false") return false;
+  const normalized = value.trim().toLocaleLowerCase("it");
+  if (/^(true|yes|s[iì]|vero|1)\b/.test(normalized)) return true;
+  if (/^(false|no|falso|0)\b/.test(normalized)) return false;
   return value;
 }, z.boolean());
 
