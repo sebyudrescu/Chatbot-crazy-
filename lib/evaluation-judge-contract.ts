@@ -1,10 +1,15 @@
 import { z } from "zod";
 
 const normalizedScore = z.preprocess((value) => {
-  const raw = typeof value === "string" ? value.trim().replace("%", "").replace(",", ".") : value;
-  const number = typeof raw === "number" ? raw : Number(raw);
+  const raw = typeof value === "string" ? value.trim().replace(",", ".") : value;
+  const numericText = typeof raw === "string"
+    ? raw.match(/[-+]?\d+(?:\.\d+)?/)?.[0]
+    : raw;
+  const number = typeof numericText === "number" ? numericText : Number(numericText);
   if (!Number.isFinite(number)) return value;
-  return number > 1 && number <= 100 ? number / 100 : number;
+  return (typeof raw === "string" && raw.includes("%")) || (number > 1 && number <= 100)
+    ? number / 100
+    : number;
 }, z.number().min(0).max(1));
 
 const normalizedBoolean = z.preprocess((value) => {

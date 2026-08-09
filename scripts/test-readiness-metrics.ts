@@ -48,6 +48,20 @@ assert.equal(normalizedJudge.score, 0.92);
 assert.equal(normalizedJudge.faithfulness, 0.86);
 assert.equal(normalizedJudge.answerAccuracy, 0.91);
 assert.deepEqual(normalizedJudge.relevantContextIndexes, [0, 2]);
+const descriptiveJudge = evaluationJudgeSchema.parse({
+  score: "92% (eccellente)",
+  faithfulness: "0.86 (alta)",
+  answerAccuracy: "91 su 100",
+  grounded: true,
+  relevant: true,
+  complete: true,
+  safe: true,
+  relevantContextIndexes: [0],
+  reason: "Valori descrittivi normalizzati",
+});
+assert.equal(descriptiveJudge.score, 0.92);
+assert.equal(descriptiveJudge.faithfulness, 0.86);
+assert.equal(descriptiveJudge.answerAccuracy, 0.91);
 assert.equal(strictDeterministicEvaluationPass({ passed: true, score: 0.8, dimensions: { faithfulness: 0.69, answerAccuracy: 1, policySafe: true } }), false, "deterministic fallback must fail closed on low faithfulness");
 assert.equal(strictDeterministicEvaluationPass({ passed: true, score: 0.8, dimensions: { faithfulness: 0.8, answerAccuracy: 0.8, policySafe: true } }), true);
 
