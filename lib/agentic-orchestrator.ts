@@ -133,7 +133,7 @@ async function createAgentResponse(input: {
     store: false,
     prompt_cache_key: input.botId,
     ...(input.model.startsWith("gpt-5.6")
-      ? { reasoning: { effort: input.model.endsWith("-luna") ? "low" as const : "medium" as const } }
+      ? { reasoning: { effort: input.model.endsWith("-sol") ? "medium" as const : "low" as const } }
       : { temperature: input.temperature }),
   });
 }
