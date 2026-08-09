@@ -41,8 +41,8 @@ export interface ParsedCommerceQuery {
   maxCards: number;
 }
 
-const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarp[ae]|sneakers?|bors[ae]|accessori?|intimo|costum[ei]|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
-const DISCOVERY_ACTION = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|cosa avete|quali avete|avete|vendete|cerco|cercando|vorrei|voglio|volevo|desidero|mi serve|consigliami|consiglia|raccomand|alternative?|foto|immagin[ei]|link|comprare|acquistare)\b/i;
+const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarp[ae]|sneakers?|bors[ae]|zain[oi]|accessori?|intimo|costum[ei]|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
+const DISCOVERY_ACTION = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|dammi|cosa avete|quali avete|avete|vendete|cerco|cercando|vorrei|voglio|volevo|desidero|mi serve|consigliami|consiglia|raccomand|alternative?|foto|immagin[ei]|link|card|schede?|comprare|acquistare)\b/i;
 const DETAIL_ACTION = /\b(prezzo|cost[oa]|materiale|composizione|descrizione|dettagli[oi]|caratteristiche|scheda prodotto|disponibil)\b/i;
 const VARIANT_ACTION = /\b(tagli[ae]|misur[ae]|variant[ei]|numero|color[ei])\b/i;
 
@@ -126,7 +126,7 @@ export function classifyCommerceIntent(message: string, commerceMode = true): Co
   if (/\b(dove|traccia|tracking|stato)\b.*\b(ordine|pacco|spedizione)\b|\b(ordine|pacco)\b.*\b(dove|traccia|tracking|stato)\b/i.test(value)) return "order_tracking";
   if (/\b(res[oi]|restitu\w*|rimbors\w*|cambio merce|diritto di recesso)\b/i.test(value)) return "returns_policy";
   if (/\b(spedizion\w*|consegn\w*|arriv\w*|corriere|tempi di consegna)\b/i.test(value)) return "shipping_policy";
-  if (/\b(garantis\w*|stara bene|vestira|vestibilita|che taglia devo|taglia consigli\w*|altezza|peso)\b/i.test(value)) return "fit_advice";
+  if (/\b(garantis\w*|stara bene|vestira|vestibilita|che taglia devo|taglia consigli\w*|altezza|peso|look|outfit|vestirmi|vestire|elegante|casual|cerimonia|matrimonio|serata)\b/i.test(value)) return "fit_advice";
   if (/\b(confronta|paragona|differenz[ae]|meglio tra|quale dei due)\b/i.test(value)) return "product_comparison";
   if (VARIANT_ACTION.test(value) && PRODUCT_WORD.test(value)) return "variant_availability";
   if (DISCOVERY_ACTION.test(value) && PRODUCT_WORD.test(value)) return "product_discovery";
@@ -165,7 +165,7 @@ export function parseCommerceQuery(message: string, commerceMode = true): Parsed
   const intent = classifyCommerceIntent(message, commerceMode);
   const bounds = priceBounds(message);
   const sizeMatch = normalized.match(/\b(?:taglia|numero|size)\s*([0-9]{1,3}|xxs|xs|s|m|l|xl|xxl|xxxl)\b/i);
-  const explicitlyRequestsPresentation = /\b(foto|immagin[ei]|link|scheda prodotto)\b/i.test(normalized);
+  const explicitlyRequestsPresentation = /\b(foto|immagin[ei]|link|card|schede?|scheda prodotto)\b/i.test(normalized);
   const wantsCards = intent === "product_discovery" || intent === "product_comparison" || explicitlyRequestsPresentation;
   return {
     normalized,
@@ -180,7 +180,7 @@ export function parseCommerceQuery(message: string, commerceMode = true): Parsed
     maxPrice: bounds.max,
     availableOnly: /\b(solo\s+)?disponibil|\bin stock\b|\bpronta consegna\b/i.test(normalized),
     wantsCards,
-    maxCards: intent === "product_comparison" ? 2 : intent === "product_discovery" ? 5 : explicitlyRequestsPresentation ? 1 : 0,
+    maxCards: intent === "product_comparison" ? 2 : intent === "product_discovery" || explicitlyRequestsPresentation ? 5 : 0,
   };
 }
 

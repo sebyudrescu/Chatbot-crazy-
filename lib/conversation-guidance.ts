@@ -19,8 +19,12 @@ export function detectBusinessMode(input: string): BusinessMode {
 }
 
 export function requiresVerifiedCatalog(message: string, mode: BusinessMode): boolean {
+  return isVerifiedCatalogIntent(classifyCommerceIntent(message, mode === "commerce"));
+}
+
+export function isVerifiedCatalogIntent(intent: CommerceIntent): boolean {
   return ["product_discovery", "product_detail", "variant_availability", "product_comparison", "fit_advice"]
-    .includes(classifyCommerceIntent(message, mode === "commerce"));
+    .includes(intent);
 }
 
 export function buildInitialQuickReplies(mode: BusinessMode): SuggestedReply[] {
@@ -55,6 +59,10 @@ export function catalogUnavailableResponse(catalogSize: number): string {
     return "Al momento non ho un catalogo prodotti verificato collegato, quindi non posso mostrarti articoli, foto, prezzi o disponibilità senza rischiare di inventare. Posso passarti a una persona del team oppure puoi riprovare quando il catalogo sarà sincronizzato.";
   }
   return "Non ho trovato nel catalogo verificato prodotti che corrispondano a questa richiesta. Prova a indicarmi una categoria, un colore, un materiale o un budget diverso; in alternativa posso passarti a una persona del team.";
+}
+
+export function styleAdviceClarification() {
+  return "Posso aiutarti a costruire un look, ma per consigliarti prodotti reali senza andare a caso mi serve un dettaglio in piÃ¹: cerchi un outfit per lavoro, cerimonia, serata o tutti i giorni? Dimmi anche una fascia di budget e ti mostro solo capi verificati del catalogo.";
 }
 
 export function buildContextualQuickReplies(input: {

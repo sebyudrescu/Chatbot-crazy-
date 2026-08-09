@@ -36,14 +36,15 @@ import { pageContextMatchesOrigin, pageContextSchema, type ProductCard } from '@
 import { searchVerifiedProducts } from '@/lib/product-search'
 import { hydrateProductCards } from '@/lib/commerce-catalog'
 import { buildVerifiedProductResponse } from '@/lib/verified-product-response'
-import { classifyCommerceIntent } from '@/lib/commerce-query'
+import { classifyCommerceIntent, parseCommerceQuery } from '@/lib/commerce-query'
 import { tryVerifiedOrderLookup } from '@/lib/order-tracking'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import {
   buildContextualQuickReplies,
   catalogUnavailableResponse,
   detectBusinessMode,
-  requiresVerifiedCatalog,
+  isVerifiedCatalogIntent,
+  styleAdviceClarification,
 } from '@/lib/conversation-guidance'
 
 const ChatRequestSchema = z.object({
@@ -61,10 +62,13 @@ function latestActiveProductIds(messages: Array<{ role: string; sourcesUsed: str
     const sourceMetadata = (parseJSON(message.sourcesUsed) as { metadata?: { activeProductIds?: unknown } } | null)?.metadata
     if (Array.isArray(sourceMetadata?.activeProductIds)) {
       const ids = sourceMetadata.activeProductIds.filter((id): id is string => typeof id === 'string')
-      if (ids.length === 1) return ids
+      if (ids.length > 0) return ids.slice(0, 5)
     }
     const cards = parseJSON(message.productCards)
-    if (Array.isArray(cards) && cards.length === 1 && typeof cards[0]?.productId === 'string') return [cards[0].productId]
+    if (Array.isArray(cards)) {
+      const ids = cards.map((card) => card?.productId).filter((id): id is string => typeof id === 'string')
+      if (ids.length > 0) return ids.slice(0, 5)
+    }
   }
   return []
 }
@@ -337,8 +341,14 @@ export async function POST(request: NextRequest) {
       chatbotSettings.role,
       chatbotSettings.objective,
     ].filter(Boolean).join(' '))
-    const commerceIntent = classifyCommerceIntent(message, businessMode === 'commerce')
     const activeProductIds = latestActiveProductIds(conversation.messages)
+    const parsedCommerceQuery = parseCommerceQuery(message, businessMode === 'commerce')
+    const classifiedCommerceIntent = classifyCommerceIntent(message, businessMode === 'commerce')
+    const commerceIntent = classifiedCommerceIntent !== 'none'
+      ? classifiedCommerceIntent
+      : activeProductIds.length > 0 && parsedCommerceQuery.wantsCards
+        ? 'product_discovery'
+        : 'none'
     const productSearch = await searchVerifiedProducts(botId, message, pageContext, {
       intent: commerceIntent,
       activeProductIds,
@@ -346,23 +356,27 @@ export async function POST(request: NextRequest) {
     const currentSentiment = detectSentiment(message)
     const incomingPolicy = evaluateIncomingPolicy(message, chatbotSettings)
 
-    if (
-      incomingPolicy.action === 'allow'
-      && requiresVerifiedCatalog(message, businessMode)
+    const needsStyleClarification = commerceIntent === 'fit_advice'
+      && !productSearch.query.category
       && productSearch.selections.length === 0
-    ) {
-      const response = catalogUnavailableResponse(productSearch.catalogSize)
+    const requiresCatalog = isVerifiedCatalogIntent(commerceIntent)
+    if (incomingPolicy.action === 'allow' && (needsStyleClarification || (requiresCatalog && productSearch.selections.length === 0))) {
+      const response = needsStyleClarification
+        ? styleAdviceClarification()
+        : catalogUnavailableResponse(productSearch.catalogSize)
       const quickReplies = buildContextualQuickReplies({
         mode: businessMode,
         userMessage: message,
         assistantMessage: response,
         productCount: 0,
-        catalogBlocked: true,
+        catalogBlocked: !needsStyleClarification,
         commerceIntent,
       })
-      const responseType = productSearch.catalogSize === 0
-        ? 'verified_catalog_unavailable'
-        : 'verified_catalog_no_match'
+      const responseType = needsStyleClarification
+        ? 'style_advice_clarification'
+        : productSearch.catalogSize === 0
+          ? 'verified_catalog_unavailable'
+          : 'verified_catalog_no_match'
       const assistantMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -385,7 +399,7 @@ export async function POST(request: NextRequest) {
           userMessage: { id: userMessage.id, content: userMessage.content, createdAt: userMessage.createdAt },
           assistantMessage: { id: assistantMessage.id, content: assistantMessage.content, createdAt: assistantMessage.createdAt },
           sources: [],
-          intent: { type: 'product_search', confidence: 1, reasoning: 'Richiesta prodotto vincolata al catalogo verificato' },
+          intent: { type: needsStyleClarification ? 'fit_advice' : 'product_search', confidence: 1, reasoning: needsStyleClarification ? 'Consiglio outfit: richiesta di dettaglio prima di proporre prodotti' : 'Richiesta prodotto vincolata al catalogo verificato' },
           queryClassification: { type: 'transactional', complexity: 'simple' },
           decision: { strategy: 'verified_catalog_guard', sources: ['product_catalog'], reasoning: 'Nessun prodotto verificato corrispondente' },
           confidence: { score: 1, isCoherent: true },
@@ -476,7 +490,7 @@ export async function POST(request: NextRequest) {
     const productCards = productSearch.query.wantsCards
       ? resolvedProductCards.slice(0, productSearch.query.maxCards)
       : []
-    if (requiresVerifiedCatalog(message, businessMode) && resolvedProductCards.length > 0) {
+    if (requiresCatalog && resolvedProductCards.length > 0) {
       result.response = buildVerifiedProductResponse(resolvedProductCards, commerceIntent, message)
       result.metadata.responseType = `verified_${commerceIntent}`
       result.metadata.confidence = commerceIntent === 'fit_advice' ? 0.85 : 1

@@ -12,7 +12,8 @@ import { searchVerifiedProducts } from "@/lib/product-search";
 import { hydrateProductCards } from "@/lib/commerce-catalog";
 import { buildVerifiedProductResponse } from "@/lib/verified-product-response";
 import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
-import { catalogUnavailableResponse, detectBusinessMode, requiresVerifiedCatalog } from "@/lib/conversation-guidance";
+import { classifyCommerceIntent } from "@/lib/commerce-query";
+import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, styleAdviceClarification } from "@/lib/conversation-guidance";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -128,7 +129,6 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       response,
     };
   }
-  const productSearch = await searchVerifiedProducts(input.botId, query);
   const businessMode = detectBusinessMode([
     conversation.chatbot.companyName,
     conversation.chatbot.systemPrompt,
@@ -136,9 +136,13 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
     settings.role,
     settings.objective,
   ].filter(Boolean).join(" "));
-  if (requiresVerifiedCatalog(query, businessMode) && productSearch.selections.length === 0) {
-    const response = catalogUnavailableResponse(productSearch.catalogSize);
-    const responseType = productSearch.catalogSize === 0 ? "verified_catalog_unavailable" : "verified_catalog_no_match";
+  const commerceIntent = classifyCommerceIntent(query, businessMode === "commerce");
+  const productSearch = await searchVerifiedProducts(input.botId, query, undefined, { intent: commerceIntent });
+  const needsStyleClarification = commerceIntent === "fit_advice" && !productSearch.query.category && productSearch.selections.length === 0;
+  const requiresCatalog = isVerifiedCatalogIntent(commerceIntent);
+  if ((needsStyleClarification || requiresCatalog) && productSearch.selections.length === 0) {
+    const response = needsStyleClarification ? styleAdviceClarification() : catalogUnavailableResponse(productSearch.catalogSize);
+    const responseType = needsStyleClarification ? "style_advice_clarification" : productSearch.catalogSize === 0 ? "verified_catalog_unavailable" : "verified_catalog_no_match";
     const assistantMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -203,8 +207,8 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const productCards = policyDecision.action === "allow" && !groundingBlocked
     ? await hydrateProductCards(input.botId, productSearch.selections)
     : [];
-  if (requiresVerifiedCatalog(query, businessMode) && productCards.length > 0) {
-    result.response = buildVerifiedProductResponse(productCards);
+  if (requiresCatalog && productCards.length > 0) {
+    result.response = buildVerifiedProductResponse(productCards, commerceIntent, query);
     result.metadata.responseType = "verified_product_catalog";
     result.metadata.confidence = 1;
   }
