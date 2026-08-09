@@ -27,5 +27,7 @@ assert.match(orchestratorSource, /MAX_AGENT_ROUNDS\s*=\s*[2-9]/)
 assert.match(orchestratorSource, /MAX_TOOL_CALLS\s*=\s*[2-9]/)
 assert.match(orchestratorSource, /conversationHistory\.slice\(-12\)/)
 assert.match(orchestratorSource, /isAgentToolName\(call\.name\)/)
+assert.doesNotMatch(toolsSource, /filter\(\(variant\) => !args\.variant_id/)
+assert.match(toolsSource, /selected_reference: variant\.id === args\.variant_id/)
 
 console.log(JSON.stringify({ success: true, tools: 6, multiToolLoop: true }))

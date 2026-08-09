@@ -115,7 +115,7 @@ export const AGENT_TOOLS = [
   {
     type: "function",
     name: "check_inventory",
-    description: "Controlla disponibilità, taglie, colori e varianti reali di un prodotto verificato.",
+    description: "Controlla l'inventario completo di un prodotto verificato. Restituisce sempre tutte le varianti, così puoi elencare correttamente taglie e colori; variant_id indica soltanto la variante di riferimento.",
     strict: true,
     parameters: {
       type: "object",
@@ -290,9 +290,9 @@ export async function executeAgentTool(
       include: { variants: { orderBy: { position: "asc" } } },
     });
     const variants = product?.variants
-      .filter((variant) => !args.variant_id || variant.id === args.variant_id)
       .map((variant) => ({
         variant_id: variant.id,
+        selected_reference: variant.id === args.variant_id,
         title: variant.title || null,
         sku: variant.sku || null,
         attributes: safeJsonRecord(variant.attributes),
