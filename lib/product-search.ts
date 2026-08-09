@@ -308,6 +308,15 @@ export async function searchVerifiedProducts(
           (variant) =>
             variant.price !== null && variant.price <= parsed.maxPrice!,
         );
+      if (parsed.colors.length)
+        eligibleVariants = eligibleVariants.filter((variant) => {
+          const values = Object.values(jsonRecord(variant.attributes)).map(
+            (value) => normalizeCommerceText(value),
+          );
+          return parsed.colors.some((color) =>
+            values.some((value) => value.includes(normalizeCommerceText(color))),
+          );
+        });
       if (parsed.size)
         eligibleVariants = eligibleVariants.filter((variant) => {
           const attrs = Object.values(jsonRecord(variant.attributes)).map(

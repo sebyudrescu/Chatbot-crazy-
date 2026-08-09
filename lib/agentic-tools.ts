@@ -135,14 +135,22 @@ export const AGENT_TOOLS = [
     parameters: {
       type: "object",
       additionalProperties: false,
-      required: ["product_ids"],
+      required: ["products"],
       properties: {
-        product_ids: {
+        products: {
           type: "array",
           minItems: 1,
           maxItems: 5,
-          items: { type: "string" },
-          description: "ID interni esatti, nell'ordine in cui devono comparire nel carosello.",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["product_id", "variant_id"],
+            properties: {
+              product_id: { type: "string" },
+              variant_id: nullableString,
+            },
+          },
+          description: "Coppie prodotto-variante esatte restituite dalla ricerca, nell'ordine in cui devono comparire.",
         },
       },
     },
@@ -191,7 +199,10 @@ const SearchProductsArgs = z.object({
 const ProductArgs = z.object({ product_id: z.string().uuid() });
 const InventoryArgs = ProductArgs.extend({ variant_id: z.string().uuid().nullable() });
 const PresentProductsArgs = z.object({
-  product_ids: z.array(z.string().uuid()).min(1).max(5),
+  products: z.array(z.object({
+    product_id: z.string().uuid(),
+    variant_id: z.string().uuid().nullable(),
+  })).min(1).max(5),
 });
 const KnowledgeArgs = z.object({ query: z.string().trim().min(1).max(1000) });
 const OrderArgs = z.object({
@@ -307,12 +318,19 @@ export async function executeAgentTool(
     const args = PresentProductsArgs.parse(rawArguments);
     const cards = await hydrateProductCards(
       context.botId,
-      args.product_ids.map((productId) => ({ productId, reason: "" })),
+      args.products.map((item) => ({
+        productId: item.product_id,
+        variantId: item.variant_id || undefined,
+        reason: "",
+      })),
     );
     return {
       output: {
         presented: cards.length,
-        product_ids: cards.map((card) => card.productId),
+        products: cards.map((card) => ({
+          product_id: card.productId,
+          variant_id: card.variantId || null,
+        })),
         verified: true,
       },
       artifacts: { ...emptyArtifacts(), productCards: cards },

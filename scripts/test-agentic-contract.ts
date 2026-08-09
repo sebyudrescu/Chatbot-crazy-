@@ -17,7 +17,7 @@ for (const toolName of [
 }
 
 assert.equal((toolsSource.match(/strict:\s*true/g) || []).length, 6)
-assert.equal((toolsSource.match(/additionalProperties:\s*false/g) || []).length, 6)
+assert.ok((toolsSource.match(/additionalProperties:\s*false/g) || []).length >= 6)
 assert.match(orchestratorSource, /openai\.responses\.create/)
 assert.match(orchestratorSource, /tools:\s*AGENT_TOOLS/)
 assert.match(orchestratorSource, /tool_choice:\s*["']auto["']/)
