@@ -6,6 +6,7 @@
 import { createLazyOpenAI } from './openai-client'
 import { recordAIUsage } from './ai-usage'
 import { DEFAULT_CHAT_MODEL } from './ai-models'
+import { matchesIdentityQuestion } from './intent-patterns'
 
 const openai = createLazyOpenAI()
 
@@ -74,25 +75,12 @@ export async function classifyIntent(
 
   // 3. IDENTITY QUESTION patterns (about the company/business)
   // MUST be checked BEFORE generic questions to avoid false positives
-  const identityPatterns = [
-    /^(chi siete|chi sei|chi è|chi sono)/i,
-    /^(cosa fate|cosa fa|cosa fanno|cosa offrite|cosa offre)/i,
-    /^(di cosa vi occupate|di cosa si occupa|di cosa ti occupi)/i,
-    /^(che servizi|quali servizi|che prodotti|quali prodotti)/i,
-    /^(parlami di (voi|te|lei|loro)|presentati|presentatevi|dimmi chi)/i,
-    /(mission|vision|valori|filosofia).*(azienda|company|vostra|tua)/i,
-    /^(qual[eè] (la vostra|la tua|il vostro)).*(mission|attività|business)/i,
-    /(vostra|tua|sua) (storia|attività|azienda|company)/i,
-  ]
-
-  for (const pattern of identityPatterns) {
-    if (pattern.test(normalizedMessage)) {
-      return {
-        intent: 'identity_question',
-        confidence: 0.95,
-        reasoning: 'Pattern matched: company identity question',
-        shouldUseRAG: true,
-      }
+  if (matchesIdentityQuestion(normalizedMessage)) {
+    return {
+      intent: 'identity_question',
+      confidence: 0.95,
+      reasoning: 'Pattern matched: company identity question',
+      shouldUseRAG: true,
     }
   }
 

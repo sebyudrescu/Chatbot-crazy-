@@ -50,6 +50,7 @@ import { eventStore } from './event-store'
 import { recordAIUsage } from './ai-usage'
 import { DEFAULT_CHAT_MODEL, normalizeAIModel } from './ai-models'
 import { addGroundingCaution, evaluateGroundingPolicy, groundingFallbackMessage, type GroundingPolicyDecision } from './grounding-policy'
+import { conversationHistoryForIntent } from './intent-context-policy'
 
 const openai = createLazyOpenAI()
 
@@ -263,6 +264,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
   let graphResult: { entities: GraphEntity[]; relations: GraphRelation[]; reasoning: string } | undefined
   
   if (decision.shouldUseRAG) {
+    const retrievalHistory = conversationHistoryForIntent(intent.intent, context.conversationHistory)
     console.log(`\n🔍 [Orchestrator] PHASE 3: RETRIEVAL`)
     
     // Execute multi-dimensional retrieval
@@ -273,7 +275,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
       intent: intent.intent,
       entities,
       topics,
-      recentMessages: context.conversationHistory,
+      recentMessages: retrievalHistory,
       minSemanticScore: context.botConfig.ragCalibration?.retrievalMinScore
         ?? context.botConfig.retrievalMinScore,
       rerankerEnabled: context.botConfig.rerankerEnabled,
@@ -320,7 +322,7 @@ export async function orchestrateResponse(context: OrchestratorContext): Promise
       conversationIntent: intent.intent,
       persistentFacts: retrievalResult.persistentFacts,
       knowledgeChunks: retrievalResult.knowledgeChunks,
-      recentMessages: context.conversationHistory
+      recentMessages: retrievalHistory
     }
     
     validationResult = await validateCoherence(validationContext)
@@ -617,7 +619,8 @@ async function generateResponse(params: {
   const { context, decision, intent, retrievalResult, graphResult, validationResult } = params
   
   // Build conversation messages
-  const conversationMessages = context.conversationHistory.map(msg => ({
+  const generationHistory = conversationHistoryForIntent(intent.intent, context.conversationHistory)
+  const conversationMessages = generationHistory.map(msg => ({
     role: msg.role as 'user' | 'assistant',
     content: msg.content
   }))
