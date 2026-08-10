@@ -52,6 +52,10 @@
     return;
   }
 
+  window.__litxWidgetInstances = window.__litxWidgetInstances || {};
+  if (window.__litxWidgetInstances[config.botId]) return;
+  window.__litxWidgetInstances[config.botId] = { status: 'booting' };
+
   // Stato del widget
   let isOpen = false;
   let isLoaded = false;
@@ -59,6 +63,7 @@
   let restorePromise = Promise.resolve();
   let historyPollTimer = null;
   let handoffStatus = null;
+  let messageInFlight = false;
   const seenMessageIds = new Set();
   const conversationStorageKey = `litx:${config.botId}:conversation`;
   const sessionStorageKey = `litx:${config.botId}:session`;
@@ -80,7 +85,7 @@
   const CSS_STYLES = `
     .chatbot-widget-container {
       position: fixed;
-      ${config.position.includes('right') ? 'right: 20px;' : 'left: 20px;'}
+      ${config.position.includes('right') ? 'right: 88px;' : 'left: 88px;'}
       ${config.position.includes('bottom') ? 'bottom: 20px;' : 'top: 20px;'}
       z-index: 2147483000;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -238,6 +243,12 @@
 
     .chatbot-message-content {
       max-width: 84%;
+      min-width: 0;
+    }
+
+    .chatbot-message-content.has-product-carousel {
+      width: 100%;
+      max-width: 100%;
     }
 
     .chatbot-message.user .chatbot-message-bubble {
@@ -336,10 +347,12 @@
     .chatbot-product-carousel {
       display: grid;
       grid-auto-flow: column;
-      grid-auto-columns: calc(100% - 42px);
+      grid-auto-columns: 100%;
       gap: 10px;
-      padding: 2px 42px 8px 2px;
+      padding: 2px 2px 8px;
       overflow-x: auto;
+      overscroll-behavior-inline: contain;
+      scroll-padding-inline: 2px;
       scroll-snap-type: x mandatory;
       scroll-behavior: smooth;
       scrollbar-width: none;
@@ -699,6 +712,8 @@
     }
 
     .chatbot-input-container {
+      position: relative;
+      z-index: 3;
       padding: 16px;
       border-top: 1px solid ${config.theme === 'dark' ? '#4a5568' : '#e2e8f0'};
       background: ${config.theme === 'dark' ? '#2d3748' : 'white'};
@@ -707,6 +722,7 @@
     .chatbot-input-form {
       display: flex;
       gap: 8px;
+      align-items: center;
     }
 
     .chatbot-input {
@@ -716,8 +732,11 @@
       border-radius: 20px;
       background: ${config.theme === 'dark' ? '#1a202c' : '#f7fafc'};
       color: ${config.theme === 'dark' ? 'white' : '#2d3748'};
-      font-size: 14px;
+      font-size: 16px;
       outline: none;
+      min-width: 0;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .chatbot-input:focus {
@@ -776,11 +795,21 @@
     }
 
     @media (max-width: 480px) {
+      .chatbot-widget-container {
+        ${config.position.includes('right') ? 'right: 84px !important; left: auto !important;' : 'left: 84px !important; right: auto !important;'}
+        bottom: max(88px, calc(env(safe-area-inset-bottom) + 72px)) !important;
+      }
+
       .chatbot-window {
-        width: calc(100vw - 40px);
-        height: calc(100vh - 120px);
-        bottom: 80px;
-        ${config.position.includes('right') ? 'left: auto !important; right: 0 !important;' : 'left: 0 !important; right: auto !important;'}
+        position: fixed;
+        width: calc(100vw - 24px);
+        height: min(640px, calc(100dvh - 128px));
+        bottom: max(76px, calc(env(safe-area-inset-bottom) + 64px));
+        ${config.position.includes('right') ? 'left: auto !important; right: 12px !important;' : 'left: 12px !important; right: auto !important;'}
+      }
+
+      .chatbot-input-container {
+        padding: 12px 12px max(12px, env(safe-area-inset-bottom));
       }
     }
 
@@ -983,11 +1012,15 @@
     form.onsubmit = (e) => {
       e.preventDefault();
       const message = input.value.trim();
-      if (message) {
-        sendMessage(message);
+      if (message && !messageInFlight) {
         input.value = '';
+        void sendMessage(message);
       }
     };
+
+    input.addEventListener('pointerdown', () => {
+      if (!input.disabled && document.activeElement !== input) input.focus({ preventScroll: true });
+    });
 
     chatWindow.appendChild(inputContainer);
     widgetContainer.appendChild(chatWindow);
@@ -1007,6 +1040,7 @@
     });
 
     isLoaded = true;
+    window.__litxWidgetInstances[config.botId] = { status: 'ready' };
   }
 
   // Chat functions
@@ -1029,9 +1063,11 @@
       launcher.setAttribute('aria-expanded', 'true');
     }
 
-    // Focus input
+    // Desktop can focus immediately; mobile keeps the keyboard under direct user control.
     const input = inputContainer.querySelector('.chatbot-input');
-    setTimeout(() => input.focus(), 300);
+    if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+      input.focus({ preventScroll: true });
+    }
     restorePromise.then(startHistoryPolling);
 
   }
@@ -1506,6 +1542,7 @@
 
     const renderedCards = Array.from(carousel.children);
     if (!renderedCards.length) return;
+    contentElement.classList.add('has-product-carousel');
     renderedCards.forEach((card, index) => {
       const title = card.querySelector('.chatbot-product-title')?.textContent || 'Prodotto';
       card.setAttribute('aria-label', `${index + 1} di ${renderedCards.length}: ${title}`);
@@ -1519,7 +1556,8 @@
     const moveTo = (index) => {
       activeIndex = Math.max(0, Math.min(index, renderedCards.length - 1));
       const target = renderedCards[activeIndex];
-      if (typeof carousel.scrollTo === 'function') carousel.scrollTo({ left: target.offsetLeft, behavior: 'smooth' });
+      const targetLeft = Math.max(0, target.offsetLeft - carousel.offsetLeft);
+      if (typeof carousel.scrollTo === 'function') carousel.scrollTo({ left: targetLeft, behavior: 'smooth' });
       else if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
       updateNavigation();
     };
@@ -1547,7 +1585,7 @@
         let nearestIndex = 0;
         let nearestDistance = Number.POSITIVE_INFINITY;
         renderedCards.forEach((card, index) => {
-          const distance = Math.abs(card.offsetLeft - carousel.scrollLeft);
+          const distance = Math.abs((card.offsetLeft - carousel.offsetLeft) - carousel.scrollLeft);
           if (distance < nearestDistance) { nearestIndex = index; nearestDistance = distance; }
         });
         activeIndex = nearestIndex;
@@ -2136,11 +2174,19 @@
 
   async function sendMessage(content, options) {
     const normalizedContent = typeof content === 'string' ? content.trim() : '';
-    if (!normalizedContent || normalizedContent.length > 4000) return;
-    await restorePromise;
+    if (!normalizedContent || normalizedContent.length > 4000 || messageInFlight) return false;
+    messageInFlight = true;
+    stopHistoryPolling();
+    try {
+      await restorePromise;
+    } catch {
+      messageInFlight = false;
+      addMessage('bot', 'Sessione non disponibile. Ricarica la pagina e riprova.', { error: true });
+      return false;
+    }
     disablePendingReplies();
     // Add user message
-    addMessage('user', options && options.privateEntry ? '[Dati ordine inviati in modo protetto]' : normalizedContent);
+    const userContent = addMessage('user', options && options.privateEntry ? '[Dati ordine inviati in modo protetto]' : normalizedContent);
     
     // Show typing
     showTyping();
@@ -2184,6 +2230,8 @@
         // Add bot response
         if (data.data.userMessage && data.data.userMessage.id) {
           seenMessageIds.add(data.data.userMessage.id);
+          const userMessageElement = userContent.closest('.chatbot-message');
+          if (userMessageElement) userMessageElement.dataset.messageId = data.data.userMessage.id;
         }
         const responseContent = addMessage('bot', data.data.assistantMessage.content, {
           id: data.data.assistantMessage.id,
@@ -2218,8 +2266,13 @@
       // Re-enable input
       input.disabled = false;
       sendButton.disabled = false;
-      input.focus();
+      messageInFlight = false;
+      if (isOpen && conversationId) startHistoryPolling();
+      if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+        input.focus({ preventScroll: true });
+      }
     }
+    return true;
   }
 
   // Public API

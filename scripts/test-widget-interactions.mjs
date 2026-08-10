@@ -862,6 +862,61 @@ assert.match(
   "La modalità pagina non occupa il viewport",
 );
 
+const widgetStyles = window.document.querySelector("style")?.textContent || "";
+assert.match(widgetStyles, /grid-auto-columns:\s*100%/, "Il carosello deve mostrare una card completa per pagina");
+assert.match(widgetStyles, /right:\s*84px !important/, "Il launcher mobile deve lasciare spazio ai controlli del negozio");
+assert.equal(
+  productCarousel?.closest(".chatbot-message-content")?.classList.contains("has-product-carousel"),
+  true,
+  "Le card prodotto non devono mantenere il limite stretto dei messaggi testuali",
+);
+
+const duplicateDom = new JSDOM(
+  "<!doctype html><html><head></head><body></body></html>",
+  { url: "https://cliente.example/", runScripts: "outside-only", pretendToBeVisual: true },
+);
+const duplicateWindow = duplicateDom.window;
+duplicateWindow.ChatbotConfig = {
+  botId: "00000000-0000-4000-8000-000000000099",
+  apiUrl: "https://litx.example",
+};
+let duplicateChatRequests = 0;
+let releaseDuplicateResponse;
+const duplicateResponseGate = new Promise((resolve) => { releaseDuplicateResponse = resolve; });
+duplicateWindow.fetch = async (url) => {
+  if (String(url).endsWith("/session")) {
+    return new Response(JSON.stringify({
+      success: true,
+      data: { sessionId: "00000000-0000-4000-8000-000000000199", token: "duplicate-test-token" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+  duplicateChatRequests += 1;
+  await duplicateResponseGate;
+  return new Response(JSON.stringify({
+    success: true,
+    data: {
+      conversationId: "00000000-0000-4000-8000-000000000299",
+      userMessage: { id: "00000000-0000-4000-8000-000000000399" },
+      assistantMessage: { id: "00000000-0000-4000-8000-000000000499", content: "Risposta singola" },
+    },
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+};
+duplicateWindow.eval(script);
+duplicateWindow.document.dispatchEvent(new duplicateWindow.Event("DOMContentLoaded"));
+duplicateWindow.eval(script);
+assert.equal(
+  duplicateWindow.document.querySelectorAll(".chatbot-widget-container").length,
+  1,
+  "Il caricamento ripetuto crea piu istanze del widget",
+);
+const firstDuplicateSend = duplicateWindow.ChatbotWidget.sendMessage("Una volta");
+const secondDuplicateSend = duplicateWindow.ChatbotWidget.sendMessage("Una volta");
+await new Promise((resolve) => duplicateWindow.setTimeout(resolve, 10));
+assert.equal(duplicateChatRequests, 1, "Due invii concorrenti producono due richieste chat");
+assert.equal(await secondDuplicateSend, false, "Il secondo invio non viene bloccato");
+releaseDuplicateResponse();
+assert.equal(await firstDuplicateSend, true, "L'invio valido non viene completato");
+
 console.log(
   JSON.stringify(
     {
@@ -886,6 +941,10 @@ console.log(
         "verified-product-cards",
         "accessible-product-carousel",
         "shopify-ajax-cart",
+        "single-widget-instance",
+        "concurrent-submit-lock",
+        "mobile-control-spacing",
+        "full-width-product-carousel",
         "standalone-public-page",
       ],
     },
@@ -897,3 +956,4 @@ console.log(
 dom.window.close();
 restoredDom.window.close();
 pageDom.window.close();
+duplicateDom.window.close();
