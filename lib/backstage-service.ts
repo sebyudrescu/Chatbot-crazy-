@@ -17,6 +17,7 @@ const MAX_CALLS = 10;
 const FALLBACK_MODEL = "gpt-4.1";
 
 type Evidence = { type: string; label: string; value: string; href?: string };
+type DraftSummary = { draftId: string; type: string; title: string; summary: string };
 
 const TOOLS = [
   { type: "function", name: "analyze_conversations", description: "Analizza metriche reali e campioni redatti delle conversazioni dell'agente.", strict: true, parameters: { type: "object", properties: { limit: { type: "integer", minimum: 10, maximum: 200 }, days: { type: "integer", minimum: 1, maximum: 365 } }, required: ["limit", "days"], additionalProperties: false } },
@@ -189,6 +190,7 @@ export async function runBackstageTurn(sessionId: string, message: string) {
   let calls = 0;
   let finalText = "";
   let model = DEFAULT_AGENTIC_MODEL;
+  let latestDraft: DraftSummary | null = null;
 
   if (process.env.CI_MOCK_AI === "true") {
     const result = await analyzeConversations(session.botId, { limit: 100, days: 30 });
@@ -215,6 +217,7 @@ export async function runBackstageTurn(sessionId: string, message: string) {
         if (calls > MAX_CALLS) { input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify({ error: "tool_budget_exceeded" }) }); continue; }
         try {
           const result = await executeTool(call.name, JSON.parse(call.arguments || "{}"), { botId: session.botId, sessionId, evidence });
+          if (call.name === "create_draft") latestDraft = result as DraftSummary;
           input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(result) });
         } catch (error) {
           input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify({ error: error instanceof Error ? error.message : "tool_failed" }) });
@@ -222,7 +225,8 @@ export async function runBackstageTurn(sessionId: string, message: string) {
       }
     }
   }
-  if (!finalText) finalText = "Ho completato l'analisi disponibile, ma non ho prodotto una risposta conclusiva. Riprova rendendo la richiesta più specifica.";
+  if (!finalText && latestDraft) finalText = `Ho preparato la bozza “${latestDraft.title}”. Non è stata applicata. Aprila nel pannello a destra, modifica ciò che vuoi, esegui la simulazione e approvala soltanto quando il risultato ti convince.`;
+  if (!finalText) finalText = "Ho completato le verifiche disponibili, ma non ho dati sufficienti per una conclusione affidabile. Posso restringere l'analisi a un periodo, un problema o una funzione specifica.";
   const assistant = await prisma.backstageMessage.create({ data: { sessionId, role: "assistant", kind: /report|analizz|metric|conversazioni/i.test(message) ? "report" : "message", content: finalText, evidence: JSON.stringify(evidence) } });
   await prisma.backstageSession.update({ where: { id: sessionId }, data: { updatedAt: new Date(), title: session.messages.length ? undefined : message.slice(0, 80) } });
   await prisma.event.create({ data: { botId: session.botId, eventType: "backstage.turn.completed", category: "system", severity: "info", metadata: JSON.stringify({ sessionId, userMessageId: userMessage.id, assistantMessageId: assistant.id, toolCalls: calls, evidenceCount: evidence.length, requestHash: createHash("sha256").update(message).digest("hex").slice(0, 16) }) } });
