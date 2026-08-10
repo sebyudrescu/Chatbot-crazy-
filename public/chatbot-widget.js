@@ -780,8 +780,7 @@
         width: calc(100vw - 40px);
         height: calc(100vh - 120px);
         bottom: 80px;
-        left: 20px !important;
-        right: 20px !important;
+        ${config.position.includes('right') ? 'left: auto !important; right: 0 !important;' : 'left: 0 !important; right: auto !important;'}
       }
     }
 
