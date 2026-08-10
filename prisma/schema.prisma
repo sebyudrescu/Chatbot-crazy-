@@ -51,6 +51,8 @@ model Chatbot {
   commerceEvents            CommerceEvent[]
   commerceWebhookDeliveries CommerceWebhookDelivery[]
   commerceTrackingKey       CommerceTrackingKey?
+  backstageSessions         BackstageSession[]
+  backstageDrafts           BackstageDraft[]
 
   @@index([companyName])
   @@index([isActive])
@@ -58,6 +60,65 @@ model Chatbot {
   @@index([promptTemplateId])
   @@index([kbStatus])
   @@map("chatbots")
+}
+
+model BackstageSession {
+  id        String   @id @default(uuid())
+  botId     String
+  title     String
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chatbot Chatbot            @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages BackstageMessage[]
+  drafts   BackstageDraft[]
+
+  @@index([botId, updatedAt])
+  @@index([status])
+  @@map("backstage_sessions")
+}
+
+model BackstageMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  role      String
+  kind      String   @default("message")
+  content   String
+  evidence  String   @default("[]")
+  createdAt DateTime @default(now())
+
+  session BackstageSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("backstage_messages")
+}
+
+model BackstageDraft {
+  id                String    @id @default(uuid())
+  sessionId         String
+  botId              String
+  type               String
+  title              String
+  summary            String
+  payload            String
+  beforeState        String    @default("{}")
+  evidence           String    @default("[]")
+  validation         String    @default("{}")
+  status             String    @default("draft")
+  appliedResourceId  String?
+  approvedAt         DateTime?
+  appliedAt          DateTime?
+  rolledBackAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  session BackstageSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  chatbot Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([botId, status])
+  @@map("backstage_drafts")
 }
 
 model AIUsageEvent {

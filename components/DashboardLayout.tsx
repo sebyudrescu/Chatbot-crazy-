@@ -25,6 +25,7 @@ import {
   X,
   ShoppingBag,
   PanelsTopLeft,
+  BrainCircuit,
 } from 'lucide-react'
 import { Sidebar, SidebarLink, SidebarSection } from './ui/Sidebar'
 import { Button } from './ui/Button'
@@ -130,6 +131,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <SidebarLink href="/contacts" icon={Users} label="Contacts (CRM)" />
           <SidebarLink href="/analytics" icon={BarChart3} label="Analytics" />
           <SidebarLink href="/suggestions" icon={Lightbulb} label="AI Suggestions" />
+          <SidebarLink href="/backstage" icon={BrainCircuit} label="Control Room AI" />
           <SidebarLink href="/integrations" icon={Plug} label="Integrations" />
           <SidebarLink href="/channels" icon={Radio} label="Channels" />
           <SidebarLink href="/dashboard/traces" icon={Activity} label="Decision Traces" />
@@ -208,6 +210,7 @@ function MobileNavigation({ onNavigate }: { onNavigate: () => void }) {
         <SidebarLink href="/contacts" icon={Users} label="Contacts (CRM)" onClick={onNavigate} />
         <SidebarLink href="/analytics" icon={BarChart3} label="Analytics" onClick={onNavigate} />
         <SidebarLink href="/suggestions" icon={Lightbulb} label="AI Suggestions" onClick={onNavigate} />
+        <SidebarLink href="/backstage" icon={BrainCircuit} label="Control Room AI" onClick={onNavigate} />
         <SidebarLink href="/integrations" icon={Plug} label="Integrations" onClick={onNavigate} />
         <SidebarLink href="/channels" icon={Radio} label="Channels" onClick={onNavigate} />
         <SidebarLink href="/dashboard/traces" icon={Activity} label="Decision Traces" onClick={onNavigate} />
