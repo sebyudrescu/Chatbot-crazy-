@@ -82,7 +82,7 @@
       position: fixed;
       ${config.position.includes('right') ? 'right: 20px;' : 'left: 20px;'}
       ${config.position.includes('bottom') ? 'bottom: 20px;' : 'top: 20px;'}
-      z-index: 999999;
+      z-index: 2147483000;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
