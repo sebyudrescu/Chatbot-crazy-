@@ -865,6 +865,11 @@ assert.match(
 const widgetStyles = window.document.querySelector("style")?.textContent || "";
 assert.match(widgetStyles, /grid-auto-columns:\s*100%/, "Il carosello deve mostrare una card completa per pagina");
 assert.match(widgetStyles, /right:\s*84px !important/, "Il launcher mobile deve lasciare spazio ai controlli del negozio");
+assert.match(widgetStyles, /body\.litx-chat-open #chwhatsapp-btn/, "WhatsApp non viene nascosto mentre la chat e aperta");
+window.ChatbotWidget.open();
+assert.equal(window.document.body.classList.contains("litx-chat-open"), true, "L'apertura non coordina i controlli del negozio");
+window.ChatbotWidget.close();
+assert.equal(window.document.body.classList.contains("litx-chat-open"), false, "La chiusura non ripristina i controlli del negozio");
 assert.equal(
   productCarousel?.closest(".chatbot-message-content")?.classList.contains("has-product-carousel"),
   true,

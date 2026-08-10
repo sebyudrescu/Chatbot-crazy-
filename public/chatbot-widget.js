@@ -91,6 +91,13 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
+    body.litx-chat-open .t4s-back-to-top,
+    body.litx-chat-open #chwhatsapp-btn {
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
     .chatbot-launcher {
       width: ${launcherSize}px;
       height: ${launcherSize}px;
@@ -1057,6 +1064,7 @@
     
     isOpen = true;
     chatWindow.classList.add('open');
+    document.body.classList.add('litx-chat-open');
     
     if (launcher) {
       launcher.style.display = 'none';
@@ -1077,6 +1085,7 @@
     
     isOpen = false;
     chatWindow.classList.remove('open');
+    document.body.classList.remove('litx-chat-open');
     
     if (launcher) {
       launcher.style.display = 'flex';
