@@ -25,7 +25,7 @@ export enum MessageRole {
 export const ChatbotSettingsSchema = z.object({
   primaryColor: z.string().optional(),
   botName: z.string().optional(),
-  welcomeMessage: z.string().optional(),
+  welcomeMessage: z.string().trim().max(500).optional(),
   role: z.string().max(1000).optional(),
   objective: z.string().max(2000).optional(),
   personality: z.string().max(1000).optional(),

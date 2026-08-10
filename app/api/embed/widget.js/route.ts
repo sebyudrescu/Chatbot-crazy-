@@ -39,11 +39,17 @@ export async function GET(request: NextRequest) {
   const host = request.headers.get('host')
   const apiUrl = `${protocol}://${host}`
   const settings = chatbot.embedSettings
+  let chatbotSettings: Record<string, unknown> = {}
+  try { chatbotSettings = JSON.parse(chatbot.settings || '{}') as Record<string, unknown> } catch {}
+  const welcomeMessage = typeof chatbotSettings.welcomeMessage === 'string'
+    ? chatbotSettings.welcomeMessage.trim().slice(0, 500)
+    : ''
   const config = {
     botId,
     apiUrl,
     title: settings.title || chatbot.companyName,
     subtitle: settings.subtitle || 'Come posso aiutarti?',
+    welcomeMessage: welcomeMessage || null,
     theme: settings.theme,
     position: settings.position,
     primaryColor: settings.primaryColor,

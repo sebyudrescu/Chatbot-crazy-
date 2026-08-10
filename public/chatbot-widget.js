@@ -29,6 +29,7 @@
     primaryColor: '#633cff',
     title: 'Chat Assistant',
     subtitle: 'Come posso aiutarti?',
+    welcomeMessage: null,
     autoOpen: false,
     showLauncher: true,
     customCSS: null,
@@ -1001,7 +1002,7 @@
     }
 
     // Initial message
-    addMessage('bot', `Ciao! Sono ${config.title}. ${config.subtitle}`);
+    addMessage('bot', config.welcomeMessage || `Ciao! Sono ${config.title}. ${config.subtitle}`);
     restorePromise = ensureWidgetSession().then(() => {
       if (conversationId) return restoreConversation();
     });

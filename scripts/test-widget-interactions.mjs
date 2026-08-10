@@ -24,6 +24,7 @@ window.ChatbotConfig = {
   apiUrl: "https://litx.example",
   title: '<img src=x onerror="window.__xss=true"> Assistente',
   subtitle: "Risposte e prenotazioni",
+  welcomeMessage: "Benvenuto nel nostro spazio. Come posso aiutarti?",
   primaryColor: "#633cff",
   iconType: "logo",
   iconValue: "https://litx.example/assets/client-logo.png",
@@ -268,6 +269,12 @@ assert.match(
   window.document.querySelector(".chatbot-header h3")?.textContent || "",
   /Assistente/,
   "Il titolo testuale non viene mostrato",
+);
+assert.equal(
+  window.document.querySelector(".chatbot-message.bot .chatbot-message-bubble")
+    ?.textContent,
+  "Benvenuto nel nostro spazio. Come posso aiutarti?",
+  "Il welcome message personalizzato non viene mostrato",
 );
 
 await window.ChatbotWidget.sendMessage("Vorrei prenotare");
