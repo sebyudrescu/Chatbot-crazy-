@@ -22,6 +22,11 @@ async function main() {
   assert.match(service, /Esegui prima la simulazione della bozza/)
   assert.match(service, /parallel_tool_calls: false/)
   assert.match(service, /Nessuna modifica live avviene/)
+  assert.match(service, /commerceEvent\.findMany/)
+  assert.match(service, /sampleCoverage/)
+  assert.match(service, /classificationCoverage/)
+  assert.match(service, /metricDefinitions/)
+  assert.match(service, /volume non ancora esistente/)
   assert.match(service, /backstage\.draft\.applied/)
   assert.match(service, /backstage\.draft\.rolled_back/)
   assert.match(page, /Approva e applica/)
@@ -33,4 +38,3 @@ async function main() {
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1 })
-
