@@ -18,6 +18,8 @@ assert.doesNotMatch(proxySource, /publicPrefixes[^\n]+['"]\/api\/shopify\/['"]/,
 const widgetRoute = fs.readFileSync(path.join(process.cwd(), 'app/api/embed/widget.js/route.ts'), 'utf8')
 const storefrontLoader = fs.readFileSync(path.join(process.cwd(), 'shopify/extensions/litx-chat-widget/assets/litx-loader.js'), 'utf8')
 assert.match(storefrontLoader, /widget\.js\?v=\d{8}-\d+&shop=/, 'the Shopify loader must version the remote widget URL so phones do not keep stale positioning CSS')
+assert.match(storefrontLoader, /DOMContentLoaded/, 'the async Shopify asset must wait until its body app-embed context exists')
+assert.match(storefrontLoader, /function bootLitxWidget/, 'the Shopify loader must use an idempotent DOM-ready bootstrap')
 assert.match(widgetRoute, /Cache-Control['"]:\s*['"]private, no-store['"]/, 'domain decisions must never be shared through a public CDN cache')
 assert.match(widgetRoute, /Vary['"]:\s*['"]Origin, Referer['"]/, 'widget script responses must vary by storefront origin')
 console.log('Shopify widget onboarding tests passed')
