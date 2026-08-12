@@ -44,6 +44,7 @@
 
   // Merge configurazione utente
   const config = Object.assign({}, DEFAULT_CONFIG, window.ChatbotConfig || {});
+  const shopifyLayout = Object.assign({ placement: 'auto', gap: 14, edge: 16, hideBackToTop: true }, window.LitxShopifyLayout || {});
   const launcherSize = config.widgetSize === 'small' ? 50 : config.widgetSize === 'large' ? 70 : 60;
   const launcherRadius = config.widgetShape === 'circle' ? '50%' : config.widgetShape === 'square' ? '8px' : '18px';
 
@@ -89,15 +90,6 @@
       ${config.position.includes('bottom') ? 'bottom: 20px;' : 'top: 20px;'}
       z-index: 2147483000;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    /* LitX occupies the mobile utility slot: avoid stacking a second
-       floating control underneath the launcher. */
-    .t4s-back-to-top,
-    body.litx-chat-open #chwhatsapp-btn {
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
     }
 
     .chatbot-launcher {
@@ -805,11 +797,11 @@
 
     @media (max-width: 480px) {
       .chatbot-widget-container {
-        ${config.position.includes('right') ? 'right: 22px !important; left: auto !important;' : 'left: 22px !important; right: auto !important;'}
-        /* Stack LitX above the merchant's 48px WhatsApp launcher. Both stay
-           on the outer edge, with a clear 16px gap and no page obstruction. */
-        bottom: max(204px, calc(env(safe-area-inset-bottom) + 196px)) !important;
+        ${config.position.includes('right') ? 'right: var(--litx-mobile-edge, 16px) !important; left: auto !important;' : 'left: var(--litx-mobile-edge, 16px) !important; right: auto !important;'}
+        bottom: var(--litx-mobile-bottom, calc(env(safe-area-inset-bottom, 0px) + 84px)) !important;
       }
+
+      body.litx-hide-back-to-top .t4s-back-to-top { display: none !important; }
 
       .chatbot-launcher {
         width: 50px;
@@ -1044,6 +1036,7 @@
 
     // Add to page
     document.body.appendChild(widgetContainer);
+    installStorefrontLayoutCoordinator();
 
     // Auto open if configured
     if (config.autoOpen) {
@@ -1234,6 +1227,91 @@
     } catch {
       return null;
     }
+  }
+
+  function installStorefrontLayoutCoordinator() {
+    if (!widgetContainer || config.displayMode === 'page' || !window.LitxShopifyLayout) return;
+    const clamp = (value, min, max, fallback) => {
+      const number = Number(value);
+      return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+    };
+    const gap = clamp(shopifyLayout.gap, 8, 32, 14);
+    const edge = clamp(shopifyLayout.edge, 8, 32, 16);
+    const mobileQuery = window.matchMedia
+      ? window.matchMedia('(max-width: 480px)')
+      : { matches: window.innerWidth <= 480 };
+    let scheduled = false;
+
+    const visibleFixedBox = (element) => {
+      let current = element;
+      while (current && current !== document.body) {
+        const style = window.getComputedStyle(current);
+        const rect = current.getBoundingClientRect();
+        if (style.position === 'fixed' && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0 && rect.width >= 36 && rect.height >= 36) {
+          return { element: current, rect };
+        }
+        current = current.parentElement;
+      }
+      return null;
+    };
+
+    const findWhatsAppLauncher = () => {
+      const selectors = [
+        '#carthike-chat-button-container',
+        '#chwhatsapp-btn',
+        '[aria-label*="whatsapp" i]',
+        'a[href*="wa.me"]',
+        'a[href*="api.whatsapp.com"]'
+      ];
+      const candidates = [];
+      selectors.forEach((selector) => document.querySelectorAll(selector).forEach((element) => {
+        const fixed = visibleFixedBox(element);
+        if (!fixed || fixed.element.closest('.chatbot-widget-container')) return;
+        const rect = fixed.rect;
+        if (rect.right >= window.innerWidth - 160 && rect.bottom >= window.innerHeight - 320 && rect.width <= 100 && rect.height <= 100) candidates.push(fixed);
+      }));
+      candidates.sort((a, b) => b.rect.bottom - a.rect.bottom);
+      return candidates[0] || null;
+    };
+
+    const applyLayout = () => {
+      scheduled = false;
+      if (!mobileQuery.matches) {
+        widgetContainer.style.removeProperty('--litx-mobile-edge');
+        widgetContainer.style.removeProperty('--litx-mobile-bottom');
+        document.body.classList.remove('litx-hide-back-to-top');
+        return;
+      }
+      document.body.classList.toggle('litx-hide-back-to-top', shopifyLayout.hideBackToTop !== false);
+      const launcherWidth = launcher ? launcher.getBoundingClientRect().width || 50 : 50;
+      const whatsapp = shopifyLayout.placement === 'corner' ? null : findWhatsAppLauncher();
+      if (whatsapp) {
+        const right = Math.max(edge, window.innerWidth - whatsapp.rect.right + Math.max(0, (whatsapp.rect.width - launcherWidth) / 2));
+        const bottom = Math.max(84, window.innerHeight - whatsapp.rect.top + gap);
+        widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(right)}px`);
+        widgetContainer.style.setProperty('--litx-mobile-bottom', `${Math.round(bottom)}px`);
+      } else {
+        widgetContainer.style.setProperty('--litx-mobile-edge', `${edge}px`);
+        widgetContainer.style.setProperty('--litx-mobile-bottom', `calc(env(safe-area-inset-bottom, 0px) + 84px)`);
+      }
+    };
+    const scheduleLayout = () => {
+      if (scheduled) return;
+      scheduled = true;
+      window.requestAnimationFrame(applyLayout);
+    };
+
+    scheduleLayout();
+    window.addEventListener('resize', scheduleLayout, { passive: true });
+    window.addEventListener('orientationchange', scheduleLayout, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', scheduleLayout, { passive: true });
+      window.visualViewport.addEventListener('scroll', scheduleLayout, { passive: true });
+    }
+    const observer = new MutationObserver(scheduleLayout);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.setTimeout(scheduleLayout, 500);
+    window.setTimeout(scheduleLayout, 2000);
   }
 
   function safeProductUrl(value) {

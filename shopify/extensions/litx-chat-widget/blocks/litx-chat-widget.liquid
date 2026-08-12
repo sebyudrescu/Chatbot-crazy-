@@ -1,5 +1,13 @@
 <script type="application/json" id="litx-shop-context">
-  {"shop": {{ shop.permanent_domain | json }} }
+  {
+    "shop": {{ shop.permanent_domain | json }},
+    "layout": {
+      "placement": {{ block.settings.placement | json }},
+      "gap": {{ block.settings.launcher_gap | json }},
+      "edge": {{ block.settings.edge_offset | json }},
+      "hideBackToTop": {{ block.settings.hide_back_to_top | json }}
+    }
+  }
 </script>
 
 {% schema %}
@@ -7,6 +15,43 @@
   "name": "AI chat widget",
   "target": "body",
   "javascript": "litx-loader.js",
-  "settings": []
+  "settings": [
+    {
+      "type": "select",
+      "id": "placement",
+      "label": "Posizione mobile",
+      "default": "auto",
+      "options": [
+        { "value": "auto", "label": "Automatica sopra WhatsApp" },
+        { "value": "corner", "label": "Angolo in basso" }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "launcher_gap",
+      "label": "Distanza da WhatsApp",
+      "min": 8,
+      "max": 32,
+      "step": 2,
+      "unit": "px",
+      "default": 14
+    },
+    {
+      "type": "range",
+      "id": "edge_offset",
+      "label": "Distanza dal bordo",
+      "min": 8,
+      "max": 32,
+      "step": 2,
+      "unit": "px",
+      "default": 16
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_back_to_top",
+      "label": "Nascondi torna su su mobile",
+      "default": true
+    }
+  ]
 }
 {% endschema %}
