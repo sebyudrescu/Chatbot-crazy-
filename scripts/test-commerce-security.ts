@@ -69,6 +69,11 @@ assert.equal(lookup.orderNumber, "WC-123");
 assert.equal(lookup.email, "cliente@example.com");
 assert.equal(redactOrderLookupMessage("Ordine WC-123 cliente@example.com", lookup), "[Dati di verifica ordine rimossi automaticamente]");
 assert.equal(parseOrderLookupMessage("La sede dove si trova?").hasIntent, false);
+assert.equal(parseOrderLookupMessage("Vorrei una camicia elegante da donna").containsCredentials, false);
+assert.equal(redactOrderLookupMessage("Vorrei una camicia elegante da donna"), "Vorrei una camicia elegante da donna");
+assert.equal(redactOrderLookupMessage("Una M"), "Una M");
+assert.equal(redactOrderLookupMessage("Donna"), "Donna");
+assert.equal(redactOrderLookupMessage("Dov'è il mio ordine?"), "Dov'è il mio ordine?");
 assert.equal(parseOrderLookupMessage("#777 cliente@example.com", "Inviami numero d’ordine ed email").hasIntent, true);
 const presented = presentVerifiedWooOrder({
   id: 123,

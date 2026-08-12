@@ -87,11 +87,41 @@
   const conversationStorageKey = `litx:${config.botId}:conversation`;
   const sessionStorageKey = `litx:${config.botId}:session`;
   const sessionTokenStorageKey = `litx:${config.botId}:session-token`;
+  const sessionExpiresStorageKey = `litx:${config.botId}:session-expires`;
   const pageHistoryStorageKey = `litx:${config.botId}:page-history`;
   let conversationId = readStorage(conversationStorageKey);
   let userSessionId = readStorage(sessionStorageKey);
   let signedSessionToken = readStorage(sessionTokenStorageKey);
+  let sessionExpiresAt = Number(readStorage(sessionExpiresStorageKey) || readSessionExpiry(signedSessionToken) || 0);
+  if (!Number.isFinite(sessionExpiresAt) || sessionExpiresAt <= Date.now()) {
+    conversationId = null;
+    userSessionId = null;
+    signedSessionToken = null;
+    sessionExpiresAt = 0;
+    writeStorage(conversationStorageKey, null);
+    writeStorage(sessionStorageKey, null);
+    writeStorage(sessionTokenStorageKey, null);
+    writeStorage(sessionExpiresStorageKey, null);
+  }
   let sessionPromise = null;
+
+  if (sessionExpiresAt > Date.now()) {
+    writeStorage(sessionExpiresStorageKey, String(sessionExpiresAt));
+  }
+
+  function readSessionExpiry(token) {
+    try {
+      const encoded = String(token || '').split('.')[0];
+      if (!encoded) return 0;
+      const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+      const payload = JSON.parse(atob(padded));
+      const expiresAt = Number(payload?.expiresAt || 0);
+      return Number.isFinite(expiresAt) ? expiresAt : 0;
+    } catch {
+      return 0;
+    }
+  }
 
   // Elementi DOM
   let widgetContainer;
@@ -1306,13 +1336,8 @@
       const launcherHeight = launcherRect?.height || 50;
       const whatsapp = shopifyLayout.placement === 'corner' ? null : findWhatsAppLauncher();
       if (whatsapp) {
-        const roomBeside = whatsapp.rect.left - gap - launcherWidth >= edge;
-        const right = roomBeside
-          ? window.innerWidth - whatsapp.rect.left + gap
-          : Math.max(edge, window.innerWidth - whatsapp.rect.right + Math.max(0, (whatsapp.rect.width - launcherWidth) / 2));
-        const bottom = roomBeside
-          ? Math.max(84, window.innerHeight - whatsapp.rect.bottom + Math.max(0, (whatsapp.rect.height - launcherHeight) / 2))
-          : Math.max(84, window.innerHeight - whatsapp.rect.top + gap);
+        const right = Math.max(edge, window.innerWidth - whatsapp.rect.right + Math.max(0, (whatsapp.rect.width - launcherWidth) / 2));
+        const bottom = Math.max(84, window.innerHeight - whatsapp.rect.bottom - gap - launcherHeight);
         widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(right)}px`);
         widgetContainer.style.setProperty('--litx-mobile-bottom', `${Math.round(bottom)}px`);
       } else {
@@ -2238,7 +2263,7 @@
   }
 
   async function ensureWidgetSession(force = false) {
-    if (!force && userSessionId && signedSessionToken) return;
+    if (!force && userSessionId && signedSessionToken && sessionExpiresAt > Date.now()) return;
     if (!force && sessionPromise) return sessionPromise;
     sessionPromise = (async () => {
       const response = await fetch(`${config.apiUrl}/api/embed/${config.botId}/session`, {
@@ -2251,9 +2276,11 @@
       }
       userSessionId = result.data.sessionId;
       signedSessionToken = result.data.token;
+      sessionExpiresAt = Number(result.data.expiresAt || 0);
       conversationId = null;
       writeStorage(sessionStorageKey, userSessionId);
       writeStorage(sessionTokenStorageKey, signedSessionToken);
+      writeStorage(sessionExpiresStorageKey, String(sessionExpiresAt));
       writeStorage(conversationStorageKey, null);
     })();
     try {

@@ -9,7 +9,9 @@ const script = await fs.readFile(
 assert.match(script, /right: var\(--litx-mobile-edge, 16px\) !important/, "mobile launcher must use the measured storefront edge");
 assert.match(script, /bottom: var\(--litx-mobile-bottom/, "mobile launcher must use the measured storefront bottom offset");
 assert.match(script, /#carthike-chat-button-container/, "layout coordinator must recognize the merchant WhatsApp launcher");
-assert.match(script, /window\.innerHeight - whatsapp\.rect\.top \+ gap/, "layout coordinator must place LitX above the measured WhatsApp box");
+assert.match(script, /window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight/, "layout coordinator must place LitX below the measured WhatsApp box");
+assert.match(script, /sessionExpiresStorageKey/, "widget session must persist with an explicit expiry");
+assert.match(script, /readSessionExpiry\(signedSessionToken\)/, "existing signed sessions must migrate without losing chat history");
 assert.match(script, /visualViewport\.addEventListener\('resize'/, "layout must respond to mobile visual viewport changes");
 assert.match(script, /src\.includes\('\/api\/shopify\/widget\.js'\)/, "layout must survive Shopify script optimizers by reading its own URL");
 const dom = new JSDOM(
@@ -53,6 +55,7 @@ window.fetch = async (url, options = {}) => {
         data: {
           sessionId: "00000000-0000-4000-8000-000000000111",
           token: "signed-widget-session-token",
+          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
         },
       }),
       {
@@ -704,6 +707,10 @@ restoredWindow.localStorage.setItem(
 restoredWindow.localStorage.setItem(
   "litx:00000000-0000-4000-8000-000000000001:session-token",
   "restored-signed-widget-token",
+);
+restoredWindow.localStorage.setItem(
+  "litx:00000000-0000-4000-8000-000000000001:session-expires",
+  String(Date.now() + 30 * 24 * 60 * 60 * 1000),
 );
 let historyRequest = "";
 let includeOperatorReply = false;

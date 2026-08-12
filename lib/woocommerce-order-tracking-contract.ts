@@ -1,6 +1,7 @@
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const ORDER_PATTERNS = [
-  /(?:ordine|order|numero|n[°º.]?|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{1,39})/i,
+  /\b(?:ordine|order|numero\s+d[’']ordine|order\s+number|n[°º.]?)\s*[:#-]?\s*((?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{1,39})\b/i,
+  /#\s*([A-Z0-9][A-Z0-9-]{1,39})\b/i,
   /^\s*#\s*([A-Z0-9][A-Z0-9-]{1,39})\s*$/i,
 ] as const;
 const ORDER_INTENT = /\b(ordine|order|spedizion|tracking|traccia|pacco|consegna|corriere)\b|dov['’]?e\s+(?:il\s+)?(?:mio\s+)?(?:ordine|pacco)/i;
@@ -42,7 +43,12 @@ export function parseOrderLookupMessage(text: string, previousAssistantText = ""
   }
   const previousRequestedVerification = /numero d[’']ordine.*email|email.*numero d[’']ordine/i.test(previousAssistantText);
   const hasIntent = ORDER_INTENT.test(text) || (previousRequestedVerification && Boolean(email || orderNumber));
-  return { orderNumber, email, hasIntent, containsCredentials: Boolean(email || orderNumber) };
+  return {
+    orderNumber,
+    email,
+    hasIntent,
+    containsCredentials: hasIntent && Boolean(email || orderNumber),
+  };
 }
 
 export function redactOrderLookupMessage(text: string, parsed = parseOrderLookupMessage(text)) {
