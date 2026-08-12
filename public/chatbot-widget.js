@@ -1301,11 +1301,18 @@
         return;
       }
       document.body.classList.toggle('litx-hide-back-to-top', shopifyLayout.hideBackToTop !== false);
-      const launcherWidth = launcher ? launcher.getBoundingClientRect().width || 50 : 50;
+      const launcherRect = launcher ? launcher.getBoundingClientRect() : null;
+      const launcherWidth = launcherRect?.width || 50;
+      const launcherHeight = launcherRect?.height || 50;
       const whatsapp = shopifyLayout.placement === 'corner' ? null : findWhatsAppLauncher();
       if (whatsapp) {
-        const right = Math.max(edge, window.innerWidth - whatsapp.rect.right + Math.max(0, (whatsapp.rect.width - launcherWidth) / 2));
-        const bottom = Math.max(84, window.innerHeight - whatsapp.rect.top + gap);
+        const roomBeside = whatsapp.rect.left - gap - launcherWidth >= edge;
+        const right = roomBeside
+          ? window.innerWidth - whatsapp.rect.left + gap
+          : Math.max(edge, window.innerWidth - whatsapp.rect.right + Math.max(0, (whatsapp.rect.width - launcherWidth) / 2));
+        const bottom = roomBeside
+          ? Math.max(84, window.innerHeight - whatsapp.rect.bottom + Math.max(0, (whatsapp.rect.height - launcherHeight) / 2))
+          : Math.max(84, window.innerHeight - whatsapp.rect.top + gap);
         widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(right)}px`);
         widgetContainer.style.setProperty('--litx-mobile-bottom', `${Math.round(bottom)}px`);
       } else {
