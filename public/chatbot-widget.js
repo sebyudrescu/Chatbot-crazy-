@@ -1340,6 +1340,13 @@
         const bottom = Math.max(edge, window.innerHeight - whatsapp.rect.bottom - gap - launcherHeight);
         widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(right)}px`);
         widgetContainer.style.setProperty('--litx-mobile-bottom', `${Math.round(bottom)}px`);
+        if (launcher) {
+          const positionedRect = launcher.getBoundingClientRect();
+          const centerDelta = positionedRect.left + positionedRect.width / 2 - (whatsapp.rect.left + whatsapp.rect.width / 2);
+          if (Math.abs(centerDelta) > 1) {
+            widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(Math.max(8, right + centerDelta))}px`);
+          }
+        }
       } else {
         widgetContainer.style.setProperty('--litx-mobile-edge', `${edge}px`);
         widgetContainer.style.setProperty('--litx-mobile-bottom', `calc(env(safe-area-inset-bottom, 0px) + 84px)`);
