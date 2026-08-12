@@ -6,6 +6,8 @@ const script = await fs.readFile(
   new URL("../public/chatbot-widget.js", import.meta.url),
   "utf8",
 );
+assert.match(script, /right: 82px !important/, "mobile launcher must sit beside the merchant WhatsApp control");
+assert.match(script, /bottom: max\(140px, calc\(env\(safe-area-inset-bottom\) \+ 132px\)\) !important/, "mobile launcher must align with the merchant support row");
 const dom = new JSDOM(
   "<!doctype html><html><head></head><body></body></html>",
   {
@@ -865,8 +867,8 @@ assert.match(
 
 const widgetStyles = window.document.querySelector("style")?.textContent || "";
 assert.match(widgetStyles, /grid-auto-columns:\s*100%/, "Il carosello deve mostrare una card completa per pagina");
-assert.match(widgetStyles, /right:\s*22px !important/, "Il launcher mobile deve occupare lo slot della freccia torna su");
-assert.match(widgetStyles, /bottom:\s*max\(58px,\s*calc\(env\(safe-area-inset-bottom\) \+ 50px\)\) !important/, "Il launcher mobile deve restare sotto WhatsApp con spazio visivo sufficiente");
+assert.match(widgetStyles, /right:\s*82px !important/, "Il launcher mobile deve occupare lo slot accanto a WhatsApp");
+assert.match(widgetStyles, /bottom:\s*max\(140px,\s*calc\(env\(safe-area-inset-bottom\) \+ 132px\)\) !important/, "Il launcher mobile deve restare allineato a WhatsApp senza sovrapporsi");
 assert.match(widgetStyles, /\.chatbot-launcher\s*\{[^}]*width:\s*50px;[^}]*height:\s*50px;/s, "Il launcher mobile deve avere una dimensione compatta simile a WhatsApp");
 assert.match(widgetStyles, /\.t4s-back-to-top,\s*body\.litx-chat-open #chwhatsapp-btn/, "La freccia torna su deve lasciare il posto a LitX");
 assert.match(widgetStyles, /body\.litx-chat-open #chwhatsapp-btn/, "WhatsApp non viene nascosto mentre la chat e aperta");

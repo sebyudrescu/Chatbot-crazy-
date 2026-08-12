@@ -16,6 +16,8 @@ const proxySource = fs.readFileSync(path.join(process.cwd(), 'proxy.ts'), 'utf8'
 assert.match(proxySource, /publicPaths[^\n]+['"]\/api\/shopify\/widget\.js['"]/, 'the storefront loader must bypass owner login')
 assert.doesNotMatch(proxySource, /publicPrefixes[^\n]+['"]\/api\/shopify\/['"]/, 'Shopify admin APIs must not become public as a group')
 const widgetRoute = fs.readFileSync(path.join(process.cwd(), 'app/api/embed/widget.js/route.ts'), 'utf8')
+const storefrontLoader = fs.readFileSync(path.join(process.cwd(), 'shopify/extensions/litx-chat-widget/assets/litx-loader.js'), 'utf8')
+assert.match(storefrontLoader, /widget\.js\?v=\d{8}-\d+&shop=/, 'the Shopify loader must version the remote widget URL so phones do not keep stale positioning CSS')
 assert.match(widgetRoute, /Cache-Control['"]:\s*['"]private, no-store['"]/, 'domain decisions must never be shared through a public CDN cache')
 assert.match(widgetRoute, /Vary['"]:\s*['"]Origin, Referer['"]/, 'widget script responses must vary by storefront origin')
 console.log('Shopify widget onboarding tests passed')
