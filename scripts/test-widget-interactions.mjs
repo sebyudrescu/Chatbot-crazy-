@@ -865,6 +865,7 @@ assert.match(
 const widgetStyles = window.document.querySelector("style")?.textContent || "";
 assert.match(widgetStyles, /grid-auto-columns:\s*100%/, "Il carosello deve mostrare una card completa per pagina");
 assert.match(widgetStyles, /right:\s*22px !important/, "Il launcher mobile deve occupare lo slot della freccia torna su");
+assert.match(widgetStyles, /bottom:\s*max\(58px,\s*calc\(env\(safe-area-inset-bottom\) \+ 50px\)\) !important/, "Il launcher mobile deve restare sotto WhatsApp con spazio visivo sufficiente");
 assert.match(widgetStyles, /\.chatbot-launcher\s*\{[^}]*width:\s*50px;[^}]*height:\s*50px;/s, "Il launcher mobile deve avere una dimensione compatta simile a WhatsApp");
 assert.match(widgetStyles, /\.t4s-back-to-top,\s*body\.litx-chat-open #chwhatsapp-btn/, "La freccia torna su deve lasciare il posto a LitX");
 assert.match(widgetStyles, /body\.litx-chat-open #chwhatsapp-btn/, "WhatsApp non viene nascosto mentre la chat e aperta");

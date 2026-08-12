@@ -806,7 +806,9 @@
     @media (max-width: 480px) {
       .chatbot-widget-container {
         ${config.position.includes('right') ? 'right: 22px !important; left: auto !important;' : 'left: 22px !important; right: auto !important;'}
-        bottom: max(88px, calc(env(safe-area-inset-bottom) + 72px)) !important;
+        /* Occupy the former back-to-top slot below the merchant WhatsApp
+           control. The previous 88px offset left only ~2px between shadows. */
+        bottom: max(58px, calc(env(safe-area-inset-bottom) + 50px)) !important;
       }
 
       .chatbot-launcher {
