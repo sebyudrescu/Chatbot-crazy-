@@ -1930,6 +1930,9 @@
       button.setAttribute('aria-label', value === 'positive' ? 'Risposta utile' : 'Risposta non utile');
       button.setAttribute('aria-pressed', 'false');
       button.onclick = async () => {
+        const feedbackComment = value === 'negative'
+          ? window.prompt('Cosa non ti ha aiutato? (facoltativo, non inserire dati personali)')
+          : null;
         const buttons = feedback.querySelectorAll('button');
         buttons.forEach((item) => { item.disabled = true; });
         try {
@@ -1937,7 +1940,7 @@
           const response = await fetch(`${config.apiUrl}/api/embed/${config.botId}/feedback`, {
             method: 'POST',
             headers: widgetHeaders(),
-            body: JSON.stringify({ messageId, feedback: value, userSessionId }),
+            body: JSON.stringify({ messageId, feedback: value, feedbackComment: feedbackComment ? feedbackComment.slice(0, 1000) : null, userSessionId }),
           });
           if (!response.ok) throw new Error('Feedback non salvato');
           button.setAttribute('aria-pressed', 'true');

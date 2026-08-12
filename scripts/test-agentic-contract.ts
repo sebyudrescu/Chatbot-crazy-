@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 const toolsSource = readFileSync(resolve(process.cwd(), 'lib/agentic-tools.ts'), 'utf8')
 const orchestratorSource = readFileSync(resolve(process.cwd(), 'lib/agentic-orchestrator.ts'), 'utf8')
+const runtimeSource = readFileSync(resolve(process.cwd(), 'lib/agentic-chat-runtime.ts'), 'utf8')
 
 for (const toolName of [
   'search_products',
@@ -29,6 +30,8 @@ assert.match(orchestratorSource, /conversationHistory\.slice\(-12\)/)
 assert.match(orchestratorSource, /isAgentToolName\(call\.name\)/)
 assert.match(orchestratorSource, /Se il cliente cambia argomento/)
 assert.match(orchestratorSource, /non piÃ¹ di due chiarimenti/)
+assert.match(runtimeSource, /commerce\.order_lookup\.verified/)
+assert.match(runtimeSource, /protectedDataStored:\s*false/)
 assert.doesNotMatch(toolsSource, /filter\(\(variant\) => !args\.variant_id/)
 assert.match(toolsSource, /selected_reference: variant\.id === args\.variant_id/)
 

@@ -506,6 +506,7 @@ assert.equal(
 assert.deepEqual(requests[2]?.body, {
   messageId: "00000000-0000-4000-8000-000000000003",
   feedback: "positive",
+  feedbackComment: null,
   userSessionId: "00000000-0000-4000-8000-000000000111",
 });
 assert.equal(feedbackButtons[0].getAttribute("aria-pressed"), "true");
@@ -869,6 +870,7 @@ assert.match(widgetStyles, /bottom:\s*max\(58px,\s*calc\(env\(safe-area-inset-bo
 assert.match(widgetStyles, /\.chatbot-launcher\s*\{[^}]*width:\s*50px;[^}]*height:\s*50px;/s, "Il launcher mobile deve avere una dimensione compatta simile a WhatsApp");
 assert.match(widgetStyles, /\.t4s-back-to-top,\s*body\.litx-chat-open #chwhatsapp-btn/, "La freccia torna su deve lasciare il posto a LitX");
 assert.match(widgetStyles, /body\.litx-chat-open #chwhatsapp-btn/, "WhatsApp non viene nascosto mentre la chat e aperta");
+assert.match(script, /Cosa non ti ha aiutato\?/u, "Il feedback negativo deve poter spiegare il problema alla Control Room");
 window.ChatbotWidget.open();
 assert.equal(window.document.body.classList.contains("litx-chat-open"), true, "L'apertura non coordina i controlli del negozio");
 window.ChatbotWidget.close();

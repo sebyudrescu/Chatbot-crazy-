@@ -52,7 +52,7 @@ function topCounts(values: Array<string | null | undefined>, take = 8) {
 async function analyzeConversations(botId: string, args: any) {
   const since = new Date(Date.now() - Math.max(1, args.days) * 86400000);
   const requested = Math.min(args.limit, 200);
-  const [available, rows, commerceEvents, evaluationCases] = await Promise.all([
+  const [available, rows, commerceEvents, evaluationCases, orderOutcomeEvents] = await Promise.all([
     prisma.conversation.count({ where: { botId, startedAt: { gte: since } } }),
     prisma.conversation.findMany({
       where: { botId, startedAt: { gte: since } }, orderBy: { startedAt: "desc" }, take: requested,
@@ -67,6 +67,10 @@ async function analyzeConversations(botId: string, args: any) {
       where: { botId, isActive: true },
       select: { id: true, name: true, runs: { orderBy: { createdAt: "desc" }, take: 1, select: { passed: true, createdAt: true, failureReason: true } } },
       orderBy: { updatedAt: "desc" }, take: 100,
+    }),
+    prisma.event.findMany({
+      where: { botId, timestamp: { gte: since }, eventType: { startsWith: "commerce.order_lookup." } },
+      select: { eventType: true, success: true, timestamp: true }, orderBy: { timestamp: "desc" }, take: 1000,
     }),
   ]);
   const assistantMessages = rows.flatMap(row => row.messages.filter(message => message.role === "assistant"));
@@ -123,6 +127,7 @@ async function analyzeConversations(botId: string, args: any) {
       failedToolCalls: topCounts(toolExecutions.filter(item => item.success === false).map(item => item.name), 12),
       verifiedOrderLookups: toolExecutions.filter(item => item.name === "get_order_status" && item.success).length,
       knowledgeAnswers: toolExecutions.filter(item => item.name === "search_knowledge_base" && item.success).length,
+      orderTrackingOutcomes: topCounts(orderOutcomeEvents.map(event => event.eventType.replace("commerce.order_lookup.", "")), 8),
     },
     metricDefinitions: {
       resolved: "Conversazione marcata esplicitamente come risolta dal proprietario o da un flusso verificato.",

@@ -130,6 +130,28 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
         : {}),
     },
   });
+  const orderTool = agentResult.toolTrace.find((trace) => trace.name === "get_order_status");
+  if (orderTool) {
+    await prisma.event.create({
+      data: {
+        botId: input.context.botId,
+        conversationId: input.context.conversationId,
+        userId: input.userSessionId,
+        eventType: agentResult.orderStatusCard
+          ? "commerce.order_lookup.verified"
+          : agentResult.orderLookupForm
+            ? "commerce.order_lookup.verification_requested"
+            : orderTool.success
+              ? "commerce.order_lookup.no_match"
+              : "commerce.order_lookup.failed",
+        category: "conversation",
+        severity: orderTool.success ? "info" : "warning",
+        success: orderTool.success,
+        durationMs: orderTool.durationMs,
+        metadata: stringifyJSON({ providerLookup: true, protectedDataStored: false }),
+      },
+    });
+  }
 
   const sourceIds = agentResult.sources
     .map((source) => source.sourceId)
