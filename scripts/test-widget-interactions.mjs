@@ -10,6 +10,7 @@ assert.match(script, /right: var\(--litx-mobile-edge, 16px\) !important/, "mobil
 assert.match(script, /bottom: var\(--litx-mobile-bottom/, "mobile launcher must use the measured storefront bottom offset");
 assert.match(script, /#carthike-chat-button-container/, "layout coordinator must recognize the merchant WhatsApp launcher");
 assert.match(script, /window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight/, "layout coordinator must place LitX below the measured WhatsApp box");
+assert.match(script, /Math\.max\(edge, window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight\)/, "WhatsApp stacking must not be overridden by the old mobile bottom floor");
 assert.match(script, /sessionExpiresStorageKey/, "widget session must persist with an explicit expiry");
 assert.match(script, /readSessionExpiry\(signedSessionToken\)/, "existing signed sessions must migrate without losing chat history");
 assert.match(script, /visualViewport\.addEventListener\('resize'/, "layout must respond to mobile visual viewport changes");

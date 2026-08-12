@@ -1337,7 +1337,7 @@
       const whatsapp = shopifyLayout.placement === 'corner' ? null : findWhatsAppLauncher();
       if (whatsapp) {
         const right = Math.max(edge, window.innerWidth - whatsapp.rect.right + Math.max(0, (whatsapp.rect.width - launcherWidth) / 2));
-        const bottom = Math.max(84, window.innerHeight - whatsapp.rect.bottom - gap - launcherHeight);
+        const bottom = Math.max(edge, window.innerHeight - whatsapp.rect.bottom - gap - launcherHeight);
         widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(right)}px`);
         widgetContainer.style.setProperty('--litx-mobile-bottom', `${Math.round(bottom)}px`);
       } else {

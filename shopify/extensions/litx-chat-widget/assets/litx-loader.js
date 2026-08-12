@@ -18,7 +18,7 @@
       var script = document.createElement('script');
       script.async = true;
       var widgetUrl = new URL('https://litx-ai-agent-studio.vercel.app/api/shopify/widget.js');
-      widgetUrl.searchParams.set('v', '20260812-8');
+      widgetUrl.searchParams.set('v', '20260812-9');
       widgetUrl.searchParams.set('shop', shop);
       widgetUrl.searchParams.set('placement', layout.placement || 'auto');
       widgetUrl.searchParams.set('gap', String(layout.gap || 14));
