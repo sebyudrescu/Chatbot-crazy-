@@ -44,7 +44,25 @@
 
   // Merge configurazione utente
   const config = Object.assign({}, DEFAULT_CONFIG, window.ChatbotConfig || {});
-  const shopifyLayout = Object.assign({ placement: 'auto', gap: 14, edge: 16, hideBackToTop: true }, config.shopifyLayout || {});
+  const widgetScriptUrl = Array.from(document.scripts)
+    .map((script) => script.src)
+    .find((src) => src && src.includes('/api/shopify/widget.js'));
+  let urlShopifyLayout = null;
+  if (widgetScriptUrl) {
+    try {
+      const params = new URL(widgetScriptUrl).searchParams;
+      if (params.has('placement')) {
+        urlShopifyLayout = {
+          placement: params.get('placement') === 'corner' ? 'corner' : 'auto',
+          gap: Number(params.get('gap')) || 14,
+          edge: Number(params.get('edge')) || 16,
+          hideBackToTop: params.get('hideBackToTop') !== 'false'
+        };
+      }
+    } catch {}
+  }
+  const rawShopifyLayout = config.shopifyLayout || urlShopifyLayout;
+  const shopifyLayout = Object.assign({ placement: 'auto', gap: 14, edge: 16, hideBackToTop: true }, rawShopifyLayout || {});
   const launcherSize = config.widgetSize === 'small' ? 50 : config.widgetSize === 'large' ? 70 : 60;
   const launcherRadius = config.widgetShape === 'circle' ? '50%' : config.widgetShape === 'square' ? '8px' : '18px';
 
@@ -1230,7 +1248,7 @@
   }
 
   function installStorefrontLayoutCoordinator() {
-    if (!widgetContainer || config.displayMode === 'page' || !config.shopifyLayout) return;
+    if (!widgetContainer || config.displayMode === 'page' || !rawShopifyLayout) return;
     const clamp = (value, min, max, fallback) => {
       const number = Number(value);
       return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;

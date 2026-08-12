@@ -11,6 +11,7 @@ assert.match(script, /bottom: var\(--litx-mobile-bottom/, "mobile launcher must 
 assert.match(script, /#carthike-chat-button-container/, "layout coordinator must recognize the merchant WhatsApp launcher");
 assert.match(script, /window\.innerHeight - whatsapp\.rect\.top \+ gap/, "layout coordinator must place LitX above the measured WhatsApp box");
 assert.match(script, /visualViewport\.addEventListener\('resize'/, "layout must respond to mobile visual viewport changes");
+assert.match(script, /src\.includes\('\/api\/shopify\/widget\.js'\)/, "layout must survive Shopify script optimizers by reading its own URL");
 const dom = new JSDOM(
   "<!doctype html><html><head></head><body></body></html>",
   {
