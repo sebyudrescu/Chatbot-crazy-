@@ -64,6 +64,12 @@ export async function GET(request: NextRequest) {
     shadow: settings.shadow,
     gradient: settings.gradient,
     customCSS: settings.customCSS,
+    shopifyLayout: request.nextUrl.searchParams.has('placement') ? {
+      placement: request.nextUrl.searchParams.get('placement') === 'corner' ? 'corner' : 'auto',
+      gap: Math.min(32, Math.max(8, Number(request.nextUrl.searchParams.get('gap')) || 14)),
+      edge: Math.min(32, Math.max(8, Number(request.nextUrl.searchParams.get('edge')) || 16)),
+      hideBackToTop: request.nextUrl.searchParams.get('hideBackToTop') !== 'false',
+    } : null,
   }
 
   const widgetPath = path.join(process.cwd(), 'public', 'chatbot-widget.js')

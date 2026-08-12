@@ -22,5 +22,9 @@ export async function GET(request: NextRequest) {
 
   const target = new URL('/api/embed/widget.js', request.nextUrl.origin)
   target.searchParams.set('botId', connection.botId)
+  for (const key of ['placement', 'gap', 'edge', 'hideBackToTop'] as const) {
+    const value = request.nextUrl.searchParams.get(key)
+    if (value) target.searchParams.set(key, value)
+  }
   return NextResponse.redirect(target, { status: 307, headers: { 'Cache-Control': 'private, no-store' } })
 }

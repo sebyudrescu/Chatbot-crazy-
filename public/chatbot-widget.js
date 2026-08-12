@@ -44,7 +44,7 @@
 
   // Merge configurazione utente
   const config = Object.assign({}, DEFAULT_CONFIG, window.ChatbotConfig || {});
-  const shopifyLayout = Object.assign({ placement: 'auto', gap: 14, edge: 16, hideBackToTop: true }, window.LitxShopifyLayout || {});
+  const shopifyLayout = Object.assign({ placement: 'auto', gap: 14, edge: 16, hideBackToTop: true }, config.shopifyLayout || {});
   const launcherSize = config.widgetSize === 'small' ? 50 : config.widgetSize === 'large' ? 70 : 60;
   const launcherRadius = config.widgetShape === 'circle' ? '50%' : config.widgetShape === 'square' ? '8px' : '18px';
 
@@ -1230,7 +1230,7 @@
   }
 
   function installStorefrontLayoutCoordinator() {
-    if (!widgetContainer || config.displayMode === 'page' || !window.LitxShopifyLayout) return;
+    if (!widgetContainer || config.displayMode === 'page' || !config.shopifyLayout) return;
     const clamp = (value, min, max, fallback) => {
       const number = Number(value);
       return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;

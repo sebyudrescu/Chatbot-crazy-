@@ -14,10 +14,17 @@
       var shop = embedContext.shop;
       if (!shop || !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(shop)) return;
       window.__litxShopifyWidgetLoading = true;
-      window.LitxShopifyLayout = embedContext.layout || {};
+      var layout = embedContext.layout || {};
       var script = document.createElement('script');
       script.async = true;
-      script.src = 'https://litx-ai-agent-studio.vercel.app/api/shopify/widget.js?v=20260812-5&shop=' + encodeURIComponent(shop);
+      var widgetUrl = new URL('https://litx-ai-agent-studio.vercel.app/api/shopify/widget.js');
+      widgetUrl.searchParams.set('v', '20260812-6');
+      widgetUrl.searchParams.set('shop', shop);
+      widgetUrl.searchParams.set('placement', layout.placement || 'auto');
+      widgetUrl.searchParams.set('gap', String(layout.gap || 14));
+      widgetUrl.searchParams.set('edge', String(layout.edge || 16));
+      widgetUrl.searchParams.set('hideBackToTop', layout.hideBackToTop === false ? 'false' : 'true');
+      script.src = widgetUrl.toString();
       document.head.appendChild(script);
     } catch (error) {
       console.error('LitX widget could not start', error);
