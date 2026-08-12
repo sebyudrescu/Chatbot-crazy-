@@ -805,10 +805,10 @@
 
     @media (max-width: 480px) {
       .chatbot-widget-container {
-        ${config.position.includes('right') ? 'right: 82px !important; left: auto !important;' : 'left: 82px !important; right: auto !important;'}
-        /* Keep the two support launchers in one tidy row: WhatsApp remains on
-           the outer edge and LitX occupies the former back-to-top slot. */
-        bottom: max(140px, calc(env(safe-area-inset-bottom) + 132px)) !important;
+        ${config.position.includes('right') ? 'right: 22px !important; left: auto !important;' : 'left: 22px !important; right: auto !important;'}
+        /* Stack LitX above the merchant's 48px WhatsApp launcher. Both stay
+           on the outer edge, with a clear 16px gap and no page obstruction. */
+        bottom: max(204px, calc(env(safe-area-inset-bottom) + 196px)) !important;
       }
 
       .chatbot-launcher {
