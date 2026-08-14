@@ -402,6 +402,70 @@ export async function orchestrateAgenticResponse(
     handoff ||= actions.handoffActivated;
     orderLookupForm ||= actions.orderLookupForm;
   }
+  if (actions.forceProductCards && productCards.length === 0) {
+    const toolContext = {
+      botId: context.botId,
+      conversationId: context.conversationId,
+      rateLimitScope: context.rateLimitScope,
+      recentMessages: context.conversationHistory,
+      previousAssistantText: context.previousAssistantText,
+      retrievalMinScore: context.botConfig.ragCalibration?.retrievalMinScore ?? context.botConfig.retrievalMinScore,
+      rerankerEnabled: context.botConfig.rerankerEnabled,
+      liveWebSearchEnabled: false,
+      liveWebAllowedDomains: [],
+    };
+    const searchStartedAt = Date.now();
+    try {
+      const search = await executeAgentTool("search_products", {
+        query: context.query,
+        category: null,
+        color: null,
+        material: null,
+        gender: null,
+        min_price: null,
+        max_price: null,
+        available_only: true,
+        exclude_product_ids: [],
+        limit: 5,
+      }, toolContext);
+      const found = Array.isArray(search.output.products)
+        ? search.output.products as Array<{ product_id?: unknown; variant_id?: unknown }>
+        : [];
+      toolTrace.push({
+        name: "search_products",
+        durationMs: Date.now() - searchStartedAt,
+        success: true,
+        resultCount: found.length,
+      });
+      const products = found
+        .filter((item) => typeof item.product_id === "string")
+        .map((item) => ({
+          product_id: item.product_id as string,
+          variant_id: typeof item.variant_id === "string" ? item.variant_id : null,
+        }));
+      if (products.length) {
+        const presentStartedAt = Date.now();
+        const presented = await executeAgentTool("present_products", { products }, toolContext);
+        productCards = mergeCards(productCards, presented.artifacts.productCards);
+        toolTrace.push({
+          name: "present_products",
+          durationMs: Date.now() - presentStartedAt,
+          success: productCards.length > 0,
+          resultCount: productCards.length,
+        });
+      }
+    } catch (error) {
+      toolTrace.push({
+        name: "search_products",
+        durationMs: Date.now() - searchStartedAt,
+        success: false,
+        error: error instanceof Error ? error.message.slice(0, 160) : "product_surface_failed",
+      });
+    }
+    if (productCards.length === 0) {
+      finalText = "Non ho trovato prodotti verificati da mostrarti in questo momento. Posso aiutarti a restringere la ricerca per categoria, stile o budget.";
+    }
+  }
   const intent = inferIntent(toolTrace);
   const hasVerifiedEvidence = productCards.length > 0 || Boolean(orderStatusCard) || sources.length > 0;
   return {
