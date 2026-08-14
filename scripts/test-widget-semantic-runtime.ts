@@ -56,6 +56,7 @@ const orchestrator = readFileSync("lib/agentic-orchestrator.ts", "utf8");
 const actionEngine = readFileSync("lib/action-engine.ts", "utf8");
 const historyRoute = readFileSync("app/api/embed/[botId]/conversations/[conversationId]/route.ts", "utf8");
 const chatRoute = readFileSync("app/api/chat/route.ts", "utf8");
+const testingPage = readFileSync("app/testing/page.tsx", "utf8");
 assert.match(orchestrator, /name: "run_configured_action"/);
 assert.match(orchestrator, /type: \{ in: \["show_widget", "booking_link", "collect_lead", "handoff", "api_widget"\] \}/);
 assert.match(orchestrator, /String\(config\.method \|\| "POST"\)\.toUpperCase\(\) === "GET"/);
@@ -66,5 +67,10 @@ assert.match(actionEngine, /mayStoreContact/);
 assert.match(actionEngine, /pendingLeadConsent/);
 assert.match(historyRoute, /declarativeWidgets: widgetsFromMessageMetadata\(sourceData\)/);
 assert.match(chatRoute, /declarativeWidgets: prepareWidgetsForMessage\(actionResult\.declarativeWidgets\)/);
+assert.match(testingPage, /sessionEpochRef\.current \+= 1/);
+assert.match(testingPage, /restoreControllerRef\.current\?\.abort\(\)/);
+assert.match(testingPage, /sendControllerRef\.current\?\.abort\(\)/);
+assert.match(testingPage, /sessionEpochRef\.current !== epoch/);
+assert.match(testingPage, /litx-testing-conversation:\$\{selectedId\}/);
 
 console.log("widget semantic routing and persistence contract: ok");

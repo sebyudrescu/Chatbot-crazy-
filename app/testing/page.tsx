@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle as TriangleAlert,
@@ -104,6 +104,9 @@ export default function TestingPage() {
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const sessionEpochRef = useRef(0);
+  const restoreControllerRef = useRef<AbortController | null>(null);
+  const sendControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch("/api/chatbots")
@@ -121,22 +124,32 @@ export default function TestingPage() {
     [agents, selectedId],
   );
   useEffect(() => {
+    sessionEpochRef.current += 1;
+    restoreControllerRef.current?.abort();
+    sendControllerRef.current?.abort();
     setMessages(selected ? [welcomeTestMessage(selected)] : []);
     setConversationId(null);
     setDiagnostics(null);
     setInput("");
+    setSending(false);
     setUserSessionId(
       selectedId ? `test_${selectedId}_${crypto.randomUUID()}` : "",
     );
   }, [selectedId, selected]);
   useEffect(() => {
     if (!selectedId || !selected) return;
+    const epoch = sessionEpochRef.current;
+    const controller = new AbortController();
+    restoreControllerRef.current = controller;
     let id = "";
     try { id = localStorage.getItem(`litx-testing-conversation:${selectedId}`) || ""; } catch { return; }
     if (!id) return;
-    void fetch(`/api/conversations/${encodeURIComponent(id)}`)
+    void fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+      signal: controller.signal,
+    })
       .then((response) => response.json())
       .then((result) => {
+        if (controller.signal.aborted || sessionEpochRef.current !== epoch) return;
         if (!result.success || result.data?.botId !== selectedId) return;
         const restored = (result.data.messages || [])
           .filter((message: TestMessage) => message.role === "user" || message.role === "assistant")
@@ -149,14 +162,25 @@ export default function TestingPage() {
           setConversationId(id);
           setMessages(restored);
         }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
       });
+    return () => controller.abort();
   }, [selectedId, selected]);
 
   const resetTest = () => {
+    sessionEpochRef.current += 1;
+    restoreControllerRef.current?.abort();
+    sendControllerRef.current?.abort();
     setMessages(selected ? [welcomeTestMessage(selected)] : []);
     setConversationId(null);
     setDiagnostics(null);
     setInput("");
+    setSending(false);
+    setUserSessionId(
+      selectedId ? `test_${selectedId}_${crypto.randomUUID()}` : "",
+    );
     try { localStorage.removeItem(`litx-testing-conversation:${selectedId}`); } catch { /* unavailable */ }
   };
 
@@ -175,6 +199,10 @@ export default function TestingPage() {
     ]);
     setInput("");
     setSending(true);
+    const epoch = sessionEpochRef.current;
+    const controller = new AbortController();
+    sendControllerRef.current?.abort();
+    sendControllerRef.current = controller;
     const started = performance.now();
     try {
       let activeSessionId =
@@ -188,6 +216,7 @@ export default function TestingPage() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           botId: selected.id,
           message: content,
@@ -196,6 +225,7 @@ export default function TestingPage() {
         }),
       });
       const result = await response.json();
+      if (controller.signal.aborted || sessionEpochRef.current !== epoch) return;
       if (!response.ok || !result.success) {
         const detail =
           result.error === "knowledge_base_not_ready"
@@ -248,7 +278,12 @@ export default function TestingPage() {
         groundingEvidence: result.data.grounding?.evidenceCount,
         groundingThreshold: result.data.grounding?.threshold,
       });
-    } catch {
+    } catch (error: unknown) {
+      if (
+        controller.signal.aborted ||
+        sessionEpochRef.current !== epoch ||
+        (error instanceof DOMException && error.name === "AbortError")
+      ) return;
       setMessages((current) => [
         ...current,
         {
@@ -260,7 +295,7 @@ export default function TestingPage() {
         },
       ]);
     } finally {
-      setSending(false);
+      if (sessionEpochRef.current === epoch) setSending(false);
     }
   };
 
