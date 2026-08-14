@@ -243,6 +243,10 @@ function testWidgetStudioContracts() {
   assert.match(generator, /non può creare server action/);
   assert.match(restoreRoute, /assertSafeHttpsRemoteUrl/);
   assert.doesNotMatch(restoreRoute, /await assertSafeRemoteUrl/);
+  assert.match(restoreRoute, /title: typeof definition\.defaults\.title/);
+  assert.match(restoreRoute, /description: typeof definition\.defaults\.body/);
+  assert.match(studio, /title: typeof restored\.defaults\.title/);
+  assert.match(studio, /updateDefinition\(restored\)/);
 }
 
 async function testConcurrentIdempotencyClaim() {

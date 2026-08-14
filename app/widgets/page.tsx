@@ -646,7 +646,18 @@ export default function WidgetsPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Ripristino non riuscito");
       const selected = versions.find((item) => item.version === version);
-      if (selected) updateDefinition(WidgetDefinitionSchema.parse(selected.definition));
+      if (selected) {
+        const restored = WidgetDefinitionSchema.parse(selected.definition);
+        updateDefinition(restored);
+        setTemplateId(restored.template === "custom" ? templateId : restored.template);
+        setForm((current) => ({
+          ...current,
+          title: typeof restored.defaults.title === "string" ? restored.defaults.title : current.title,
+          body: typeof restored.defaults.body === "string" ? restored.defaults.body : current.body,
+          label: typeof restored.defaults.label === "string" ? restored.defaults.label : current.label,
+          url: typeof restored.defaults.url === "string" ? restored.defaults.url : current.url,
+        }));
+      }
       setNotice(`Versione ${version} ripristinata e resa operativa.`);
       await loadWidgets();
       const versionsResponse = await fetch(`/api/actions/${selectedId}/widget-versions`);

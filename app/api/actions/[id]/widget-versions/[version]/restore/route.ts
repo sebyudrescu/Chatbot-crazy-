@@ -31,7 +31,15 @@ export async function POST(
   const config = decryptConfigSecrets(JSON.parse(action.config)) as Record<string, unknown>;
   const previous = widgetDefinitionFromConfig(config);
   const latest = await prisma.widgetVersion.findFirst({ where: { actionId: id }, orderBy: { version: "desc" }, select: { version: true } });
-  const restoredConfig = { ...config, template: definition.template === "custom" ? config.template : definition.template, definition };
+  const restoredConfig = {
+    ...config,
+    template: definition.template === "custom" ? config.template : definition.template,
+    title: typeof definition.defaults.title === "string" ? definition.defaults.title : config.title,
+    description: typeof definition.defaults.body === "string" ? definition.defaults.body : config.description,
+    label: typeof definition.defaults.label === "string" ? definition.defaults.label : config.label,
+    url: typeof definition.defaults.url === "string" ? definition.defaults.url : config.url,
+    definition,
+  };
   const updated = await prisma.$transaction(async (transaction) => {
     const next = await transaction.agentAction.update({
       where: { id },
