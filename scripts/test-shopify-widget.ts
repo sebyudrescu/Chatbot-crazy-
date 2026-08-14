@@ -20,6 +20,8 @@ const storefrontLoader = fs.readFileSync(path.join(process.cwd(), 'shopify/exten
 assert.match(storefrontLoader, /searchParams\.set\('v', '\d{8}-\d+'\)/, 'the Shopify loader must version the remote widget URL so phones do not keep stale positioning CSS')
 assert.match(storefrontLoader, /DOMContentLoaded/, 'the async Shopify asset must wait until its body app-embed context exists')
 assert.match(storefrontLoader, /function bootLitxWidget/, 'the Shopify loader must use an idempotent DOM-ready bootstrap')
+assert.match(storefrontLoader, /mountImmediateLauncher\(layout\)/, 'the Shopify asset must paint a launcher before the remote configuration round trip completes')
+assert.match(storefrontLoader, /__litxOpenOnReady/, 'an early launcher click must be honored when the full widget is ready')
 assert.match(storefrontLoader, /searchParams\.set\('placement'/, 'Theme Editor placement must travel with the remote widget request')
 assert.match(widgetRoute, /shopifyLayout:/, 'the server-rendered widget config must contain Shopify layout settings')
 assert.match(widgetRoute, /Cache-Control['"]:\s*['"]private, no-store['"]/, 'domain decisions must never be shared through a public CDN cache')

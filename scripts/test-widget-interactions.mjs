@@ -12,9 +12,11 @@ assert.match(script, /#carthike-chat-button-container/, "layout coordinator must
 assert.match(script, /window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight/, "layout coordinator must place LitX below the measured WhatsApp box");
 assert.match(script, /Math\.max\(edge, window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight\)/, "WhatsApp stacking must not be overridden by the old mobile bottom floor");
 assert.match(script, /positionedRect\.left \+ positionedRect\.width \/ 2/, "layout coordinator must correct the storefront fixed-position offset and center both launchers");
+assert.doesNotMatch(script, /visualViewport\.addEventListener\('scroll'/, "mobile browser chrome scrolling must not move the launcher");
+assert.match(script, /if \(layoutLocked\) return/, "storefront coordinates must remain locked after WhatsApp is measured");
 assert.match(script, /sessionExpiresStorageKey/, "widget session must persist with an explicit expiry");
 assert.match(script, /readSessionExpiry\(signedSessionToken\)/, "existing signed sessions must migrate without losing chat history");
-assert.match(script, /visualViewport\.addEventListener\('resize'/, "layout must respond to mobile visual viewport changes");
+assert.match(script, /window\.addEventListener\('resize', unlockForViewportWidthChange/, "layout must respond only to real viewport width changes");
 assert.match(script, /src\.includes\('\/api\/shopify\/widget\.js'\)/, "layout must survive Shopify script optimizers by reading its own URL");
 const dom = new JSDOM(
   "<!doctype html><html><head></head><body></body></html>",

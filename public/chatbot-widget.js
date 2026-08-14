@@ -1082,6 +1082,10 @@
     chatWindow.appendChild(inputContainer);
     widgetContainer.appendChild(chatWindow);
 
+    // Replace the immediate Shopify launcher without leaving a blank interval.
+    const immediateLauncher = document.getElementById('litx-widget-placeholder');
+    if (immediateLauncher) immediateLauncher.remove();
+
     // Add to page
     document.body.appendChild(widgetContainer);
     installStorefrontLayoutCoordinator();
@@ -1099,6 +1103,10 @@
 
     isLoaded = true;
     window.__litxWidgetInstances[config.botId] = { status: 'ready' };
+    if (window.__litxOpenOnReady) {
+      window.__litxOpenOnReady = false;
+      openChat();
+    }
   }
 
   // Chat functions
@@ -1289,6 +1297,9 @@
       ? window.matchMedia('(max-width: 480px)')
       : { matches: window.innerWidth <= 480 };
     let scheduled = false;
+    let layoutLocked = false;
+    let measuredWidth = window.innerWidth;
+    let observer = null;
 
     const visibleFixedBox = (element) => {
       let current = element;
@@ -1324,6 +1335,7 @@
 
     const applyLayout = () => {
       scheduled = false;
+      if (layoutLocked) return;
       if (!mobileQuery.matches) {
         widgetContainer.style.removeProperty('--litx-mobile-edge');
         widgetContainer.style.removeProperty('--litx-mobile-bottom');
@@ -1347,6 +1359,8 @@
             widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(Math.max(8, right + centerDelta))}px`);
           }
         }
+        layoutLocked = true;
+        if (observer) observer.disconnect();
       } else {
         widgetContainer.style.setProperty('--litx-mobile-edge', `${edge}px`);
         widgetContainer.style.setProperty('--litx-mobile-bottom', `calc(env(safe-area-inset-bottom, 0px) + 84px)`);
@@ -1359,13 +1373,19 @@
     };
 
     scheduleLayout();
-    window.addEventListener('resize', scheduleLayout, { passive: true });
-    window.addEventListener('orientationchange', scheduleLayout, { passive: true });
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', scheduleLayout, { passive: true });
-      window.visualViewport.addEventListener('scroll', scheduleLayout, { passive: true });
-    }
-    const observer = new MutationObserver(scheduleLayout);
+    const unlockForViewportWidthChange = () => {
+      if (Math.abs(window.innerWidth - measuredWidth) <= 2) return;
+      measuredWidth = window.innerWidth;
+      layoutLocked = false;
+      scheduleLayout();
+    };
+    window.addEventListener('resize', unlockForViewportWidthChange, { passive: true });
+    window.addEventListener('orientationchange', () => {
+      measuredWidth = window.innerWidth;
+      layoutLocked = false;
+      scheduleLayout();
+    }, { passive: true });
+    observer = new MutationObserver(scheduleLayout);
     observer.observe(document.body, { childList: true, subtree: true });
     window.setTimeout(scheduleLayout, 500);
     window.setTimeout(scheduleLayout, 2000);
