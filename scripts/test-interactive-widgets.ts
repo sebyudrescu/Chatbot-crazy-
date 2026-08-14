@@ -6,6 +6,16 @@ import {
   WidgetTemplateSchema,
   validateActionDefinition,
 } from "../lib/action-schema";
+import {
+  defaultWidgetDefinition,
+  publicWidgetDefinition,
+  validateWidgetData,
+  validateWidgetInitialData,
+  WidgetDefinitionSchema,
+  widgetDefinitionDiff,
+} from "../lib/widget-definition";
+import { claimIdempotentExecution } from "../lib/idempotency-claim";
+import { assertSafeHttpsRemoteUrl } from "../lib/url-safety";
 
 const templates = [
   "product_carousel",
@@ -39,6 +49,7 @@ function extractBranch(source: string, marker: string) {
 
 function testActionSchema() {
   assert.equal(ActionTypeSchema.parse("show_widget"), "show_widget");
+  assert.equal(ActionTypeSchema.parse("api_widget"), "api_widget");
   assert.equal(ActionTypeSchema.safeParse("run_script").success, false);
 
   for (const template of templates) {
@@ -85,6 +96,52 @@ function testActionSchema() {
       }),
     /richiede un URL HTTPS valido/,
   );
+}
+
+async function testDeclarativeWidgetSchema() {
+  const definition = defaultWidgetDefinition("lead_capture", { title: "Parla con noi" });
+  assert.equal(WidgetDefinitionSchema.parse(definition).root.type, "lead_form");
+  assert.equal(WidgetTemplateSchema.parse("custom"), "custom");
+  assert.deepEqual(widgetDefinitionDiff(definition, definition), ["Nessuna modifica funzionale"]);
+  assert.equal(validateWidgetData(definition, {
+    name: "Ada",
+    email: "ada@example.com",
+    consent: true,
+  }).name, "Ada");
+  assert.deepEqual(validateWidgetInitialData(definition, {}), {});
+  assert.equal(WidgetDefinitionSchema.safeParse({
+    ...definition,
+    root: { id: "root", type: "html", children: [] },
+  }).success, false, "arbitrary HTML must not be accepted");
+  const serverDefinition = WidgetDefinitionSchema.parse({
+    ...defaultWidgetDefinition("custom"),
+    functions: [{
+      id: "quote",
+      label: "Preventivo",
+      type: "server_action",
+      inputs: [],
+      returns: [],
+      waitForResponse: true,
+      config: { url: "https://api.example.com/quote", authorization: "Bearer secret", bodyTemplate: "{}" },
+    }],
+  });
+  const publicDefinition = publicWidgetDefinition(serverDefinition);
+  assert.equal(publicDefinition.functions[0].config.url, undefined);
+  assert.equal(publicDefinition.functions[0].config.authorization, undefined);
+  assert.equal(publicDefinition.functions[0].config.bodyTemplate, undefined);
+  await assert.rejects(
+    () => assertSafeHttpsRemoteUrl("http://example.com/private"),
+    /richiedono un endpoint HTTPS/,
+  );
+
+  validateActionDefinition({
+    type: "api_widget",
+    config: {
+      url: "https://api.example.com/products",
+      method: "GET",
+      definition: defaultWidgetDefinition("product_carousel"),
+    },
+  });
 }
 
 function testActionEngineContracts() {
@@ -148,7 +205,88 @@ function testLeadWidgetSessionContract() {
   assert.match(leadFormSource, /consent:\s*true/);
 }
 
-testActionSchema();
-testActionEngineContracts();
-testLeadWidgetSessionContract();
-console.log("interactive widgets: ok");
+function testFunctionIdempotencyContract() {
+  const runtime = fs.readFileSync(
+    path.join(process.cwd(), "lib/widget-function-runtime.ts"),
+    "utf8",
+  );
+  const embedRoute = fs.readFileSync(
+    path.join(process.cwd(), "app/api/embed/[botId]/widget-functions/[actionId]/[functionId]/route.ts"),
+    "utf8",
+  );
+  assert.match(runtime, /actionExecution\.create/);
+  assert.match(runtime, /existing\.status === "pending"/);
+  assert.match(runtime, /WidgetFunctionInProgressError/);
+  assert.doesNotMatch(runtime, /existing \|\| \(await prisma\.actionExecution\.create/);
+  assert.match(embedRoute, /X-LitX-Widget-Session|widgetSessionToken/);
+  assert.match(embedRoute, /status = error instanceof WidgetFunctionInProgressError/);
+}
+
+function testWidgetStudioContracts() {
+  const studio = fs.readFileSync(path.join(process.cwd(), "app/widgets/page.tsx"), "utf8");
+  const generator = fs.readFileSync(path.join(process.cwd(), "app/api/widgets/generate/route.ts"), "utf8");
+  const restoreRoute = fs.readFileSync(
+    path.join(process.cwd(), "app/api/actions/[id]/widget-versions/[version]/restore/route.ts"),
+    "utf8",
+  );
+  assert.match(studio, /"api_widget"/);
+  assert.match(studio, /responsePath/);
+  assert.match(studio, /Body template JSON/);
+  assert.match(studio, /Input e binding/);
+  assert.match(studio, /Return schema/);
+  assert.match(studio, /Importa/);
+  assert.match(studio, /Duplica/);
+  assert.match(studio, /Chat bubble/);
+  assert.match(studio, /Agent page/);
+  assert.match(generator, /definition:\s*WidgetDefinitionSchema/);
+  assert.doesNotMatch(generator, /defaultWidgetDefinition\(data\.template/);
+  assert.match(generator, /non può creare server action/);
+  assert.match(restoreRoute, /assertSafeHttpsRemoteUrl/);
+  assert.doesNotMatch(restoreRoute, /await assertSafeRemoteUrl/);
+}
+
+async function testConcurrentIdempotencyClaim() {
+  type Record = { status: string; success: boolean; output: string | null; error: string | null };
+  let stored: Record | null = null;
+  let sideEffectClaims = 0;
+  const create = async () => {
+    if (stored) throw Object.assign(new Error("unique constraint"), { code: "P2002" });
+    stored = { status: "pending", success: false, output: null, error: null };
+    sideEffectClaims += 1;
+    await Promise.resolve();
+    return stored;
+  };
+  const find = async () => stored;
+  const [first, second] = await Promise.all([
+    claimIdempotentExecution(create, find),
+    claimIdempotentExecution(create, find),
+  ]);
+  assert.equal(sideEffectClaims, 1, "only one concurrent request may claim the side effect");
+  assert.equal([first, second].filter((item) => item.claimed).length, 1);
+  assert.equal([first, second].filter((item) => !item.claimed).length, 1);
+
+  await assert.rejects(
+    () => claimIdempotentExecution(
+      async () => { throw new Error("database unavailable"); },
+      async () => stored,
+    ),
+    /database unavailable/,
+    "non-unique database failures must never be mistaken for a claimed execution",
+  );
+}
+
+async function main() {
+  testActionSchema();
+  await testDeclarativeWidgetSchema();
+  testActionEngineContracts();
+  testLeadWidgetSessionContract();
+  testFunctionIdempotencyContract();
+  testWidgetStudioContracts();
+  await testConcurrentIdempotencyClaim();
+  console.log("interactive widgets: ok");
+}
+
+void main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

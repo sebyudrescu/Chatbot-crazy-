@@ -4,6 +4,7 @@ import { parseJSON } from '@/lib/utils'
 import { z } from 'zod'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import { syncCRMContactFromConversation } from '@/lib/crm-sync'
+import { widgetsFromMessageMetadata } from '@/lib/widget-message-persistence'
 
 const ConversationUpdateSchema = z.object({
   isResolved: z.boolean().optional(),
@@ -54,6 +55,10 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
         messages: conversation.messages.map((msg) => ({
           ...msg,
           sourcesUsed: parseJSON(msg.sourcesUsed),
+          quickReplies: parseJSON(msg.quickReplies) || [],
+          ctas: parseJSON(msg.ctaData) || [],
+          productCards: parseJSON(msg.productCards) || [],
+          declarativeWidgets: widgetsFromMessageMetadata(parseJSON(msg.sourcesUsed)),
         })),
         chatbot: {
           ...conversation.chatbot,

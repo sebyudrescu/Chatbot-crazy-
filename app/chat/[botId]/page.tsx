@@ -34,6 +34,10 @@ import {
 } from "@/components/chat/LeadCaptureForm";
 import type { OrderStatusCard, ProductCard } from "@/lib/commerce-types";
 import {
+  DeclarativeWidget,
+  type DeclarativeWidgetPayload,
+} from "@/components/chat/DeclarativeWidget";
+import {
   buildInitialQuickReplies,
   detectBusinessMode,
 } from "@/lib/conversation-guidance";
@@ -75,6 +79,7 @@ interface Message {
   leadForms?: LeadFormDefinition[];
   orderLookupForm?: boolean;
   orderStatusCard?: OrderStatusCard;
+  declarativeWidgets?: DeclarativeWidgetPayload[];
   error?: boolean;
 }
 interface BotData {
@@ -144,8 +149,9 @@ export default function ChatPage() {
       setDiagnostics(null);
       setInput("");
       setMessages(current ? [welcomeMessage(current)] : []);
+      try { localStorage.removeItem(`litx-preview-conversation:${botId}`); } catch { /* unavailable */ }
     },
-    [bot],
+    [bot, botId],
   );
 
   useEffect(() => {
@@ -163,6 +169,30 @@ export default function ChatPage() {
       })
       .finally(() => setLoading(false));
   }, [botId]);
+  useEffect(() => {
+    if (!bot) return;
+    let id = "";
+    try { id = localStorage.getItem(`litx-preview-conversation:${botId}`) || ""; } catch { return; }
+    if (!id) return;
+    void fetch(`/api/conversations/${encodeURIComponent(id)}`)
+      .then((response) => response.json())
+      .then((result) => {
+        if (!result.success || result.data?.botId !== botId) return;
+        const restored = (result.data.messages || [])
+          .filter((message: Message) => message.role === "user" || message.role === "assistant")
+          .map((message: Message) => ({
+            ...message,
+            quickReplies: message.quickReplies || [],
+            ctas: message.ctas || [],
+            productCards: message.productCards || [],
+            declarativeWidgets: message.declarativeWidgets || [],
+          }));
+        if (restored.length) {
+          setConversationId(id);
+          setMessages(restored);
+        }
+      });
+  }, [bot, botId]);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
@@ -220,6 +250,7 @@ export default function ChatPage() {
       }
       const data = result.data;
       setConversationId(data.conversationId);
+      try { localStorage.setItem(`litx-preview-conversation:${botId}`, data.conversationId); } catch { /* unavailable */ }
       setMessages((current) => [
         ...current,
         {
@@ -235,6 +266,7 @@ export default function ChatPage() {
           leadForms: data.actions?.leadForms || [],
           orderLookupForm: Boolean(data.orderLookupForm),
           orderStatusCard: data.orderStatusCard,
+          declarativeWidgets: data.declarativeWidgets || [],
         },
       ]);
       setDiagnostics({
@@ -391,6 +423,18 @@ export default function ChatPage() {
                     {message.role === "assistant" ? (
                       <OrderStatusCardView card={message.orderStatusCard} />
                     ) : null}
+                    {message.role === "assistant"
+                      ? message.declarativeWidgets?.map((widget) => (
+                          <DeclarativeWidget
+                            key={widget.id}
+                            widget={widget}
+                            botId={botId}
+                            conversationId={conversationId}
+                            userSessionId={userSessionId}
+                            onSendMessage={(value) => void send(value)}
+                          />
+                        ))
+                      : null}
                     {message.role === "assistant" &&
                       !message.error &&
                       message.id !== "welcome" && (

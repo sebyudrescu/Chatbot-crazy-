@@ -84,3 +84,11 @@ export async function assertSafeRemoteUrl(value: string) {
   }
   return url;
 }
+
+export async function assertSafeHttpsRemoteUrl(value: string) {
+  const normalized = normalizeRemoteUrl(value);
+  if (normalized.protocol !== "https:") {
+    throw new Error("Le funzioni server dei widget richiedono un endpoint HTTPS");
+  }
+  return assertSafeRemoteUrl(normalized.toString());
+}

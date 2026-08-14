@@ -7,6 +7,10 @@ import { executeAgentTool, AGENT_TOOLS, isAgentToolName, type AgentToolArtifacts
 import type { ProductCard } from "./commerce-types";
 import { createLazyOpenAI } from "./openai-client";
 import { generateSystemPrompt } from "./prompt-manager";
+import { prisma } from "./db";
+import { runTriggeredActions, type ActionResult } from "./action-engine";
+import { decryptConfigSecrets } from "./secret-config";
+import { safeHttpsUrl } from "./integration-catalog";
 
 const openai = createLazyOpenAI();
 const MAX_AGENT_ROUNDS = 4;
@@ -14,7 +18,7 @@ const MAX_TOOL_CALLS = 6;
 const MODEL_FALLBACK = "gpt-4.1-mini";
 
 export interface AgentToolTrace {
-  name: AgentToolName;
+  name: AgentToolName | "run_configured_action";
   durationMs: number;
   success: boolean;
   resultCount?: number;
@@ -35,6 +39,29 @@ export interface AgenticResult {
   responseType: string;
   intent: string;
   confidence: number;
+  actions: ActionResult;
+}
+
+const emptyActionResult = (): ActionResult => ({
+  executed: [], failed: [], skipped: [], ctas: [], leadForms: [],
+  channelMessages: [], handoffActivated: false, forceProductCards: false,
+  orderLookupForm: false, productWidget: null, declarativeWidgets: [],
+});
+
+function mergeActionResults(current: ActionResult, next: ActionResult): ActionResult {
+  return {
+    executed: [...new Set([...current.executed, ...next.executed])],
+    failed: [...new Set([...current.failed, ...next.failed])],
+    skipped: [...new Set([...current.skipped, ...next.skipped])],
+    ctas: [...current.ctas, ...next.ctas],
+    leadForms: [...current.leadForms, ...next.leadForms],
+    channelMessages: [...current.channelMessages, ...next.channelMessages],
+    handoffActivated: current.handoffActivated || next.handoffActivated,
+    forceProductCards: current.forceProductCards || next.forceProductCards,
+    orderLookupForm: current.orderLookupForm || next.orderLookupForm,
+    productWidget: next.productWidget || current.productWidget,
+    declarativeWidgets: [...current.declarativeWidgets, ...next.declarativeWidgets],
+  };
 }
 
 function systemInstructions(context: OrchestratorContext) {
@@ -63,6 +90,8 @@ Hai strumenti server-side verificati. Regole:
 14. Quando il messaggio corrente risponde a una tua domanda breve (per esempio "elegante", "donna", "nera" o "M"), ricostruisci la richiesta completa usando gli ultimi turni prima di scegliere il tool. Non cambiare mai categoria: se il cliente ha chiesto una camicia, cerca camicie finché non chiede esplicitamente altro.
 
 Il nome configurato dell'azienda è: ${context.botConfig.companyName}.
+
+Se disponibile, usa run_configured_action soltanto quando richiesta e cronologia corrispondono semanticamente allo scopo dichiarato dell'azione. Non scegliere un'azione per la sola presenza di una parola nel testo. Puoi combinarlo in sequenza con gli altri tool.
 
 ${context.verifiedCommerceContext ? `## STATO UI VERIFICATO DELLA SESSIONE\n${context.verifiedCommerceContext}\nUsa questi ID solo con i tool e non mostrarli al cliente.` : ""}`;
 }
@@ -126,12 +155,13 @@ async function createAgentResponse(input: {
   botId: string;
   maxTokens: number;
   temperature: number;
+  tools: readonly unknown[];
 }) {
   return openai.responses.create({
     model: input.model,
     instructions: input.instructions,
     input: input.messages,
-    tools: AGENT_TOOLS as any,
+    tools: input.tools as any,
     tool_choice: "auto",
     parallel_tool_calls: false,
     max_output_tokens: Math.max(128, Math.min(input.maxTokens, 4096)),
@@ -159,6 +189,40 @@ export async function orchestrateAgenticResponse(
   const toolTrace: AgentToolTrace[] = [];
   let finalText = "";
   let totalToolCalls = 0;
+  let actions = emptyActionResult();
+  let semanticActionCallMade = false;
+  const semanticActions = await prisma.agentAction.findMany({
+    where: {
+      botId: context.botId,
+      enabled: true,
+      type: { in: ["show_widget", "booking_link", "collect_lead", "handoff", "api_widget"] },
+    },
+    select: { id: true, name: true, description: true, type: true, triggerKeywords: true, config: true },
+    take: 30,
+  });
+  const safeSemanticActions = semanticActions.filter((action) => {
+    if (action.type !== "api_widget") return true;
+    let config: Record<string, string> = {};
+    try { config = decryptConfigSecrets(JSON.parse(action.config)); } catch { return false; }
+    return String(config.method || "POST").toUpperCase() === "GET" && Boolean(safeHttpsUrl(config.url));
+  });
+  const configuredActionTool = safeSemanticActions.length ? [{
+    type: "function" as const,
+    name: "run_configured_action",
+    description: `Attiva una sola azione configurata e abilitata dal proprietario quando e semanticamente pertinente. Azioni disponibili:\n${safeSemanticActions.map((action) => {
+      let examples: string[] = [];
+      try { examples = JSON.parse(action.triggerKeywords); } catch { /* legacy value */ }
+      return `- ${action.id}: ${action.name} (${action.type})${action.description ? ` - ${action.description}` : ""}${examples.length ? `; esempi: ${examples.slice(0, 4).join(", ")}` : ""}`;
+    }).join("\n")}`,
+    strict: true,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["action_id"],
+      properties: { action_id: { type: "string", enum: safeSemanticActions.map((action) => action.id) } },
+    },
+  }] : [];
+  const tools = [...AGENT_TOOLS, ...configuredActionTool];
 
   // CI exercises the complete retrieval/persistence contract without making
   // external model calls. Production never enters this branch.
@@ -194,6 +258,7 @@ export async function orchestrateAgenticResponse(
       responseType: "agentic_question",
       intent: "question",
       confidence: facts.length ? 1 : 0.75,
+      actions,
     };
   }
 
@@ -208,6 +273,7 @@ export async function orchestrateAgenticResponse(
         botId: context.botId,
         maxTokens: context.botConfig.maxTokens || 700,
         temperature: context.botConfig.temperature ?? 0.3,
+        tools,
       });
     } catch (error) {
       if (!model.startsWith("gpt-5.6") || !isModelAvailabilityError(error)) throw error;
@@ -219,6 +285,7 @@ export async function orchestrateAgenticResponse(
         botId: context.botId,
         maxTokens: context.botConfig.maxTokens || 700,
         temperature: context.botConfig.temperature ?? 0.3,
+        tools,
       });
     }
     await recordAIUsage({
@@ -245,8 +312,48 @@ export async function orchestrateAgenticResponse(
       }
       const toolStartedAt = Date.now();
       try {
-        if (!isAgentToolName(call.name)) throw new Error("unknown_agent_tool");
         const args = JSON.parse(call.arguments || "{}");
+        if (call.name === "run_configured_action") {
+          const actionId = typeof args.action_id === "string" ? args.action_id : "";
+          if (!safeSemanticActions.some((action) => action.id === actionId)) throw new Error("unknown_configured_action");
+          const execution = await runTriggeredActions({
+            botId: context.botId,
+            conversationId: context.conversationId,
+            messageId: context.messageId,
+            message: context.query,
+            intent: inferIntent(toolTrace),
+            selectedActionIds: [actionId],
+            triggerMode: "semantic",
+          });
+          semanticActionCallMade = true;
+          actions = mergeActionResults(actions, execution);
+          handoff ||= execution.handoffActivated;
+          orderLookupForm ||= execution.orderLookupForm;
+          toolTrace.push({
+            name: "run_configured_action",
+            durationMs: Date.now() - toolStartedAt,
+            success: execution.executed.includes(actionId),
+            resultCount: execution.declarativeWidgets.length + execution.ctas.length + execution.leadForms.length,
+          });
+          input.push({
+            type: "function_call_output",
+            call_id: call.call_id,
+            output: JSON.stringify({
+              executed: execution.executed.includes(actionId),
+              surfaces: {
+                widgets: execution.declarativeWidgets.length,
+                calls_to_action: execution.ctas.length,
+                forms: execution.leadForms.length,
+                order_lookup: execution.orderLookupForm,
+                handoff: execution.handoffActivated,
+                product_widget: Boolean(execution.productWidget),
+                force_product_cards: execution.forceProductCards,
+              },
+            }),
+          });
+          continue;
+        }
+        if (!isAgentToolName(call.name)) throw new Error("unknown_agent_tool");
         const execution = await executeAgentTool(call.name, args, {
           botId: context.botId,
           conversationId: context.conversationId,
@@ -273,7 +380,7 @@ export async function orchestrateAgenticResponse(
         input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(execution.output) });
       } catch (error) {
         const message = error instanceof Error ? error.message : "tool_error";
-        if (isAgentToolName(call.name))
+        if (isAgentToolName(call.name) || call.name === "run_configured_action")
           toolTrace.push({ name: call.name, durationMs: Date.now() - toolStartedAt, success: false, error: message.slice(0, 160) });
         input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify({ error: "tool_execution_failed" }) });
       }
@@ -282,6 +389,18 @@ export async function orchestrateAgenticResponse(
 
   if (!finalText) {
     finalText = context.botConfig.fallbackMessage || "Non riesco a completare la verifica in questo momento. Posso passarti a una persona del team.";
+  }
+  if (!semanticActionCallMade) {
+    actions = mergeActionResults(actions, await runTriggeredActions({
+      botId: context.botId,
+      conversationId: context.conversationId,
+      messageId: context.messageId,
+      message: context.query,
+      intent: inferIntent(toolTrace),
+      triggerMode: "keyword_fallback",
+    }));
+    handoff ||= actions.handoffActivated;
+    orderLookupForm ||= actions.orderLookupForm;
   }
   const intent = inferIntent(toolTrace);
   const hasVerifiedEvidence = productCards.length > 0 || Boolean(orderStatusCard) || sources.length > 0;
@@ -299,5 +418,6 @@ export async function orchestrateAgenticResponse(
     responseType: `agentic_${intent}`,
     intent,
     confidence: hasVerifiedEvidence ? 1 : toolTrace.length ? 0.85 : 0.75,
+    actions,
   };
 }

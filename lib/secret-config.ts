@@ -99,9 +99,34 @@ export function restoreMaskedSecrets<T>(next: T, current: unknown): T {
   if (next === SECRET_MASK) return current as T;
   if (Array.isArray(next)) {
     const currentArray = Array.isArray(current) ? current : [];
-    return next.map((item, index) =>
-      restoreMaskedSecrets(item, currentArray[index]),
-    ) as T;
+    const containsMask = (value: unknown): boolean =>
+      value === SECRET_MASK
+      || (Array.isArray(value) && value.some(containsMask))
+      || Boolean(
+        value
+        && typeof value === "object"
+        && Object.values(value as Record<string, unknown>).some(containsMask),
+      );
+    const currentById = new Map(
+      currentArray
+        .filter((item): item is Record<string, unknown> => Boolean(
+          item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string",
+        ))
+        .map((item) => [String(item.id), item]),
+    );
+    return next.map((item, index) => {
+      if (item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string") {
+        const matching = currentById.get(String((item as Record<string, unknown>).id));
+        if (containsMask(item) && !matching) {
+          throw new Error("Il segreto mascherato non corrisponde piu alla stessa funzione");
+        }
+        return restoreMaskedSecrets(item, matching);
+      }
+      if (containsMask(item)) {
+        throw new Error("Reinserisci il segreto dopo aver riordinato questo elenco");
+      }
+      return restoreMaskedSecrets(item, currentArray[index]);
+    }) as T;
   }
   if (next && typeof next === "object") {
     const currentObject =

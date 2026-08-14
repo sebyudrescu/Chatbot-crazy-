@@ -54,4 +54,24 @@ assert.deepEqual(
   "Masked edits must preserve stored secrets",
 );
 
-console.log(JSON.stringify({ success: true, checks: 10 }));
+const reordered = restoreMaskedSecrets(
+  [
+    { id: "second", authorization: "********" },
+    { id: "first", authorization: "********" },
+  ],
+  [
+    { id: "first", authorization: "Bearer first-secret" },
+    { id: "second", authorization: "Bearer second-secret" },
+  ],
+);
+assert.equal(reordered[0].authorization, "Bearer second-secret");
+assert.equal(reordered[1].authorization, "Bearer first-secret");
+assert.throws(
+  () => restoreMaskedSecrets(
+    [{ id: "different", authorization: "********" }],
+    [{ id: "original", authorization: "Bearer original-secret" }],
+  ),
+  /non corrisponde piu alla stessa funzione/,
+);
+
+console.log(JSON.stringify({ success: true, checks: 13 }));

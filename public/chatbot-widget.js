@@ -526,6 +526,30 @@
     .chatbot-product-open.secondary { border: 1px solid ${config.primaryColor}; background: transparent; color: ${config.theme === 'dark' ? '#e9d5ff' : config.primaryColor}; }
     .chatbot-product-open:hover, .chatbot-product-open:focus-visible { filter: brightness(0.94); outline: 2px solid ${config.primaryColor}55; outline-offset: 2px; }
 
+    .chatbot-declarative-widget { display: grid; min-width: 0; gap: 8px; margin-top: 10px; }
+    .chatbot-declarative-card, .chatbot-declarative-stack, .chatbot-declarative-row {
+      display: grid;
+      min-width: 0;
+      gap: 8px;
+    }
+    .chatbot-declarative-card {
+      padding: 12px;
+      border: 1px solid ${config.theme === 'dark' ? '#475569' : '#e2e8f0'};
+      border-radius: 14px;
+      background: ${config.theme === 'dark' ? '#273449' : '#ffffff'};
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+    }
+    .chatbot-declarative-row { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: center; }
+    .chatbot-declarative-title { margin: 0; color: ${config.theme === 'dark' ? '#ffffff' : '#172033'}; font-size: 13px; line-height: 1.35; }
+    .chatbot-declarative-text, .chatbot-declarative-card p { margin: 0; color: ${config.theme === 'dark' ? '#cbd5e1' : '#64748b'}; font-size: 10px; line-height: 1.5; }
+    .chatbot-declarative-badge { width: max-content; padding: 4px 8px; border-radius: 999px; background: ${config.primaryColor}18; color: ${config.primaryColor}; font-size: 9px; font-weight: 750; }
+    .chatbot-declarative-image img { display: block; width: 100%; max-height: 220px; border-radius: 12px; object-fit: cover; }
+    .chatbot-declarative-button { min-height: 36px; padding: 8px 12px; border: 0; border-radius: 10px; background: ${config.primaryColor}; color: #fff; cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; }
+    .chatbot-declarative-button:disabled { cursor: not-allowed; opacity: .5; }
+    .chatbot-declarative-input { width: 100%; min-height: 36px; padding: 8px 9px; border: 1px solid ${config.theme === 'dark' ? '#475569' : '#dbe2ea'}; border-radius: 9px; box-sizing: border-box; background: ${config.theme === 'dark' ? '#172033' : '#fff'}; color: inherit; font: inherit; font-size: 11px; }
+    .chatbot-declarative-checkbox label { display: flex; align-items: center; gap: 7px; color: ${config.theme === 'dark' ? '#cbd5e1' : '#475569'}; font-size: 10px; }
+    .chatbot-declarative-error { margin: 0; padding: 7px 9px; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 9px; line-height: 1.4; }
+
     .chatbot-order-lookup, .chatbot-order-card {
       display: grid;
       gap: 10px;
@@ -1771,6 +1795,230 @@
     contentElement.appendChild(shell);
   }
 
+  function declarativeValue(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    if (typeof value === 'boolean') return value ? 'Sì' : 'No';
+    return '';
+  }
+
+  function declarativeLink(value) {
+    if (typeof value !== 'string' || value.length > 2048) return null;
+    try {
+      const url = new URL(value, window.location.origin);
+      return url.protocol === 'https:' || url.origin === window.location.origin ? url.toString() : null;
+    } catch { return null; }
+  }
+
+  function resolveDeclarativeBinding(binding, payload, variables) {
+    if (!binding || typeof binding !== 'object') return undefined;
+    if (binding.source === 'literal') return binding.path;
+    const roots = {
+      data: payload.data,
+      state: variables,
+      context: { botId: config.botId, conversationId, userSessionId },
+    };
+    let value = roots[binding.source];
+    String(binding.path || '').split('.').filter(Boolean).forEach((part) => {
+      value = value && typeof value === 'object' ? value[part] : undefined;
+    });
+    return value === undefined || value === null ? binding.fallback : value;
+  }
+
+  function addDeclarativeWidgets(contentElement, widgets, messageId) {
+    const payloads = Array.isArray(widgets) ? widgets.slice(0, 4) : [];
+    payloads.forEach((payload) => {
+      const definition = payload && payload.definition;
+      if (!definition || definition.version !== 1 || !definition.root || !Array.isArray(definition.functions)) return;
+      const allowedNodes = new Set(['card', 'stack', 'row', 'title', 'text', 'image', 'badge', 'button', 'input', 'checkbox', 'product_carousel', 'lead_form', 'appointment', 'order_tracking']);
+      const allowedFunctions = new Set(['open_link', 'send_message', 'dismiss', 'set_variables', 'client_event', 'server_action']);
+      const functions = new Map(definition.functions.filter((fn) => fn && allowedFunctions.has(fn.type)).map((fn) => [fn.id, fn]));
+      const variables = {};
+      const initialState = Array.isArray(definition.states) ? definition.states.find((state) => state && state.initial) : null;
+      let activeState = initialState && initialState.id || '';
+      let busy = false;
+      const shell = document.createElement('section');
+      shell.className = 'chatbot-declarative-widget';
+      shell.setAttribute('aria-label', String(definition.name || 'Widget interattivo').slice(0, 120));
+
+      const resolve = (binding) => resolveDeclarativeBinding(binding, payload, variables);
+      const functionArgs = (fn) => Object.fromEntries((Array.isArray(fn.inputs) ? fn.inputs : []).slice(0, 20).map((input) => [input.name, resolve(input.binding)]));
+      const setError = (message) => {
+        let error = shell.querySelector('.chatbot-declarative-error');
+        if (!error) {
+          error = document.createElement('p');
+          error.className = 'chatbot-declarative-error';
+          error.setAttribute('role', 'alert');
+          shell.appendChild(error);
+        }
+        error.textContent = String(message || 'Azione non riuscita').slice(0, 300);
+      };
+      const runFunction = async (functionId) => {
+        const fn = functions.get(functionId);
+        if (!fn || busy) return;
+        const args = functionArgs(fn);
+        busy = true;
+        shell.setAttribute('aria-busy', 'true');
+        const invocationId = window.crypto && typeof window.crypto.randomUUID === 'function'
+          ? window.crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        try {
+          if (fn.type === 'open_link') {
+            const url = declarativeLink(args.url || fn.config && fn.config.url);
+            if (!url) throw new Error('Link non valido');
+            window.open(url, '_blank', 'noopener,noreferrer');
+          } else if (fn.type === 'send_message') {
+            const message = declarativeValue(args.message || fn.config && fn.config.message).trim();
+            if (!message) throw new Error('Messaggio non valido');
+            await sendMessage(message);
+          } else if (fn.type === 'dismiss') {
+            shell.remove();
+          } else if (fn.type === 'set_variables') {
+            const variable = fn.config && fn.config.variable;
+            if (!variable) throw new Error('Variabile non configurata');
+            variables[variable] = args.value;
+          } else if (fn.type === 'client_event') {
+            const eventName = fn.config && fn.config.eventName || 'litx:widget-action';
+            const detail = { widgetId: payload.id, functionId, eventName, args };
+            window.dispatchEvent(new CustomEvent('litx:widget-action', { detail }));
+            window.postMessage({ type: 'WIDGET_ACTION_CALL', functionName: fn.id, args }, window.location.origin);
+          } else if (fn.type === 'server_action') {
+            if (!conversationId || !userSessionId || !signedSessionToken) throw new Error('Sessione widget non disponibile');
+            const endpoint = `${config.apiUrl}/api/embed/${encodeURIComponent(config.botId)}/widget-functions/${encodeURIComponent(payload.actionId)}/${encodeURIComponent(fn.id)}`;
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: widgetHeaders(),
+              body: JSON.stringify({
+                invocationId,
+                userSessionId,
+                conversationId,
+                data: payload.data || {},
+                state: variables,
+              }),
+            });
+            const result = await response.json().catch(() => null);
+            if (!response.ok || !result || !result.success) throw new Error(result && result.error || 'Funzione non riuscita');
+            if (fn.waitForResponse && result.data && typeof result.data === 'object') Object.assign(variables, result.data);
+          }
+          if (fn.config && fn.config.nextState) {
+            activeState = fn.config.nextState;
+            renderRoot();
+          }
+        } catch (error) {
+          setError(error && error.message || 'Azione non riuscita');
+        } finally {
+          busy = false;
+          shell.removeAttribute('aria-busy');
+        }
+      };
+
+      const renderNode = (node, visible, depth) => {
+        if (!node || !allowedNodes.has(node.type) || depth > 8) return null;
+        if (visible && node.id !== definition.root.id && !visible.has(node.id)) return null;
+        const bound = resolve(node.binding);
+        const text = declarativeValue(bound === undefined ? node.text : bound).slice(0, 500);
+        if (node.type === 'product_carousel') {
+          const host = document.createElement('div');
+          const products = payload.data && Array.isArray(payload.data.products) ? payload.data.products : [];
+          addProductCards(host, products, messageId, {
+            title: declarativeValue(definition.defaults && definition.defaults.title),
+            description: declarativeValue(definition.defaults && definition.defaults.body),
+            label: declarativeValue(definition.defaults && definition.defaults.label),
+          });
+          return host;
+        }
+        if (node.type === 'lead_form') {
+          const host = document.createElement('div');
+          if (conversationId) addLeadForms(host, [{
+            id: String(payload.id || 'declarative-lead').slice(0, 120),
+            title: declarativeValue(definition.defaults && definition.defaults.title) || definition.name,
+            description: declarativeValue(definition.defaults && definition.defaults.body),
+            fields: (Array.isArray(definition.schema) ? definition.schema : []).map((field) => field.name).filter((name) => ['name', 'email', 'phone', 'company'].includes(name)),
+            submitLabel: declarativeValue(definition.defaults && definition.defaults.label) || 'Invia richiesta',
+          }], conversationId);
+          return host;
+        }
+        if (node.type === 'order_tracking') {
+          const host = document.createElement('div');
+          addOrderLookupForm(host, true);
+          return host;
+        }
+        if (node.type === 'appointment') {
+          const host = document.createElement('div');
+          host.className = 'chatbot-declarative-card';
+          const title = document.createElement('strong');
+          title.textContent = declarativeValue(definition.defaults && definition.defaults.title) || definition.name;
+          const body = document.createElement('p');
+          body.textContent = declarativeValue(definition.defaults && definition.defaults.body);
+          host.append(title, body);
+          const fn = definition.functions.find((item) => item.type === 'open_link');
+          if (fn) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'chatbot-declarative-button';
+            button.textContent = String(fn.label || 'Apri calendario').slice(0, 120);
+            button.onclick = () => { void runFunction(fn.id); };
+            host.appendChild(button);
+          }
+          return host;
+        }
+        const element = document.createElement(node.type === 'title' ? 'h3' : node.type === 'text' ? 'p' : node.type === 'badge' ? 'span' : 'div');
+        element.className = node.type === 'button' ? 'chatbot-declarative-button-wrap' : `chatbot-declarative-${node.type}`;
+        if (node.type === 'image') {
+          const url = declarativeLink(bound);
+          if (!url) return null;
+          const image = document.createElement('img');
+          image.src = url;
+          image.alt = String(node.props && node.props.alt || '').slice(0, 200);
+          image.loading = 'lazy';
+          image.decoding = 'async';
+          element.appendChild(image);
+        } else if (node.type === 'button') {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'chatbot-declarative-button';
+          button.textContent = text || String(functions.get(node.functionId) && functions.get(node.functionId).label || 'Continua').slice(0, 120);
+          button.disabled = !node.functionId;
+          button.onclick = () => { if (node.functionId) void runFunction(node.functionId); };
+          element.appendChild(button);
+        } else if (node.type === 'input') {
+          const input = document.createElement('input');
+          const field = node.props && node.props.field || node.id;
+          input.className = 'chatbot-declarative-input';
+          input.placeholder = String(node.props && node.props.placeholder || '').slice(0, 160);
+          input.value = declarativeValue(variables[field]);
+          input.oninput = () => { variables[field] = input.value; };
+          element.appendChild(input);
+        } else if (node.type === 'checkbox') {
+          const label = document.createElement('label');
+          const input = document.createElement('input');
+          const field = node.props && node.props.field || node.id;
+          input.type = 'checkbox';
+          input.checked = Boolean(variables[field]);
+          input.onchange = () => { variables[field] = input.checked; };
+          label.append(input, document.createTextNode(text));
+          element.appendChild(label);
+        } else if (node.type === 'title' || node.type === 'text' || node.type === 'badge') {
+          element.textContent = text;
+        }
+        (Array.isArray(node.children) ? node.children : []).slice(0, 30).forEach((child) => {
+          const rendered = renderNode(child, visible, depth + 1);
+          if (rendered) element.appendChild(rendered);
+        });
+        return element;
+      };
+      const renderRoot = () => {
+        shell.replaceChildren();
+        const state = Array.isArray(definition.states) ? definition.states.find((item) => item.id === activeState) : null;
+        const visible = state && Array.isArray(state.visibleNodeIds) && state.visibleNodeIds.length ? new Set(state.visibleNodeIds) : null;
+        const root = renderNode(definition.root, visible, 1);
+        if (root) shell.appendChild(root);
+      };
+      renderRoot();
+      if (shell.childNodes.length) contentElement.appendChild(shell);
+    });
+  }
+
   function formatOrderDate(value) {
     if (!value) return '';
     const date = new Date(value);
@@ -2257,6 +2505,7 @@
         if (sender !== 'bot') return;
         addSources(contentElement, message.sources);
         addProductCards(contentElement, message.productCards, message.id, message.productWidget);
+        addDeclarativeWidgets(contentElement, message.declarativeWidgets, message.id);
         if (!message.feedback) addFeedbackControls(contentElement, message.id);
         if (index === lastAssistantIndex) {
           addResponseExtras(contentElement, message.quickReplies, message.ctas);
@@ -2417,6 +2666,7 @@
         });
         addSources(responseContent, data.data.sources);
         addProductCards(responseContent, data.data.productCards, data.data.assistantMessage.id, data.data.productWidget);
+        addDeclarativeWidgets(responseContent, data.data.declarativeWidgets, data.data.assistantMessage.id);
         addOrderLookupForm(responseContent, data.data.orderLookupForm);
         addOrderStatusCard(responseContent, data.data.orderStatusCard);
         addFeedbackControls(responseContent, data.data.assistantMessage.id);

@@ -54,6 +54,7 @@ import {
 } from "@/lib/commerce-query";
 import { tryVerifiedOrderLookup } from "@/lib/order-tracking";
 import { runAgenticChatTurn } from "@/lib/agentic-chat-runtime";
+import { prepareWidgetsForMessage } from "@/lib/widget-message-persistence";
 import {
   parseOrderLookupMessage,
   redactOrderLookupMessage,
@@ -775,6 +776,7 @@ export async function POST(request: NextRequest) {
             forceProductCards: false,
             orderLookupForm: false,
             productWidget: null,
+            declarativeWidgets: [],
           },
           quickReplies,
           ctas: [],
@@ -835,6 +837,7 @@ export async function POST(request: NextRequest) {
             forceProductCards: false,
             orderLookupForm: false,
             productWidget: null,
+            declarativeWidgets: [],
           };
     const outgoingPolicy = enforceOutgoingPolicy(
       result.response,
@@ -954,7 +957,10 @@ export async function POST(request: NextRequest) {
         content: result.response,
         sourcesUsed: stringifyJSON({
           sources: result.sourcesUsed,
-          metadata: messageMetadata,
+          metadata: {
+            ...messageMetadata,
+            declarativeWidgets: prepareWidgetsForMessage(actionResult.declarativeWidgets),
+          },
         }),
         quickReplies: stringifyJSON(quickReplies),
         ctaData: stringifyJSON(contextualCTAs),
@@ -1146,6 +1152,7 @@ export async function POST(request: NextRequest) {
         ctas: contextualCTAs,
         productCards,
         productWidget: productCards.length ? actionResult.productWidget : null,
+        declarativeWidgets: actionResult.declarativeWidgets,
         orderLookupForm: actionResult.orderLookupForm,
       },
     });

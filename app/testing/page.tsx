@@ -36,6 +36,10 @@ import {
   type ChatActionCard,
 } from "@/components/chat/ActionCards";
 import type { OrderStatusCard, ProductCard } from "@/lib/commerce-types";
+import {
+  DeclarativeWidget,
+  type DeclarativeWidgetPayload,
+} from "@/components/chat/DeclarativeWidget";
 
 interface Agent {
   id: string;
@@ -56,6 +60,7 @@ interface TestMessage {
   ctas?: ChatActionCard[];
   orderLookupForm?: boolean;
   orderStatusCard?: OrderStatusCard;
+  declarativeWidgets?: DeclarativeWidgetPayload[];
 }
 interface Diagnostics {
   intent?: string;
@@ -124,12 +129,35 @@ export default function TestingPage() {
       selectedId ? `test_${selectedId}_${crypto.randomUUID()}` : "",
     );
   }, [selectedId, selected]);
+  useEffect(() => {
+    if (!selectedId || !selected) return;
+    let id = "";
+    try { id = localStorage.getItem(`litx-testing-conversation:${selectedId}`) || ""; } catch { return; }
+    if (!id) return;
+    void fetch(`/api/conversations/${encodeURIComponent(id)}`)
+      .then((response) => response.json())
+      .then((result) => {
+        if (!result.success || result.data?.botId !== selectedId) return;
+        const restored = (result.data.messages || [])
+          .filter((message: TestMessage) => message.role === "user" || message.role === "assistant")
+          .map((message: TestMessage) => ({
+            ...message,
+            productCards: message.productCards || [],
+            declarativeWidgets: message.declarativeWidgets || [],
+          }));
+        if (restored.length) {
+          setConversationId(id);
+          setMessages(restored);
+        }
+      });
+  }, [selectedId, selected]);
 
   const resetTest = () => {
     setMessages(selected ? [welcomeTestMessage(selected)] : []);
     setConversationId(null);
     setDiagnostics(null);
     setInput("");
+    try { localStorage.removeItem(`litx-testing-conversation:${selectedId}`); } catch { /* unavailable */ }
   };
 
   const send = async (preset?: string, privateEntry = false) => {
@@ -189,6 +217,7 @@ export default function TestingPage() {
         return;
       }
       setConversationId(result.data.conversationId);
+      try { localStorage.setItem(`litx-testing-conversation:${selected.id}`, result.data.conversationId); } catch { /* unavailable */ }
       setMessages((current) => [
         ...current,
         {
@@ -201,6 +230,7 @@ export default function TestingPage() {
           ctas: result.data.ctas || [],
           orderLookupForm: Boolean(result.data.orderLookupForm),
           orderStatusCard: result.data.orderStatusCard,
+          declarativeWidgets: result.data.declarativeWidgets || [],
         },
       ]);
       setDiagnostics({
@@ -453,6 +483,18 @@ export default function TestingPage() {
                         {message.role === "assistant" ? (
                           <OrderStatusCardView card={message.orderStatusCard} />
                         ) : null}
+                        {message.role === "assistant"
+                          ? message.declarativeWidgets?.map((widget) => (
+                              <DeclarativeWidget
+                                key={widget.id}
+                                widget={widget}
+                                botId={selectedId}
+                                conversationId={conversationId}
+                                userSessionId={userSessionId}
+                                onSendMessage={(value) => void send(value)}
+                              />
+                            ))
+                          : null}
                       </div>
                     </div>
                   ))}

@@ -13,6 +13,8 @@ import {
 import type { OrchestratorContext } from "./decision-orchestrator";
 import type { ChatbotSettings } from "./types";
 import { stringifyJSON } from "./utils";
+import type { ActionResult } from "./action-engine";
+import { prepareWidgetsForMessage } from "./widget-message-persistence";
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
@@ -45,7 +47,17 @@ function policyOnlyResult(
     responseType: `policy_${policy.action}`,
     intent: policy.action === "handoff" ? "human_handoff" : "policy_blocked",
     confidence: 1,
+    actions: {
+      executed: [], failed: [], skipped: [], ctas: [], leadForms: [],
+      channelMessages: [], handoffActivated: policy.action === "handoff",
+      forceProductCards: false, orderLookupForm: false, productWidget: null,
+      declarativeWidgets: [],
+    },
   };
+}
+
+function persistedDeclarativeWidgets(actions: ActionResult) {
+  return prepareWidgetsForMessage(actions.declarativeWidgets);
 }
 
 export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
@@ -75,6 +87,10 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
   const quickReplies = handoffRequested
     ? [{ id: "handoff-confirmed", text: "Attendi un operatore", category: "support" as const }]
     : [];
+  const visibleActions = policyDecision.action === "allow"
+    ? agentResult.actions
+    : policyOnlyResult(policyDecision, input.settings).actions;
+  const declarativeWidgets = persistedDeclarativeWidgets(visibleActions);
 
   const savedAssistantMessage = await prisma.message.create({
     data: {
@@ -92,10 +108,11 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
           toolTrace: agentResult.toolTrace,
           activeProductIds: visibleCards.map((card) => card.productId),
           policyAction: policyDecision.action,
+          declarativeWidgets,
         },
       }),
       quickReplies: stringifyJSON(quickReplies),
-      ctaData: stringifyJSON([]),
+      ctaData: stringifyJSON(visibleActions.ctas),
       productCards: stringifyJSON(visibleCards),
     },
   });
@@ -221,22 +238,24 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
       phaseTimings: { agentic: agentResult.processingTimeMs },
       workflow: { executed: [], failed: [], skipped: [], actions: [] },
       actions: {
-        executed: [],
-        failed: [],
-        skipped: [],
-        ctas: [],
-        leadForms: [],
-        channelMessages: [],
+        executed: visibleActions.executed,
+        failed: visibleActions.failed,
+        skipped: visibleActions.skipped,
+        ctas: visibleActions.ctas,
+        leadForms: visibleActions.leadForms,
+        channelMessages: visibleActions.channelMessages,
         handoffActivated: handoffRequested,
-        forceProductCards: false,
-        orderLookupForm: policyDecision.action === "allow" && agentResult.orderLookupForm,
-        productWidget: null,
+        forceProductCards: visibleActions.forceProductCards,
+        orderLookupForm: policyDecision.action === "allow" && (agentResult.orderLookupForm || visibleActions.orderLookupForm),
+        productWidget: visibleActions.productWidget,
+        declarativeWidgets,
       },
       quickReplies,
-      ctas: [],
+      ctas: visibleActions.ctas,
       productCards: visibleCards,
-      productWidget: null,
-      orderLookupForm: policyDecision.action === "allow" && agentResult.orderLookupForm,
+      productWidget: visibleActions.productWidget,
+      declarativeWidgets,
+      orderLookupForm: policyDecision.action === "allow" && (agentResult.orderLookupForm || visibleActions.orderLookupForm),
       orderStatusCard: policyDecision.action === "allow" ? agentResult.orderStatusCard : undefined,
     },
   };

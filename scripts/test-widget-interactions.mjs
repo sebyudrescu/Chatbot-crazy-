@@ -83,6 +83,12 @@ window.fetch = async (url, options = {}) => {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }
+  if (requestUrl.includes("/widget-functions/")) {
+    return new Response(JSON.stringify({ success: true, data: { quote: "ok" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (requestUrl === "https://cliente.example/cart/add.js") {
     return new Response(JSON.stringify({ id: 1001 }), {
       status: 200,
@@ -248,6 +254,36 @@ window.fetch = async (url, options = {}) => {
             availability: "in_stock",
           },
         ],
+        declarativeWidgets: [
+          {
+            id: "widget-safe-1",
+            actionId: "00000000-0000-4000-8000-000000000070",
+            definition: {
+              version: 1,
+              name: "Scelta assistita",
+              description: "Widget dichiarativo sicuro",
+              template: "custom",
+              schema: [],
+              defaults: {},
+              states: [{ id: "ready", label: "Pronto", initial: true, visibleNodeIds: ["root", "title", "event", "server"] }],
+              functions: [
+                { id: "notify", label: "Seleziona", type: "client_event", inputs: [], returns: [], waitForResponse: false, config: { eventName: "litx:test" } },
+                { id: "quote", label: "Richiedi", type: "server_action", inputs: [], returns: [], waitForResponse: true, config: {} },
+              ],
+              root: {
+                id: "root",
+                type: "card",
+                children: [
+                  { id: "title", type: "title", text: "Esperienza interattiva", children: [], props: {} },
+                  { id: "event", type: "button", text: "Seleziona", functionId: "notify", children: [], props: {} },
+                  { id: "server", type: "button", text: "Richiedi", functionId: "quote", children: [], props: {} },
+                ],
+                props: {},
+              },
+            },
+            data: {},
+          },
+        ],
         actions: {
           leadForms: [
             {
@@ -385,6 +421,25 @@ assert.equal(
   "Il widget accetta protocolli CTA non sicuri",
 );
 assert.equal(actions[0].getAttribute("rel"), "noopener noreferrer");
+assert.match(
+  window.document.querySelector(".chatbot-declarative-widget")?.textContent || "",
+  /Esperienza interattiva/,
+  "Il renderer dichiarativo non mostra la struttura allowlisted",
+);
+assert.equal(
+  window.document.querySelector(".chatbot-declarative-widget script"),
+  null,
+  "Il renderer dichiarativo non deve creare script",
+);
+const declarativeButtons = window.document.querySelectorAll("button.chatbot-declarative-button");
+const serverButton = [...declarativeButtons].find((button) => button.textContent === "Richiedi");
+assert.ok(serverButton, `Pulsante server action mancante: ${[...declarativeButtons].map((button) => button.textContent).join(", ")}`);
+serverButton.click();
+await new Promise((resolve) => window.setTimeout(resolve, 100));
+const functionRequest = requests.find((request) => request.url.includes("/widget-functions/"));
+assert.ok(functionRequest, `La server action pubblica non chiama l'endpoint embed: ${window.document.querySelector(".chatbot-declarative-error")?.textContent || "nessun errore"}`);
+assert.equal(functionRequest.headers["X-LitX-Widget-Session"], "signed-widget-session-token", "La server action pubblica non invia la sessione firmata");
+assert.equal(functionRequest.body.conversationId, "00000000-0000-4000-8000-000000000002", "La server action non resta vincolata alla conversazione");
 const productCards = window.document.querySelectorAll(".chatbot-product-card");
 assert.equal(
   productCards.length,
@@ -511,12 +566,13 @@ for (
 ) {
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
+const feedbackRequest = requests.find((request) => request.url.endsWith("/feedback"));
 assert.equal(
-  requests[2]?.url,
+  feedbackRequest?.url,
   "https://litx.example/api/embed/00000000-0000-4000-8000-000000000001/feedback",
   "Il feedback usa un endpoint inatteso",
 );
-assert.deepEqual(requests[2]?.body, {
+assert.deepEqual(feedbackRequest?.body, {
   messageId: "00000000-0000-4000-8000-000000000003",
   feedback: "positive",
   feedbackComment: null,
@@ -528,19 +584,19 @@ replies[0].click();
 for (
   let attempt = 0;
   attempt < 40 &&
-  (requests.length < 4 ||
-    window.document.getElementById("typing-indicator") !== null);
+  (!requests.some((request) => request.body?.message === "Mostrami gli orari") || window.document.getElementById("typing-indicator") !== null);
   attempt += 1
 ) {
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
+const quickReplyRequest = requests.find((request) => request.body?.message === "Mostrami gli orari");
 assert.equal(
-  requests[3]?.body.message,
+  quickReplyRequest?.body.message,
   "Mostrami gli orari",
   "Il click sulla domanda rapida non invia il testo",
 );
 assert.equal(
-  requests[3]?.body.conversationId,
+  quickReplyRequest?.body.conversationId,
   "00000000-0000-4000-8000-000000000002",
   "La domanda rapida non continua la conversazione esistente",
 );
@@ -557,17 +613,17 @@ assert.equal(
 
 await window.ChatbotWidget.sendMessage("Ripristina sessione");
 assert.equal(
-  requests[4]?.body.conversationId,
+  requests[5]?.body.conversationId,
   "00000000-0000-4000-8000-000000000002",
   "Il widget non prova a continuare la sessione salvata",
 );
 assert.equal(
-  requests[5]?.body.conversationId,
+  requests[6]?.body.conversationId,
   null,
   "Il widget non riparte quando la conversazione salvata è scaduta",
 );
 assert.equal(
-  requests[5]?.body.userSessionId,
+  requests[6]?.body.userSessionId,
   requests[1]?.body.userSessionId,
   "Il recupero perde l'identità stabile del visitatore",
 );
@@ -589,11 +645,11 @@ for (
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
 assert.equal(
-  requests[6]?.url,
+  requests[7]?.url,
   "https://litx.example/api/embed/00000000-0000-4000-8000-000000000001/lead",
   "Il modulo lead usa un endpoint inatteso",
 );
-assert.deepEqual(requests[6]?.body, {
+assert.deepEqual(requests[7]?.body, {
   conversationId: "00000000-0000-4000-8000-000000000002",
   userSessionId: "00000000-0000-4000-8000-000000000111",
   name: "Mario Rossi",
@@ -973,6 +1029,8 @@ console.log(
         "mobile-control-spacing",
         "full-width-product-carousel",
         "standalone-public-page",
+        "safe-declarative-widget",
+        "signed-embed-widget-function",
       ],
     },
     null,

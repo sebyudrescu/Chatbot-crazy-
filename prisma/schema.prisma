@@ -70,7 +70,7 @@ model BackstageSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  chatbot Chatbot            @relation(fields: [botId], references: [id], onDelete: Cascade)
+  chatbot  Chatbot            @relation(fields: [botId], references: [id], onDelete: Cascade)
   messages BackstageMessage[]
   drafts   BackstageDraft[]
 
@@ -97,21 +97,21 @@ model BackstageMessage {
 model BackstageDraft {
   id                String    @id @default(uuid())
   sessionId         String
-  botId              String
-  type               String
-  title              String
-  summary            String
-  payload            String
-  beforeState        String    @default("{}")
-  evidence           String    @default("[]")
-  validation         String    @default("{}")
-  status             String    @default("draft")
-  appliedResourceId  String?
-  approvedAt         DateTime?
-  appliedAt          DateTime?
-  rolledBackAt       DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  botId             String
+  type              String
+  title             String
+  summary           String
+  payload           String
+  beforeState       String    @default("{}")
+  evidence          String    @default("[]")
+  validation        String    @default("{}")
+  status            String    @default("draft")
+  appliedResourceId String?
+  approvedAt        DateTime?
+  appliedAt         DateTime?
+  rolledBackAt      DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   session BackstageSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   chatbot Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
@@ -253,12 +253,28 @@ model AgentAction {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  chatbot    Chatbot           @relation(fields: [botId], references: [id], onDelete: Cascade)
-  executions ActionExecution[]
+  chatbot        Chatbot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  executions     ActionExecution[]
+  widgetVersions WidgetVersion[]
 
   @@index([botId, enabled])
   @@index([type])
   @@map("agent_actions")
+}
+
+model WidgetVersion {
+  id            String   @id @default(uuid())
+  actionId      String
+  version       Int
+  definition    String
+  changeSummary String?
+  createdAt     DateTime @default(now())
+
+  action AgentAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+
+  @@unique([actionId, version])
+  @@index([actionId, createdAt])
+  @@map("widget_versions")
 }
 
 model ActionExecution {
@@ -579,35 +595,35 @@ model ProductSource {
 }
 
 model Product {
-  id                   String    @id @default(uuid())
-  botId                String
-  sourceId             String?
-  identityKey          String
-  externalId           String?
-  canonicalUrl         String
-  title                String
-  description          String    @default("")
-  brand                String?
-  productType          String?
-  categories           String    @default("[]")
-  tags                 String    @default("[]")
-  mainImageUrl         String?
-  imageUrls            String    @default("[]")
-  status               String    @default("active")
-  availableForSale     Boolean   @default(true)
-  recommendationStatus String    @default("normal") // "normal", "promoted", "excluded", "blocked"
-  rankingBoost         Int       @default(0)
-  merchandisingNote    String?
-  campaignStart        DateTime?
-  campaignEnd          DateTime?
-  publishedAt          DateTime?
-  lastSyncedAt         DateTime?
-  missingSyncCount     Int       @default(0)
+  id                    String    @id @default(uuid())
+  botId                 String
+  sourceId              String?
+  identityKey           String
+  externalId            String?
+  canonicalUrl          String
+  title                 String
+  description           String    @default("")
+  brand                 String?
+  productType           String?
+  categories            String    @default("[]")
+  tags                  String    @default("[]")
+  mainImageUrl          String?
+  imageUrls             String    @default("[]")
+  status                String    @default("active")
+  availableForSale      Boolean   @default(true)
+  recommendationStatus  String    @default("normal") // "normal", "promoted", "excluded", "blocked"
+  rankingBoost          Int       @default(0)
+  merchandisingNote     String?
+  campaignStart         DateTime?
+  campaignEnd           DateTime?
+  publishedAt           DateTime?
+  lastSyncedAt          DateTime?
+  missingSyncCount      Int       @default(0)
   lastMissingSnapshotAt DateTime?
-  contentHash          String?
-  metadata             String    @default("{}")
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  contentHash           String?
+  metadata              String    @default("{}")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   chatbot  Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
   source   ProductSource?   @relation(fields: [sourceId], references: [id], onDelete: SetNull)
@@ -655,26 +671,26 @@ model ProductVariant {
 }
 
 model ProductSyncJob {
-  id              String    @id @default(uuid())
-  botId           String
-  sourceId        String
-  status          String    @default("pending")
-  progress        Int       @default(0)
-  productsSeen    Int       @default(0)
-  productsCreated Int       @default(0)
-  productsUpdated Int       @default(0)
-  productsFailed  Int       @default(0)
-  errorMessage    String?
-  attempts        Int       @default(0)
-  leaseVersion    Int       @default(0)
-  maxAttempts     Int       @default(3)
-  checkpoint      String?
+  id                String    @id @default(uuid())
+  botId             String
+  sourceId          String
+  status            String    @default("pending")
+  progress          Int       @default(0)
+  productsSeen      Int       @default(0)
+  productsCreated   Int       @default(0)
+  productsUpdated   Int       @default(0)
+  productsFailed    Int       @default(0)
+  errorMessage      String?
+  attempts          Int       @default(0)
+  leaseVersion      Int       @default(0)
+  maxAttempts       Int       @default(3)
+  checkpoint        String?
   snapshotStartedAt DateTime?
-  pagesProcessed  Int       @default(0)
-  nextRetryAt     DateTime?
-  startedAt       DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime  @default(now())
+  pagesProcessed    Int       @default(0)
+  nextRetryAt       DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
 
   chatbot Chatbot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   source  ProductSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)

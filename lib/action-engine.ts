@@ -7,6 +7,13 @@ import { deliverWebhook } from "./webhook-delivery";
 import { emitIntegrationWebhook } from "./integration-webhooks";
 import { decryptConfigSecrets } from "./secret-config";
 import { assertSafeRemoteUrl } from "./url-safety";
+import { checkRateLimit } from "./rate-limit";
+import {
+  publicWidgetDefinition,
+  validateWidgetData,
+  validateWidgetInitialData,
+  WidgetDefinitionSchema,
+} from "./widget-definition";
 
 interface Context {
   botId: string;
@@ -14,6 +21,8 @@ interface Context {
   messageId: string;
   message: string;
   intent?: string;
+  selectedActionIds?: string[];
+  triggerMode?: "semantic" | "keyword_fallback";
 }
 export interface ActionResult {
   executed: string[];
@@ -32,6 +41,12 @@ export interface ActionResult {
   forceProductCards: boolean;
   orderLookupForm: boolean;
   productWidget: { title: string; description: string; label: string } | null;
+  declarativeWidgets: Array<{
+    id: string;
+    actionId: string;
+    definition: ReturnType<typeof publicWidgetDefinition>;
+    data: Record<string, unknown>;
+  }>;
 }
 const parse = <T>(value: string, fallback: T): T => {
   try {
@@ -76,8 +91,17 @@ export async function runTriggeredActions(
       forceProductCards: false,
       orderLookupForm: false,
       productWidget: null,
+      declarativeWidgets: [],
     },
     normalized = context.message.toLocaleLowerCase("it");
+  const selectedActionIds = new Set(context.selectedActionIds || []);
+  const semanticTypes = new Set([
+    "show_widget",
+    "booking_link",
+    "collect_lead",
+    "handoff",
+    "api_widget",
+  ]);
   for (const action of actions) {
     const keywords = parse<string[]>(action.triggerKeywords, []);
     const keywordTriggered = keywords.some((keyword) =>
@@ -89,7 +113,17 @@ export async function runTriggeredActions(
       /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:\+?\d[\d\s().-]{7,}\d)/.test(
         context.message,
       );
-    if (!keywords.length || (!keywordTriggered && !pendingLeadReply)) continue;
+    const semanticTriggered =
+      context.triggerMode === "semantic" &&
+      selectedActionIds.has(action.id) &&
+      semanticTypes.has(action.type) &&
+      (action.type !== "api_widget" ||
+        String(decryptConfigSecrets(parse<Record<string, string>>(action.config, {})).method || "POST").toUpperCase() === "GET");
+    if (context.triggerMode === "semantic") {
+      if (!semanticTriggered) continue;
+    } else if (!keywords.length || (!keywordTriggered && !pendingLeadReply)) {
+      continue;
+    }
     const config = decryptConfigSecrets(
         parse<Record<string, string>>(action.config, {}),
       ),
@@ -170,10 +204,16 @@ export async function runTriggeredActions(
           result.channelMessages.push(config.message.trim());
         success = true;
       } else if (action.type === "collect_lead") {
-        const email = context.message.match(
+        const mayStoreContact =
+            context.triggerMode !== "semantic" ||
+            pendingLeadConsent ||
+            /acconsent|autorizz.{0,30}ricontatt|contattatemi/i.test(context.message),
+          email = mayStoreContact ? context.message.match(
             /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/,
-          )?.[0],
-          phone = context.message.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0];
+          )?.[0] : undefined,
+          phone = mayStoreContact
+            ? context.message.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0]
+            : undefined;
         if (!email && !phone) {
           result.leadForms.push({
             id: `lead-${action.id}`,
@@ -237,7 +277,7 @@ export async function runTriggeredActions(
         if (!delivery.success) throw new Error(delivery.error);
         output = `Webhook HTTP ${delivery.status} · ${delivery.attempts} tentativi`;
         success = true;
-      } else if (action.type === "api_request") {
+      } else if (action.type === "api_request" || action.type === "api_widget") {
         const url = safeHttpsUrl(config.url);
         if (!url) throw new Error("Endpoint API non valido");
         await assertSafeRemoteUrl(url.toString());
@@ -279,6 +319,14 @@ export async function runTriggeredActions(
           method === "GET"
             ? undefined
             : JSON.stringify(renderTemplate(JSON.parse(template)));
+        if (action.type === "api_widget") {
+          const rate = await checkRateLimit(
+            `api-widget:${action.id}:${context.conversationId}`,
+            10,
+            60_000,
+          );
+          if (!rate.allowed) throw new Error("Limite API widget raggiunto");
+        }
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 8_000);
         try {
@@ -296,9 +344,52 @@ export async function runTriggeredActions(
             redirect: "manual",
             signal: controller.signal,
           });
-          await response.body?.cancel();
           if (!response.ok) throw new Error(`API HTTP ${response.status}`);
-          output = config.resultMessage || `API HTTP ${response.status}`;
+          if (action.type === "api_widget") {
+            const declaredLength = Number(response.headers.get("content-length") || 0);
+            if (declaredLength > 1_000_000) throw new Error("Risposta API widget troppo grande");
+            const reader = response.body?.getReader();
+            const chunks: Uint8Array[] = [];
+            let total = 0;
+            if (reader) {
+              while (true) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                total += chunk.value.byteLength;
+                if (total > 1_000_000) {
+                  await reader.cancel();
+                  throw new Error("Risposta API widget troppo grande");
+                }
+                chunks.push(chunk.value);
+              }
+            }
+            const bytes = new Uint8Array(total);
+            let offset = 0;
+            for (const chunk of chunks) {
+              bytes.set(chunk, offset);
+              offset += chunk.byteLength;
+            }
+            const payload = JSON.parse(new TextDecoder().decode(bytes));
+            const responsePath = typeof config.responsePath === "string" ? config.responsePath : "";
+            const selected = responsePath
+              ? responsePath.split(".").reduce<unknown>((current, part) =>
+                  current && typeof current === "object"
+                    ? (current as Record<string, unknown>)[part]
+                    : undefined, payload)
+              : payload;
+            const definition = WidgetDefinitionSchema.parse(config.definition);
+            const data = validateWidgetData(definition, selected);
+            result.declarativeWidgets.push({
+              id: `widget-${action.id}-${context.messageId}`,
+              actionId: action.id,
+              definition: publicWidgetDefinition(definition),
+              data,
+            });
+            output = `API widget HTTP ${response.status}`;
+          } else {
+            await response.body?.cancel();
+            output = config.resultMessage || `API HTTP ${response.status}`;
+          }
           success = true;
         } finally {
           clearTimeout(timer);
@@ -359,6 +450,18 @@ export async function runTriggeredActions(
             "Per controllare l’ordine, indicami numero ordine ed email usata durante l’acquisto.",
           );
           output = "Widget tracking ordine mostrato";
+        } else if (template === "custom") {
+          const definition = WidgetDefinitionSchema.parse(config.definition);
+          result.declarativeWidgets.push({
+            id: `widget-${action.id}-${context.messageId}`,
+            actionId: action.id,
+            definition: publicWidgetDefinition(definition),
+            data: validateWidgetInitialData(
+              definition,
+              definition.defaults,
+            ),
+          });
+          output = "Widget dichiarativo mostrato";
         } else {
           throw new Error("Template widget non supportato");
         }

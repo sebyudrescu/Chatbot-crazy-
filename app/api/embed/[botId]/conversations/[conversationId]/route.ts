@@ -5,6 +5,7 @@ import { parseJSON } from "@/lib/utils";
 import { isAllowedWidgetOrigin } from "@/lib/widget-origin";
 import { checkRateLimit, requestClientIp } from "@/lib/rate-limit";
 import { readWidgetSession, widgetSessionToken } from "@/lib/widget-session";
+import { widgetsFromMessageMetadata } from "@/lib/widget-message-persistence";
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204 });
@@ -101,7 +102,7 @@ export async function GET(
       .map((source) => source.sourceId)
       .filter((id): id is string => Boolean(id));
     ids.forEach((id) => sourceIds.add(id));
-    return { message, ids };
+    return { message, ids, sourceData };
   });
   const sources = sourceIds.size
     ? await prisma.knowledgeSource.findMany({
@@ -123,7 +124,7 @@ export async function GET(
       needsHumanEscalation: conversation.needsHumanEscalation,
       isResolved: conversation.isResolved,
       assignedAgent: conversation.assignedAgent,
-      messages: parsedMessages.map(({ message, ids }) => ({
+      messages: parsedMessages.map(({ message, ids, sourceData }) => ({
         id: message.id,
         role: message.role,
         content: message.content,
@@ -132,6 +133,7 @@ export async function GET(
         quickReplies: parseJSON(message.quickReplies) || [],
         ctas: parseJSON(message.ctaData) || [],
         productCards: parseJSON(message.productCards) || [],
+        declarativeWidgets: widgetsFromMessageMetadata(sourceData),
         sources: ids
           .map((id) => sourceMap.get(id))
           .filter((source) => Boolean(source)),
