@@ -27,11 +27,18 @@
     theme: 'light',
     position: 'bottom-right',
     primaryColor: '#633cff',
+    secondaryColor: '#825cff',
+    launcherColor: null,
+    brandLogoUrl: null,
     title: 'Chat Assistant',
     subtitle: 'Come posso aiutarti?',
     welcomeMessage: null,
     autoOpen: false,
     showLauncher: true,
+    launcherMessageEnabled: false,
+    launcherMessage: null,
+    launcherMessageDelay: 1500,
+    launcherMessageDuration: 12000,
     customCSS: null,
     widgetShape: 'circle',
     iconValue: '💬',
@@ -44,6 +51,12 @@
 
   // Merge configurazione utente
   const config = Object.assign({}, DEFAULT_CONFIG, window.ChatbotConfig || {});
+  config.primaryColor = normalizeHexColor(config.primaryColor, '#633cff');
+  config.secondaryColor = normalizeHexColor(config.secondaryColor, adjustBrightness(config.primaryColor, -20));
+  config.launcherColor = normalizeHexColor(config.launcherColor, config.primaryColor);
+  config.launcherMessage = String(config.launcherMessage || '').trim().slice(0, 160);
+  config.launcherMessageDelay = clampNumber(config.launcherMessageDelay, 0, 30000, 1500);
+  config.launcherMessageDuration = clampNumber(config.launcherMessageDuration, 0, 60000, 12000);
   const widgetScriptUrl = Array.from(document.scripts)
     .map((script) => script.src)
     .find((src) => src && src.includes('/api/shopify/widget.js'));
@@ -126,6 +139,9 @@
   // Elementi DOM
   let widgetContainer;
   let launcher;
+  let launcherMessage;
+  let launcherMessageTimer;
+  let launcherMessageHideTimer;
   let chatWindow;
   let messagesContainer;
   let inputContainer;
@@ -144,7 +160,7 @@
       width: ${launcherSize}px;
       height: ${launcherSize}px;
       border-radius: ${launcherRadius};
-      background: ${config.gradient ? `linear-gradient(135deg, ${config.primaryColor}, ${adjustBrightness(config.primaryColor, -20)})` : config.primaryColor};
+      background: ${config.launcherColor};
       color: white;
       border: none;
       cursor: pointer;
@@ -165,8 +181,36 @@
       width: 100%;
       height: 100%;
       border-radius: inherit;
-      object-fit: cover;
+      box-sizing: border-box;
+      object-fit: contain;
+      padding: 7px;
     }
+
+    .chatbot-launcher-message {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 12px);
+      width: max-content;
+      max-width: min(240px, calc(100vw - 32px));
+      padding: 11px 34px 11px 14px;
+      border: 1px solid ${config.primaryColor}22;
+      border-radius: 14px;
+      background: ${config.theme === 'dark' ? '#111827' : '#ffffff'};
+      color: ${config.theme === 'dark' ? '#f9fafb' : '#171717'};
+      box-shadow: 0 10px 30px rgba(0,0,0,.16);
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.35;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(8px) scale(.98);
+      transition: opacity .22s ease, transform .22s ease;
+    }
+
+    .chatbot-launcher-message.visible { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+    .chatbot-launcher-message::after { position: absolute; right: 22px; bottom: -7px; width: 12px; height: 12px; border-right: 1px solid ${config.primaryColor}22; border-bottom: 1px solid ${config.primaryColor}22; background: inherit; content: ''; transform: rotate(45deg); }
+    .chatbot-launcher-message-close { position: absolute; top: 5px; right: 6px; width: 24px; height: 24px; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 16px; opacity: .55; }
 
     .chatbot-window {
       position: absolute;
@@ -194,13 +238,16 @@
     }
 
     .chatbot-header {
-      background: ${config.primaryColor};
+      background: ${config.gradient ? `linear-gradient(135deg, ${config.primaryColor}, ${config.secondaryColor})` : config.primaryColor};
       color: white;
       padding: 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
+
+    .chatbot-header-brand { display: flex; min-width: 0; align-items: center; gap: 10px; }
+    .chatbot-brand-logo { width: 72px; height: 38px; flex: 0 0 auto; box-sizing: border-box; border-radius: 8px; background: #fff; object-fit: contain; padding: 4px; }
 
     .chatbot-header-info h3 {
       margin: 0;
@@ -881,6 +928,19 @@
         font-size: 21px;
       }
 
+      .chatbot-launcher-message {
+        right: calc(100% + 10px);
+        bottom: 0;
+        max-width: min(210px, calc(100vw - 92px));
+      }
+
+      .chatbot-launcher-message::after {
+        right: -7px;
+        bottom: 18px;
+        border-right: 1px solid ${config.primaryColor}22;
+        border-bottom: 1px solid ${config.primaryColor}22;
+      }
+
       .chatbot-window {
         position: fixed;
         width: calc(100vw - 24px);
@@ -942,6 +1002,25 @@
   `;
 
   // Utility functions
+  function normalizeHexColor(value, fallback) {
+    const candidate = String(value || '').trim();
+    return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : fallback;
+  }
+
+  function clampNumber(value, min, max, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+  }
+
+  function safeImageUrl(value) {
+    try {
+      const url = new URL(String(value || ''), config.apiUrl);
+      return url.protocol === 'https:' ? url.toString() : '';
+    } catch {
+      return '';
+    }
+  }
+
   function adjustBrightness(hex, percent) {
     const num = parseInt(hex.replace("#", ""), 16);
     const amt = Math.round(2.55 * percent);
@@ -1028,17 +1107,36 @@
       launcher.setAttribute('aria-expanded', 'false');
       launcher.textContent = config.iconValue || '💬';
       if (config.iconType === 'logo') {
-        try {
-          const logoUrl = new URL(config.iconValue, config.apiUrl);
-          if (logoUrl.protocol === 'http:' || logoUrl.protocol === 'https:') {
-            const logo = document.createElement('img');
-            logo.src = logoUrl.toString();
-            logo.alt = '';
-            launcher.replaceChildren(logo);
-          }
-        } catch {}
+        const logoUrl = safeImageUrl(config.iconValue);
+        if (logoUrl) {
+          const logo = document.createElement('img');
+          logo.src = logoUrl;
+          logo.alt = '';
+          launcher.replaceChildren(logo);
+        }
       }
       widgetContainer.appendChild(launcher);
+
+      if (config.launcherMessageEnabled && config.launcherMessage) {
+        launcherMessage = document.createElement('div');
+        launcherMessage.className = 'chatbot-launcher-message';
+        launcherMessage.setAttribute('role', 'status');
+        launcherMessage.setAttribute('aria-label', config.launcherMessage);
+        const messageText = document.createElement('span');
+        messageText.textContent = config.launcherMessage;
+        const closeMessage = document.createElement('button');
+        closeMessage.type = 'button';
+        closeMessage.className = 'chatbot-launcher-message-close';
+        closeMessage.setAttribute('aria-label', 'Chiudi invito');
+        closeMessage.textContent = '×';
+        closeMessage.addEventListener('click', (event) => {
+          event.stopPropagation();
+          hideLauncherMessage();
+        });
+        launcherMessage.append(messageText, closeMessage);
+        launcherMessage.addEventListener('click', openChat);
+        widgetContainer.appendChild(launcherMessage);
+      }
     }
 
     // Create chat window
@@ -1048,14 +1146,31 @@
     // Header
     const header = document.createElement('div');
     header.className = 'chatbot-header';
-    header.innerHTML = `
-      <div class="chatbot-header-info">
-        <h3>${escapeHtml(config.title)}</h3>
-        <p>${escapeHtml(config.subtitle)}</p>
-      </div>
-      <button class="chatbot-close">✕</button>
-    `;
-    header.querySelector('.chatbot-close').onclick = closeChat;
+    const headerBrand = document.createElement('div');
+    headerBrand.className = 'chatbot-header-brand';
+    const brandLogoUrl = safeImageUrl(config.brandLogoUrl);
+    if (brandLogoUrl) {
+      const brandLogo = document.createElement('img');
+      brandLogo.className = 'chatbot-brand-logo';
+      brandLogo.src = brandLogoUrl;
+      brandLogo.alt = config.title ? `Logo ${config.title}` : 'Logo';
+      headerBrand.appendChild(brandLogo);
+    }
+    const headerInfo = document.createElement('div');
+    headerInfo.className = 'chatbot-header-info';
+    const headerTitle = document.createElement('h3');
+    headerTitle.textContent = config.title;
+    const headerSubtitle = document.createElement('p');
+    headerSubtitle.textContent = config.subtitle;
+    headerInfo.append(headerTitle, headerSubtitle);
+    headerBrand.appendChild(headerInfo);
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'chatbot-close';
+    closeButton.setAttribute('aria-label', 'Chiudi assistente');
+    closeButton.textContent = '✕';
+    closeButton.onclick = closeChat;
+    header.append(headerBrand, closeButton);
     chatWindow.appendChild(header);
     chatWindow.setAttribute('role', 'dialog');
     chatWindow.setAttribute('aria-label', config.title);
@@ -1113,6 +1228,7 @@
     // Add to page
     document.body.appendChild(widgetContainer);
     installStorefrontLayoutCoordinator();
+    scheduleLauncherMessage();
 
     // Auto open if configured
     if (config.autoOpen) {
@@ -1134,6 +1250,25 @@
   }
 
   // Chat functions
+  function scheduleLauncherMessage() {
+    if (!launcherMessage || isOpen) return;
+    window.clearTimeout(launcherMessageTimer);
+    window.clearTimeout(launcherMessageHideTimer);
+    launcherMessageTimer = window.setTimeout(() => {
+      if (isOpen || !launcherMessage) return;
+      launcherMessage.classList.add('visible');
+      if (config.launcherMessageDuration > 0) {
+        launcherMessageHideTimer = window.setTimeout(hideLauncherMessage, config.launcherMessageDuration);
+      }
+    }, config.launcherMessageDelay);
+  }
+
+  function hideLauncherMessage() {
+    window.clearTimeout(launcherMessageTimer);
+    window.clearTimeout(launcherMessageHideTimer);
+    if (launcherMessage) launcherMessage.classList.remove('visible');
+  }
+
   function toggleChat() {
     if (isOpen) {
       closeChat();
@@ -1144,6 +1279,7 @@
 
   function openChat() {
     if (!isLoaded) return;
+    hideLauncherMessage();
     
     isOpen = true;
     chatWindow.classList.add('open');

@@ -38,8 +38,15 @@ window.ChatbotConfig = {
   subtitle: "Risposte e prenotazioni",
   welcomeMessage: "Benvenuto nel nostro spazio. Come posso aiutarti?",
   primaryColor: "#633cff",
+  secondaryColor: "#221166",
+  launcherColor: "#ffffff",
+  brandLogoUrl: "https://litx.example/assets/header-logo.png",
   iconType: "logo",
   iconValue: "https://litx.example/assets/client-logo.png",
+  launcherMessageEnabled: true,
+  launcherMessage: "Hai bisogno d'aiuto? Ti rispondiamo subito.",
+  launcherMessageDelay: 0,
+  launcherMessageDuration: 0,
 };
 window.open = (url) => {
   openedStoreUrl = String(url);
@@ -302,6 +309,7 @@ window.fetch = async (url, options = {}) => {
 
 window.eval(script);
 window.document.dispatchEvent(new window.Event("DOMContentLoaded"));
+await new Promise((resolve) => window.setTimeout(resolve, 5));
 
 assert.ok(window.ChatbotWidget?.isLoaded(), "Il widget non si inizializza");
 assert.equal(
@@ -310,7 +318,22 @@ assert.equal(
   "Il logo personalizzato non viene renderizzato",
 );
 assert.equal(
-  window.document.querySelector(".chatbot-header img"),
+  window.document.querySelector(".chatbot-brand-logo")?.getAttribute("src"),
+  "https://litx.example/assets/header-logo.png",
+  "Il logo del brand non viene mostrato nell'header",
+);
+assert.equal(
+  window.document.querySelector(".chatbot-launcher-message")?.classList.contains("visible"),
+  true,
+  "La call to action iniziale non appare vicino al launcher",
+);
+assert.equal(
+  window.document.querySelector(".chatbot-launcher-message")?.textContent,
+  "Hai bisogno d'aiuto? Ti rispondiamo subito.×",
+  "La call to action non usa il testo configurato",
+);
+assert.equal(
+  window.document.querySelector(".chatbot-header img:not(.chatbot-brand-logo)"),
   null,
   "Il titolo del widget consente HTML non sicuro",
 );

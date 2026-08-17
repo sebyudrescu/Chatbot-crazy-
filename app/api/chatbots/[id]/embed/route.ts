@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 
+const OptionalHttpsUrlSchema = z.union([
+  z.literal(''),
+  z.string().trim().url().max(2_000).refine(value => new URL(value).protocol === 'https:', 'Il logo deve usare HTTPS'),
+]);
+
 const EmbedSettingsSchema = z.object({
   enabled: z.boolean(),
   title: z.string().trim().min(1).max(120),
@@ -9,8 +14,15 @@ const EmbedSettingsSchema = z.object({
   theme: z.enum(['light', 'dark']),
   position: z.enum(['bottom-right', 'bottom-left', 'top-right', 'top-left']),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  launcherColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  brandLogoUrl: OptionalHttpsUrlSchema,
   autoOpen: z.boolean(),
   showLauncher: z.boolean(),
+  launcherMessageEnabled: z.boolean(),
+  launcherMessage: z.string().trim().max(160),
+  launcherMessageDelay: z.number().int().min(0).max(30_000),
+  launcherMessageDuration: z.number().int().min(0).max(60_000),
   customCSS: z.string().max(50_000),
   allowedDomains: z.string().max(5_000),
   widgetShape: z.enum(['circle', 'rounded', 'square']),
@@ -20,6 +32,12 @@ const EmbedSettingsSchema = z.object({
   animation: z.boolean(),
   shadow: z.boolean(),
   gradient: z.boolean(),
+}).superRefine((settings, context) => {
+  if (settings.iconType !== 'logo') return;
+  try {
+    if (new URL(settings.iconValue).protocol === 'https:') return;
+  } catch {}
+  context.addIssue({ code: z.ZodIssueCode.custom, path: ['iconValue'], message: 'Il logo del launcher deve usare HTTPS' });
 });
 
 // GET /api/chatbots/[id]/embed - Get embed settings
@@ -74,8 +92,15 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
         theme: settings.theme,
         position: settings.position,
         primaryColor: settings.primaryColor,
+        secondaryColor: settings.secondaryColor,
+        launcherColor: settings.launcherColor,
+        brandLogoUrl: settings.brandLogoUrl || null,
         autoOpen: settings.autoOpen,
         showLauncher: settings.showLauncher,
+        launcherMessageEnabled: settings.launcherMessageEnabled,
+        launcherMessage: settings.launcherMessage || null,
+        launcherMessageDelay: settings.launcherMessageDelay,
+        launcherMessageDuration: settings.launcherMessageDuration,
         customCSS: settings.customCSS,
         allowedDomains: settings.allowedDomains,
         widgetShape: settings.widgetShape,
@@ -94,8 +119,15 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
         theme: settings.theme,
         position: settings.position,
         primaryColor: settings.primaryColor,
+        secondaryColor: settings.secondaryColor,
+        launcherColor: settings.launcherColor,
+        brandLogoUrl: settings.brandLogoUrl || null,
         autoOpen: settings.autoOpen,
         showLauncher: settings.showLauncher,
+        launcherMessageEnabled: settings.launcherMessageEnabled,
+        launcherMessage: settings.launcherMessage || null,
+        launcherMessageDelay: settings.launcherMessageDelay,
+        launcherMessageDuration: settings.launcherMessageDuration,
         customCSS: settings.customCSS,
         allowedDomains: settings.allowedDomains,
         widgetShape: settings.widgetShape,

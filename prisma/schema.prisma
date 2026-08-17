@@ -988,6 +988,9 @@ model EmbedSettings {
   theme        String @default("light") // "light" | "dark"
   position     String @default("bottom-right") // "bottom-right" | "bottom-left" | "top-right" | "top-left"
   primaryColor String @default("#007bff")
+  secondaryColor String @default("#825cff")
+  launcherColor  String @default("#633cff")
+  brandLogoUrl   String?
 
   // Widget Shape & Icon
   widgetShape String @default("circle") // "circle" | "rounded" | "square"
@@ -1003,6 +1006,10 @@ model EmbedSettings {
   // Behavior
   autoOpen     Boolean @default(false)
   showLauncher Boolean @default(true)
+  launcherMessageEnabled  Boolean @default(false)
+  launcherMessage         String?
+  launcherMessageDelay    Int     @default(1500)
+  launcherMessageDuration Int     @default(12000)
 
   // Advanced Customization
   customCSS      String?
