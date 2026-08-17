@@ -65,3 +65,5 @@ venv/
 tmp_rovodev_*
 /audit-report/
 /.swc
+
+.env*.local
