@@ -251,12 +251,14 @@
 
     .chatbot-header-info h3 {
       margin: 0;
+      color: #ffffff !important;
       font-size: 16px;
       font-weight: 600;
     }
 
     .chatbot-header-info p {
       margin: 4px 0 0 0;
+      color: #ffffff !important;
       font-size: 12px;
       opacity: 0.9;
     }
