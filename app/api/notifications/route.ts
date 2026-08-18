@@ -34,7 +34,14 @@ export async function GET(request: NextRequest) {
     }),
   ])
   const notifications: Notification[] = [
-    ...handoffs.map(item => ({ key: `handoff:${item.id}`, type: 'handoff', severity: 'critical' as const, title: 'Operatore richiesto', description: `${item.chatbot.companyName}: ${item.escalationReason || 'conversazione da prendere in carico'}`, href: `/conversations?conversation=${item.id}`, createdAt: item.escalatedAt || item.startedAt })),
+    ...handoffs.flatMap(item => {
+      const now = Date.now()
+      const cycle = item.handoffSequence || 1
+      const base: Notification[] = [{ key: `handoff:${item.id}:${cycle}`, type: 'handoff', severity: 'critical', title: 'Operatore richiesto', description: `${item.chatbot.companyName}: ${item.escalationReason || 'conversazione da prendere in carico'}`, href: `/conversations?conversation=${item.id}`, createdAt: item.escalatedAt || item.startedAt }]
+      if (!item.firstHumanResponseAt && item.firstResponseDueAt && item.firstResponseDueAt.getTime() < now) base.push({ key: `sla-first:${item.id}:${cycle}`, type: 'sla', severity: 'critical', title: 'SLA prima risposta superato', description: `${item.chatbot.companyName}: la conversazione attende una risposta umana`, href: `/conversations?conversation=${item.id}`, createdAt: item.firstResponseDueAt })
+      if (item.resolutionDueAt && item.resolutionDueAt.getTime() < now) base.push({ key: `sla-resolution:${item.id}:${cycle}`, type: 'sla', severity: 'warning', title: 'SLA risoluzione superato', description: `${item.chatbot.companyName}: la conversazione è ancora aperta`, href: `/conversations?conversation=${item.id}`, createdAt: item.resolutionDueAt })
+      return base
+    }),
     ...failedSources.map(item => ({ key: `source:${item.id}`, type: 'source', severity: 'warning' as const, title: 'Fonte non sincronizzata', description: `${item.chatbot.companyName}: ${item.originalFilename || item.sourceUrl || 'fonte'} non disponibile`, href: '/knowledge', createdAt: item.createdAt })),
     ...failedRuns.map(item => ({ key: `evaluation:${item.id}`, type: 'evaluation', severity: 'warning' as const, title: 'Valutazione non superata', description: `${item.evaluationCase.chatbot.companyName}: ${item.evaluationCase.name}`, href: '/evaluations', createdAt: item.createdAt })),
     ...failedActions.map(item => ({ key: `action:${item.id}`, type: 'action', severity: 'warning' as const, title: 'Azione non riuscita', description: `${item.action.chatbot.companyName}: ${item.action.name} · ${item.error || 'errore'}`, href: '/actions', createdAt: item.createdAt })),

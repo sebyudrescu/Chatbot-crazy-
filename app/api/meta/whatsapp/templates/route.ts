@@ -5,6 +5,7 @@ import { getMetaConnectionForBot } from "@/lib/meta-connections";
 import { listWhatsAppTemplates, sendWhatsAppTemplate } from "@/lib/meta-messaging";
 import { renderWhatsAppTemplate, templateBody, templateHasUnsupportedVariables, templateParameterCount } from "@/lib/meta-payloads";
 import { stringifyJSON } from "@/lib/utils";
+import { recordHelpDeskOperatorReply } from "@/lib/helpdesk-operations";
 
 const SendSchema = z.object({
   conversationId: z.string().uuid(),
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
       content,
       channel: "whatsapp",
       deliveryStatus: "pending",
+      operatorAuthored: true,
       sourcesUsed: stringifyJSON({ type: "whatsapp_template", name: template.name, language: template.language }),
     } });
     try {
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, code: "CHANNEL_DELIVERY_FAILED", error: error instanceof Error ? error.message : "Invio template non riuscito", data: { ...message, deliveryStatus: "failed" } }, { status: 502 });
     }
     await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
+    await recordHelpDeskOperatorReply({ botId: conversation.botId, conversationId: conversation.id, at: message.createdAt });
     return NextResponse.json({ success: true, data: { ...message, deliveryStatus: "sent" } }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Invio template non riuscito" }, { status: 400 });

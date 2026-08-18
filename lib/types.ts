@@ -21,6 +21,13 @@ export enum MessageRole {
   ASSISTANT = "assistant",
 }
 
+const HelpDeskSlaPolicySchema = z.object({
+  firstResponseMinutes: z.number().int().min(1).max(43_200),
+  resolutionMinutes: z.number().int().min(1).max(43_200),
+}).refine((value) => value.resolutionMinutes >= value.firstResponseMinutes, {
+  message: "Lo SLA di risoluzione deve essere maggiore o uguale alla prima risposta",
+});
+
 // Zod Schemas for validation
 export const ChatbotSettingsSchema = z.object({
   primaryColor: z.string().optional(),
@@ -54,6 +61,13 @@ export const ChatbotSettingsSchema = z.object({
     groundingThreshold: z.number().min(0).max(1),
     sampleCount: z.number().int().min(1),
     calibratedAt: z.string().datetime(),
+  }).optional(),
+  helpdeskSla: z.object({
+    dueSoonMinutes: z.number().int().min(1).max(1440).default(30),
+    low: HelpDeskSlaPolicySchema.default({ firstResponseMinutes: 240, resolutionMinutes: 4320 }),
+    normal: HelpDeskSlaPolicySchema.default({ firstResponseMinutes: 60, resolutionMinutes: 1440 }),
+    high: HelpDeskSlaPolicySchema.default({ firstResponseMinutes: 30, resolutionMinutes: 480 }),
+    urgent: HelpDeskSlaPolicySchema.default({ firstResponseMinutes: 15, resolutionMinutes: 240 }),
   }).optional(),
 });
 

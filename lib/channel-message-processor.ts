@@ -17,6 +17,7 @@ import { buildCatalogFollowUpQuery, buildConversationalCommerceQuery, classifyCo
 import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, productDiscoveryClarification, styleAdviceClarification } from "@/lib/conversation-guidance";
 import { productCardsSchema } from "@/lib/commerce-types";
 import { syncCRMContactFromConversation } from "@/lib/crm-sync";
+import { escalateHelpDeskConversation, reopenHelpDeskConversation } from "@/lib/helpdesk-operations";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -50,6 +51,11 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const parsedOrderLookup = parseOrderLookupMessage(input.text, previousAssistantText);
   const persistedUserText = redactOrderLookupMessage(input.text, parsedOrderLookup);
   const userMessage = await prisma.message.create({ data: { conversationId: conversation.id, role: "user", content: persistedUserText, channel: input.channel, externalMessageId: input.externalMessageId, deliveryStatus: "received" } });
+  if (conversation.isResolved) {
+    await reopenHelpDeskConversation({ botId: input.botId, conversationId: conversation.id });
+    conversation.isResolved = false;
+    conversation.needsHumanEscalation = false;
+  }
   try {
     await syncCRMContactFromConversation(conversation.id);
   } catch (error) {
@@ -95,17 +101,17 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       data: {
         lastMessageAt: new Date(),
         userIntent: "order_tracking",
-        ...(orderLookup.handoff ? {
-          needsHumanEscalation: true,
-          escalatedAt: new Date(),
-          escalationReason: "Tracking ordine non disponibile sul canale automatico",
-        } : {}),
       },
     });
-    if (orderLookup.handoff) await emitIntegrationWebhook({
+    const handoff = orderLookup.handoff ? await escalateHelpDeskConversation({
+      botId: input.botId,
+      conversationId: conversation.id,
+      reason: "Tracking ordine non disponibile sul canale automatico",
+    }) : null;
+    if (handoff?.transitioned) await emitIntegrationWebhook({
       botId: input.botId,
       event: "conversation.handoff_requested",
-      idempotencyKey: `order-lookup-handoff:${userMessage.id}`,
+      idempotencyKey: `order-lookup-handoff:${conversation.id}:${handoff.conversation?.handoffSequence}`,
       payload: { conversationId: conversation.id, messageId: userMessage.id, reason: "Tracking ordine non disponibile sul canale automatico" },
     });
     return { duplicate: false as const, handoff: false as const, handoffActivated: Boolean(orderLookup.handoff), conversationId: conversation.id, assistantMessageId: assistantMessage.id, response: orderLookup.response };
@@ -136,17 +142,17 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
-        ...(incomingPolicy.action === "handoff" ? {
-          needsHumanEscalation: true,
-          escalatedAt: new Date(),
-          escalationReason: `Policy agente: ${incomingPolicy.matchedRule}`,
-        } : {}),
       },
     });
-    if (incomingPolicy.action === "handoff") await emitIntegrationWebhook({
+    const handoff = incomingPolicy.action === "handoff" ? await escalateHelpDeskConversation({
+      botId: input.botId,
+      conversationId: conversation.id,
+      reason: `Policy agente: ${incomingPolicy.matchedRule}`,
+    }) : null;
+    if (handoff?.transitioned) await emitIntegrationWebhook({
       botId: input.botId,
       event: "conversation.handoff_requested",
-      idempotencyKey: `channel-policy-handoff:${userMessage.id}`,
+      idempotencyKey: `channel-policy-handoff:${conversation.id}:${handoff.conversation?.handoffSequence}`,
       payload: { conversationId: conversation.id, messageId: userMessage.id, reason: `Policy agente: ${incomingPolicy.matchedRule}` },
     });
     return {
@@ -300,20 +306,20 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
           lastMessageAt: new Date(),
           userIntent: agentResult.intent,
           sentiment: currentSentiment,
-          ...(handoffActivated ? {
-            needsHumanEscalation: true,
-            escalatedAt: new Date(),
-            escalationReason: policyDecision.action === "handoff"
-              ? `Policy agente: ${policyDecision.matchedRule}`
-              : "Handoff richiesto dall'orchestratore agentico",
-          } : {}),
         },
       });
-      if (handoffActivated && !actionResult.handoffActivated && !workflow.actions.includes("handoff")) {
+      const agentHandoff = handoffActivated ? await escalateHelpDeskConversation({
+        botId: input.botId,
+        conversationId: conversation.id,
+        reason: policyDecision.action === "handoff"
+          ? `Policy agente: ${policyDecision.matchedRule}`
+          : "Handoff richiesto dall'orchestratore agentico",
+      }) : null;
+      if (agentHandoff?.transitioned && !actionResult.handoffActivated && !workflow.actions.includes("handoff")) {
         await emitIntegrationWebhook({
           botId: input.botId,
           event: "conversation.handoff_requested",
-          idempotencyKey: `channel-agentic-handoff:${userMessage.id}`,
+          idempotencyKey: `channel-agentic-handoff:${conversation.id}:${agentHandoff.conversation?.handoffSequence}`,
           payload: { conversationId: conversation.id, messageId: userMessage.id, reason: "Handoff richiesto dall'orchestratore agentico" },
         });
       }
@@ -433,6 +439,7 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const assistantMessage = await prisma.message.create({
     data: { conversationId: conversation.id, role: "assistant", content: result.response, channel: input.channel, deliveryStatus: "pending", sourcesUsed: stringifyJSON({ sources: result.sourcesUsed, metadata: { intent: result.decision.intent.intent, confidence: result.metadata.confidence, responseType: result.metadata.responseType, grounding: result.metadata.grounding, workflowsExecuted: workflow.executed, workflowActions: workflow.actions, actionsExecuted: actionResult.executed, actionsFailed: actionResult.failed } }), productCards: stringifyJSON(productCards) },
   });
+
   if (productCards.length) {
     await prisma.commerceEvent.createMany({
       data: productCards.map(card => ({ botId: input.botId, conversationId: conversation.id, messageId: assistantMessage.id, productId: card.productId, variantId: card.variantId, eventType: "impression", sessionId: conversation.userSessionId })),
@@ -445,14 +452,18 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
       userIntent: result.decision.intent.intent,
       sentiment: currentSentiment,
       topicsDiscussed: stringifyJSON(Array.from(new Set([...(parseJSON<string[]>(conversation.topicsDiscussed) || []), ...result.decision.topics]))),
-      ...(policyDecision.action === "handoff" ? { needsHumanEscalation: true, escalatedAt: new Date(), escalationReason: `Policy agente: ${policyDecision.matchedRule}` } : {}),
     },
   });
-  if (policyDecision.action === "handoff" && !actionResult.handoffActivated && !workflow.actions.includes("handoff")) {
+  const policyHandoff = policyDecision.action === "handoff" ? await escalateHelpDeskConversation({
+    botId: input.botId,
+    conversationId: conversation.id,
+    reason: `Policy agente: ${policyDecision.matchedRule}`,
+  }) : null;
+  if (policyHandoff?.transitioned && !actionResult.handoffActivated && !workflow.actions.includes("handoff")) {
     await emitIntegrationWebhook({
       botId: input.botId,
       event: "conversation.handoff_requested",
-      idempotencyKey: `channel-outgoing-policy-handoff:${userMessage.id}`,
+      idempotencyKey: `channel-outgoing-policy-handoff:${conversation.id}:${policyHandoff.conversation?.handoffSequence}`,
       payload: { conversationId: conversation.id, messageId: userMessage.id, reason: `Policy agente: ${policyDecision.matchedRule}` },
     });
   }

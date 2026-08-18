@@ -1,6 +1,7 @@
 import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
+import { escalateHelpDeskConversation, returnHelpDeskConversationToBot } from '@/lib/helpdesk-operations'
 
 /**
  * POST /api/conversations/[id]/escalate
@@ -12,21 +13,21 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const { reason, assignedAgent } = await request.json()
     const conversationId = params.id
 
-    // Update conversation with escalation
-    const updatedConversation = await prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        needsHumanEscalation: true,
-        escalatedAt: new Date(),
-        escalationReason: reason || 'User requested human assistance',
-        assignedAgent: assignedAgent || null,
-      },
+    const current = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { botId: true } })
+    if (!current) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    const result = await escalateHelpDeskConversation({
+      botId: current.botId,
+      conversationId,
+      reason: typeof reason === 'string' ? reason : null,
+      assignedAgent: typeof assignedAgent === 'string' ? assignedAgent : null,
     })
-    after(async () => {
+    const updatedConversation = result?.conversation
+    if (!updatedConversation) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    if (result.transitioned) after(async () => {
       await emitIntegrationWebhook({
         botId: updatedConversation.botId,
         event: 'conversation.handoff_requested',
-        idempotencyKey: `escalation:${updatedConversation.id}:${updatedConversation.escalatedAt?.toISOString() || 'now'}`,
+        idempotencyKey: `escalation:${updatedConversation.id}:${updatedConversation.handoffSequence}`,
         payload: {
           conversationId: updatedConversation.id,
           reason: updatedConversation.escalationReason,
@@ -58,14 +59,10 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
   try {
     const conversationId = params.id
 
-    const updatedConversation = await prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        needsHumanEscalation: false,
-        escalationReason: null,
-        escalatedAt: null,
-      },
-    })
+    const current = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { botId: true } })
+    if (!current) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    const result = await returnHelpDeskConversationToBot({ botId: current.botId, conversationId })
+    const updatedConversation = result?.conversation
 
     return NextResponse.json({
       success: true,

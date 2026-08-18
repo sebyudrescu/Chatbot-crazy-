@@ -15,6 +15,7 @@ import type { ChatbotSettings } from "./types";
 import { stringifyJSON } from "./utils";
 import type { ActionResult } from "./action-engine";
 import { prepareWidgetsForMessage } from "./widget-message-persistence";
+import { escalateHelpDeskConversation } from "./helpdesk-operations";
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
@@ -137,17 +138,17 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
       lastMessageAt: new Date(),
       userIntent: agentResult.intent,
       sentiment: input.sentiment,
-      ...(handoffRequested
-        ? {
-            needsHumanEscalation: true,
-            escalatedAt: new Date(),
-            escalationReason: policyDecision.matchedRule
-              ? `Policy agente: ${policyDecision.matchedRule}`
-              : "Handoff richiesto dall'agente",
-          }
-        : {}),
     },
   });
+  const handoffTransition = handoffRequested && !input.context.evaluationMode
+    ? await escalateHelpDeskConversation({
+        botId: input.context.botId,
+        conversationId: input.context.conversationId,
+        reason: policyDecision.matchedRule
+          ? `Policy agente: ${policyDecision.matchedRule}`
+          : "Handoff richiesto dall'agente",
+      })
+    : null;
   const orderTool = agentResult.toolTrace.find((trace) => trace.name === "get_order_status");
   if (orderTool) {
     await prisma.event.create({
@@ -188,6 +189,8 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
 
   return {
     handoffRequested,
+    handoffTransitioned: Boolean(handoffTransition?.transitioned),
+    handoffSequence: handoffTransition?.conversation?.handoffSequence ?? null,
     handoffReason: policyDecision.matchedRule || "Handoff richiesto dall'agente",
     telemetry: {
       model: agentResult.model,

@@ -6,6 +6,7 @@ import { getMetaConnectionForBot } from '@/lib/meta-connections'
 import { sendMetaText } from '@/lib/meta-messaging'
 import { whatsappServiceWindow } from '@/lib/meta-payloads'
 import { syncCRMContactFromConversation } from '@/lib/crm-sync'
+import { recordHelpDeskOperatorReply } from '@/lib/helpdesk-operations'
 
 // POST /api/messages - Create a message
 export async function POST(request: NextRequest) {
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
         content: validatedData.content,
         channel: conversation.channel,
         deliveryStatus: metaConnection ? 'pending' : null,
+        operatorAuthored: validatedData.role === 'assistant',
         sourcesUsed: validatedData.sourcesUsed
           ? stringifyJSON(validatedData.sourcesUsed)
           : null,
@@ -56,6 +58,13 @@ export async function POST(request: NextRequest) {
       where: { id: validatedData.conversationId },
       data: { lastMessageAt: new Date() },
     })
+    if (validatedData.role === 'assistant') {
+      await recordHelpDeskOperatorReply({
+        botId: conversation.botId,
+        conversationId: conversation.id,
+        at: message.createdAt,
+      })
+    }
     await syncCRMContactFromConversation(validatedData.conversationId)
     
     return NextResponse.json(

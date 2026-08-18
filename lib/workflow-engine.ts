@@ -4,6 +4,7 @@ import { safeHttpsUrl } from './integration-catalog'
 import { deliverWebhook } from './webhook-delivery'
 import { emitIntegrationWebhook } from './integration-webhooks'
 import { decryptConfigSecrets } from './secret-config'
+import { escalateHelpDeskConversation } from './helpdesk-operations'
 
 interface WorkflowStep {
   id: string
@@ -115,18 +116,15 @@ export async function runActiveWorkflows(context: RunContext): Promise<WorkflowR
           }
         }
         if (step.type === 'handoff') {
-          await prisma.conversation.update({
-            where: { id: context.conversationId },
-            data: {
-              needsHumanEscalation: true,
-              escalatedAt: new Date(),
-              escalationReason: String(step.config.reason || 'Workflow handoff'),
-            },
+          const handoff = await escalateHelpDeskConversation({
+            botId: context.botId,
+            conversationId: context.conversationId,
+            reason: String(step.config.reason || 'Workflow handoff'),
           })
-          await emitIntegrationWebhook({
+          if (handoff?.transitioned) await emitIntegrationWebhook({
             botId: context.botId,
             event: 'conversation.handoff_requested',
-            idempotencyKey: `handoff-workflow:${workflow.id}:${step.id}:${context.messageId}`,
+            idempotencyKey: `handoff-workflow:${workflow.id}:${step.id}:${context.conversationId}:${handoff.conversation?.handoffSequence}`,
             payload: {
               conversationId: context.conversationId,
               messageId: context.messageId,

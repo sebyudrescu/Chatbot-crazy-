@@ -528,6 +528,17 @@ model Conversation {
   escalationReason     String?
   assignedAgent        String?
 
+  // Owner-operated Help Desk state. These fields describe the latest
+  // escalation cycle; historical transitions belong in the Event store.
+  priority             String    @default("normal")
+  handoffSequence      Int       @default(0)
+  firstResponseDueAt   DateTime?
+  resolutionDueAt      DateTime?
+  firstHumanResponseAt DateTime?
+  lastHumanResponseAt  DateTime?
+  resolvedAt           DateTime?
+  reopenedAt           DateTime?
+
   chatbot         Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
   messages        Message[]
   structuredFacts StructuredFact[] // Cognitive memory
@@ -542,6 +553,9 @@ model Conversation {
   @@index([sentiment])
   @@index([isResolved])
   @@index([needsHumanEscalation])
+  @@index([botId, isResolved, needsHumanEscalation, priority, lastMessageAt], map: "conversations_helpdesk_queue_idx")
+  @@index([botId, needsHumanEscalation, firstResponseDueAt], map: "conversations_first_response_sla_idx")
+  @@index([botId, isResolved, resolutionDueAt], map: "conversations_resolution_sla_idx")
   @@map("conversations")
 }
 
@@ -562,6 +576,7 @@ model Message {
   ctaData         String? // JSON string for contextual CTAs
   quickReplies    String? // JSON array of suggested questions
   productCards    String? // JSON array of server-hydrated commerce cards
+  operatorAuthored Boolean @default(false)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   responseRevisions ResponseRevision[]
@@ -571,6 +586,22 @@ model Message {
   @@index([feedback])
   @@index([channel, createdAt])
   @@map("messages")
+}
+
+// Saved filters belong to the single private owner workspace. They contain
+// structured filter JSON only; free-text search and visitor PII are excluded
+// by the service layer that will expose them.
+model HelpDeskSavedView {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  filters   String   @default("{}")
+  sort      String   @default("recent")
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isDefault, updatedAt])
+  @@map("helpdesk_saved_views")
 }
 
 // Owner-approved corrections converted into durable Q&A knowledge and

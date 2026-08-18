@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@prisma/client'
 import { parseJSON } from '@/lib/utils'
 
 const cell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`
@@ -7,12 +8,27 @@ const cell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""').rep
 export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')
   const status = request.nextUrl.searchParams.get('status')
+  const priority = request.nextUrl.searchParams.get('priority')
+  const channel = request.nextUrl.searchParams.get('channel')
+  const sla = request.nextUrl.searchParams.get('sla')
+  const now = new Date()
+  const dueSoon = new Date(now.getTime() + 30 * 60_000)
+  const slaWhere: Prisma.ConversationWhereInput = sla === 'breached'
+    ? { needsHumanEscalation: true, isResolved: false, OR: [{ firstHumanResponseAt: null, firstResponseDueAt: { lt: now } }, { resolutionDueAt: { lt: now } }] }
+    : sla === 'due_soon'
+      ? { needsHumanEscalation: true, isResolved: false, OR: [{ firstHumanResponseAt: null, firstResponseDueAt: { gte: now, lte: dueSoon } }, { resolutionDueAt: { gte: now, lte: dueSoon } }] }
+      : sla === 'untracked'
+        ? { escalatedAt: null }
+        : {}
   const conversations = await prisma.conversation.findMany({
     where: {
       ...(botId && botId !== 'all' ? { botId } : {}),
       ...(status === 'open' ? { isResolved: false } : {}),
       ...(status === 'resolved' ? { isResolved: true } : {}),
       ...(status === 'escalated' ? { needsHumanEscalation: true } : {}),
+      ...(priority && priority !== 'all' ? { priority } : {}),
+      ...(channel && channel !== 'all' ? { channel } : {}),
+      ...slaWhere,
     },
     include: {
       chatbot: { select: { companyName: true } },
@@ -21,7 +37,7 @@ export async function GET(request: NextRequest) {
     orderBy: { startedAt: 'desc' },
     take: 10000,
   })
-  const headers = ['ID', 'Agente', 'Data apertura', 'Ultimo messaggio', 'Nome', 'Email', 'Telefono', 'Azienda', 'Stato', 'Handoff', 'Intento', 'Sentiment', 'Messaggi', 'Tag', 'Riepilogo', 'Note interne']
+  const headers = ['ID', 'Agente', 'Data apertura', 'Ultimo messaggio', 'Nome', 'Email', 'Telefono', 'Azienda', 'Stato', 'Handoff', 'Priorità', 'Scadenza prima risposta', 'Prima risposta umana', 'Scadenza risoluzione', 'Risolta il', 'Intento', 'Sentiment', 'Messaggi', 'Tag', 'Riepilogo', 'Note interne']
   const rows = conversations.map(item => [
     item.id,
     item.chatbot.companyName,
@@ -33,6 +49,11 @@ export async function GET(request: NextRequest) {
     item.userCompany || '',
     item.isResolved ? 'Risolta' : 'Aperta',
     item.needsHumanEscalation ? 'Sì' : 'No',
+    item.priority,
+    item.firstResponseDueAt?.toISOString() || '',
+    item.firstHumanResponseAt?.toISOString() || '',
+    item.resolutionDueAt?.toISOString() || '',
+    item.resolvedAt?.toISOString() || '',
     item.userIntent || '',
     item.sentiment || '',
     item._count.messages,

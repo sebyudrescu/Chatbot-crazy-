@@ -39,6 +39,7 @@ import { verifyOwnerSessionToken } from "@/lib/auth-token";
 import { isSupportedAIModel } from "@/lib/ai-models";
 import { authenticateAgentApiKey } from "@/lib/agent-api-keys";
 import { syncCRMContactFromConversation } from "@/lib/crm-sync";
+import { escalateHelpDeskConversation, reopenHelpDeskConversation } from "@/lib/helpdesk-operations";
 import {
   pageContextMatchesOrigin,
   pageContextSchema,
@@ -331,6 +332,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!body.evaluationModel && conversation.isResolved) {
+      await reopenHelpDeskConversation({ botId, conversationId: conversation.id });
+      conversation.isResolved = false;
+      conversation.needsHumanEscalation = false;
+    }
+    if (!body.evaluationModel && conversation.needsHumanEscalation && !conversation.isResolved) {
+      const handoffResponse = "La conversazione è già in carico a una persona del team. Ti risponderà qui appena possibile.";
+      await prisma.$transaction([
+        prisma.message.create({
+          data: { conversationId: conversation.id, role: MessageRole.USER, content: message },
+        }),
+        prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: MessageRole.ASSISTANT,
+            content: handoffResponse,
+            sourcesUsed: stringifyJSON({ sources: [], metadata: { responseType: "active_handoff" } }),
+          },
+        }),
+      ]);
+      await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
+      scheduleCRMContactSync(conversation.id, false);
+      return NextResponse.json({
+        success: true,
+        data: {
+          conversationId: conversation.id,
+          response: handoffResponse,
+          handoff: true,
+          sourcesUsed: [],
+          quickReplies: [],
+          ctas: [],
+          productCards: [],
+        },
+      });
+    }
+
     // Existing conversations are fetched newest-first so Prisma can apply the
     // limit to the latest turns. Every downstream memory/routing component
     // expects chronological order.
@@ -380,23 +417,20 @@ export async function POST(request: NextRequest) {
           data: {
             lastMessageAt: new Date(),
             userIntent: "order_tracking",
-            ...(orderLookup.handoff
-              ? {
-                  needsHumanEscalation: true,
-                  escalatedAt: new Date(),
-                  escalationReason:
-                    "Tracking ordine non disponibile sul canale automatico",
-                }
-              : {}),
           },
         }),
       ]);
-      if (orderLookup.handoff)
+      const orderHandoff = orderLookup.handoff ? await escalateHelpDeskConversation({
+        botId,
+        conversationId: conversation.id,
+        reason: "Tracking ordine non disponibile sul canale automatico",
+      }) : null;
+      if (orderHandoff?.transitioned)
         after(() =>
           emitIntegrationWebhook({
             botId,
             event: "conversation.handoff_requested",
-            idempotencyKey: `order-lookup-handoff:${userMessage.id}`,
+            idempotencyKey: `order-lookup-handoff:${conversation.id}:${orderHandoff.conversation?.handoffSequence}`,
             payload: {
               conversationId: conversation.id,
               messageId: userMessage.id,
@@ -655,12 +689,12 @@ export async function POST(request: NextRequest) {
         }
       }
       if (agentic) {
-        if (agentic.handoffRequested && !body.evaluationModel) {
+        if (agentic.handoffTransitioned && !body.evaluationModel) {
           after(() =>
             emitIntegrationWebhook({
               botId,
               event: "conversation.handoff_requested",
-              idempotencyKey: `chat-agentic-handoff:${userMessage.id}`,
+              idempotencyKey: `chat-agentic-handoff:${conversation.id}:${agentic.handoffSequence}`,
               payload: {
                 conversationId: conversation.id,
                 messageId: userMessage.id,
@@ -1071,17 +1105,15 @@ export async function POST(request: NextRequest) {
         userIntent: effectiveIntent,
         sentiment: currentSentiment,
         topicsDiscussed: topics.length > 0 ? JSON.stringify(topics) : null,
-        ...(policyDecision.action === "handoff"
-          ? {
-              needsHumanEscalation: true,
-              escalatedAt: new Date(),
-              escalationReason: `Policy agente: ${policyDecision.matchedRule}`,
-            }
-          : {}),
       },
     });
+    const policyHandoff = policyDecision.action === "handoff" ? await escalateHelpDeskConversation({
+      botId,
+      conversationId: conversation.id,
+      reason: `Policy agente: ${policyDecision.matchedRule}`,
+    }) : null;
     if (
-      policyDecision.action === "handoff" &&
+      policyHandoff?.transitioned &&
       !actionResult.handoffActivated &&
       !workflowResult.actions.includes("handoff")
     ) {
@@ -1089,7 +1121,7 @@ export async function POST(request: NextRequest) {
         emitIntegrationWebhook({
           botId,
           event: "conversation.handoff_requested",
-          idempotencyKey: `chat-policy-handoff:${userMessage.id}`,
+          idempotencyKey: `chat-policy-handoff:${conversation.id}:${policyHandoff.conversation?.handoffSequence}`,
           payload: {
             conversationId: conversation.id,
             messageId: userMessage.id,

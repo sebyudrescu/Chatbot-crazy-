@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { calculateHelpDeskSlaAnalytics } from '@/lib/helpdesk-operations'
 
 export const dynamic = 'force-dynamic'
 
@@ -7,7 +8,7 @@ export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')
   const days = Math.min(365, Math.max(1, Number(request.nextUrl.searchParams.get('days') || 30)))
   const since = new Date(Date.now() - days * 86_400_000)
-  const [conversations, pipelineEvents, usageEvents, identifiedContacts] = await Promise.all([
+  const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows] = await Promise.all([
     prisma.conversation.findMany({
       where: { ...(botId ? { botId } : {}), startedAt: { gte: since } },
       include: { chatbot: { select: { id: true, companyName: true } }, _count: { select: { messages: true } } },
@@ -18,12 +19,38 @@ export async function GET(request: NextRequest) {
       select: { durationMs: true, success: true, metadata: true },
       take: 10_000,
     }),
+    prisma.event.findMany({
+      where: {
+        ...(botId ? { botId } : {}),
+        eventType: { startsWith: 'helpdesk.' },
+        timestamp: { gte: new Date(since.getTime() - 365 * 86_400_000) },
+      },
+      select: { conversationId: true, eventType: true, timestamp: true, metadata: true },
+      orderBy: { timestamp: 'asc' },
+      take: 50_000,
+    }),
     prisma.aIUsageEvent.findMany({
       where: { ...(botId ? { botId } : {}), createdAt: { gte: since } },
       select: { feature: true, model: true, totalTokens: true, estimatedCostUsd: true, durationMs: true, success: true },
       take: 10_000,
     }),
     prisma.cRMContact.count({ where: { ...(botId ? { botId } : {}), lastInteraction: { gte: since }, OR: [{ email: { not: null } }, { phone: { not: null } }] } }),
+    prisma.conversation.findMany({
+      where: {
+        ...(botId ? { botId } : {}),
+        OR: [
+          { escalatedAt: { gte: since } },
+          { resolvedAt: { gte: since } },
+          { needsHumanEscalation: true, isResolved: false },
+        ],
+      },
+      select: {
+        id: true, priority: true, channel: true, isResolved: true, needsHumanEscalation: true,
+        escalatedAt: true, firstResponseDueAt: true, resolutionDueAt: true,
+        firstHumanResponseAt: true, resolvedAt: true,
+      },
+      take: 10_000,
+    }),
   ])
   const ids = conversations.map((item) => item.id)
   const feedback = ids.length ? await prisma.message.findMany({ where: { conversationId: { in: ids }, feedback: { not: null } }, select: { id: true, conversationId: true, feedback: true, feedbackComment: true, content: true, createdAt: true } }) : []
@@ -54,6 +81,13 @@ export async function GET(request: NextRequest) {
   })).sort((left, right) => left.stage.localeCompare(right.stage))
   const aiCostUsd = Number(usageEvents.reduce((sum, event) => sum + event.estimatedCostUsd, 0).toFixed(6))
   const aiTokens = usageEvents.reduce((sum, event) => sum + event.totalTokens, 0)
+  const now = new Date()
+  const helpdesk = helpdeskRows.map((item) => ({ ...item, sla: calculateHelpDeskSlaAnalytics(item, now) }))
+  const historicalCycles = reconstructHelpDeskCycles(helpdeskEvents)
+  const firstResponseCompleted = historicalCycles.filter((cycle) => cycle.escalatedAt && cycle.escalatedAt >= since && cycle.firstHumanResponseAt && cycle.firstResponseDueAt)
+  const resolutionCompleted = historicalCycles.filter((cycle) => cycle.resolvedAt && cycle.resolvedAt >= since && cycle.resolutionDueAt)
+  const firstResponseSamples = firstResponseCompleted.map((cycle) => Math.max(0, cycle.firstHumanResponseAt!.getTime() - cycle.escalatedAt!.getTime()))
+  const resolutionSamples = resolutionCompleted.map((cycle) => Math.max(0, cycle.resolvedAt!.getTime() - cycle.escalatedAt!.getTime()))
 
   return NextResponse.json({ success: true, data: {
     periodDays: days,
@@ -62,5 +96,69 @@ export async function GET(request: NextRequest) {
     attention: conversations.filter((item) => item.needsHumanEscalation && !item.isResolved).slice(0, 10).map((item) => ({ id: item.id, name: item.userName || item.userEmail || `Visitatore ${item.userSessionId.slice(-6)}`, agent: item.chatbot.companyName, reason: item.escalationReason, lastInteraction: item.lastMessageAt || item.startedAt })),
     negativeFeedback: feedback.filter((item) => item.feedback === 'negative').slice(0, 10),
     pipeline: { stages, aiCostUsd, aiTokens, aiCalls: usageEvents.length },
+    helpdesk: {
+      backlog: helpdesk.filter((item) => item.needsHumanEscalation && !item.isResolved).length,
+      overdueFirstResponse: helpdesk.filter((item) => item.sla.firstResponseStatus === 'breached' && !item.firstHumanResponseAt).length,
+      overdueResolution: helpdesk.filter((item) => item.sla.resolutionStatus === 'breached' && !item.resolvedAt).length,
+      firstResponseAttainment: firstResponseCompleted.length ? Math.round(firstResponseCompleted.filter((cycle) => cycle.firstResponseDueAt && cycle.firstHumanResponseAt! <= cycle.firstResponseDueAt).length / firstResponseCompleted.length * 100) : null,
+      resolutionAttainment: resolutionCompleted.length ? Math.round(resolutionCompleted.filter((cycle) => cycle.resolutionDueAt && cycle.resolvedAt! <= cycle.resolutionDueAt).length / resolutionCompleted.length * 100) : null,
+      firstResponseMedianMs: percentile(firstResponseSamples, 0.5),
+      firstResponseP90Ms: percentile(firstResponseSamples, 0.9),
+      resolutionMedianMs: percentile(resolutionSamples, 0.5),
+      resolutionP90Ms: percentile(resolutionSamples, 0.9),
+      byPriority: count(helpdesk.map((item) => item.priority)),
+      byChannel: count(helpdesk.map((item) => item.channel)),
+    },
   } })
+}
+
+interface HelpDeskCycleSnapshot {
+  escalatedAt: Date | null
+  firstResponseDueAt: Date | null
+  resolutionDueAt: Date | null
+  firstHumanResponseAt: Date | null
+  resolvedAt: Date | null
+}
+
+function reconstructHelpDeskCycles(events: Array<{ conversationId: string | null; eventType: string; timestamp: Date; metadata: string | null }>) {
+  const cycles = new Map<string, HelpDeskCycleSnapshot>()
+  for (const event of events) {
+    if (!event.conversationId) continue
+    let metadata: Record<string, unknown> = {}
+    try { metadata = JSON.parse(event.metadata || '{}') } catch {}
+    const sequence = Number(metadata.handoffSequence)
+    if (!Number.isInteger(sequence) || sequence < 1) continue
+    const key = `${event.conversationId}:${sequence}`
+    const current = cycles.get(key) || {
+      escalatedAt: null, firstResponseDueAt: null, resolutionDueAt: null,
+      firstHumanResponseAt: null, resolvedAt: null,
+    }
+    current.escalatedAt = dateValue(metadata.escalatedAt) || current.escalatedAt
+    current.firstResponseDueAt = dateValue(metadata.firstResponseDueAt) || current.firstResponseDueAt
+    current.resolutionDueAt = dateValue(metadata.resolutionDueAt) || current.resolutionDueAt
+    current.firstHumanResponseAt = earlier(current.firstHumanResponseAt, dateValue(metadata.firstHumanResponseAt))
+    current.resolvedAt = dateValue(metadata.resolvedAt) || current.resolvedAt
+    if (event.eventType === 'helpdesk.handoff_requested' && !current.escalatedAt) current.escalatedAt = event.timestamp
+    if (event.eventType === 'helpdesk.operator_replied' && !current.firstHumanResponseAt) current.firstHumanResponseAt = event.timestamp
+    if (event.eventType === 'helpdesk.resolved' && !current.resolvedAt) current.resolvedAt = event.timestamp
+    cycles.set(key, current)
+  }
+  return [...cycles.values()].filter((cycle) => cycle.escalatedAt)
+}
+
+function dateValue(value: unknown) {
+  if (typeof value !== 'string') return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function earlier(current: Date | null, candidate: Date | null) {
+  if (!candidate) return current
+  return !current || candidate < current ? candidate : current
+}
+
+function percentile(values: number[], quantile: number) {
+  if (!values.length) return null
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.ceil(quantile * sorted.length) - 1]
 }

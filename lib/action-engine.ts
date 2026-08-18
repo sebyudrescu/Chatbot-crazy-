@@ -8,6 +8,7 @@ import { emitIntegrationWebhook } from "./integration-webhooks";
 import { decryptConfigSecrets } from "./secret-config";
 import { assertSafeRemoteUrl } from "./url-safety";
 import { checkRateLimit } from "./rate-limit";
+import { escalateHelpDeskConversation } from "./helpdesk-operations";
 import {
   publicWidgetDefinition,
   validateWidgetData,
@@ -179,18 +180,15 @@ export async function runTriggeredActions(
         output = "CTA prenotazione mostrata";
         success = true;
       } else if (action.type === "handoff") {
-        await prisma.conversation.update({
-          where: { id: context.conversationId },
-          data: {
-            needsHumanEscalation: true,
-            escalatedAt: new Date(),
-            escalationReason: config.reason || "Azione automatica",
-          },
+        const handoff = await escalateHelpDeskConversation({
+          botId: context.botId,
+          conversationId: context.conversationId,
+          reason: config.reason || "Azione automatica",
         });
-        await emitIntegrationWebhook({
+        if (handoff?.transitioned) await emitIntegrationWebhook({
           botId: context.botId,
           event: "conversation.handoff_requested",
-          idempotencyKey: `handoff-action:${action.id}:${context.messageId}`,
+          idempotencyKey: `handoff-action:${action.id}:${context.conversationId}:${handoff.conversation?.handoffSequence}`,
           payload: {
             conversationId: context.conversationId,
             messageId: context.messageId,

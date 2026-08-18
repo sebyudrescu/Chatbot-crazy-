@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Archive,
+  AlertTriangle,
+  Bookmark,
   Bot,
   Check,
   Clock3,
@@ -23,6 +25,7 @@ import {
   Tag as TagIcon,
   User,
   UserRoundCheck,
+  Timer,
   X,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
@@ -81,6 +84,15 @@ interface Conversation {
   needsHumanEscalation: boolean;
   escalationReason: string | null;
   assignedAgent?: string | null;
+  priority: "low" | "normal" | "high" | "urgent";
+  handoffSequence: number;
+  escalatedAt?: string | null;
+  firstResponseDueAt?: string | null;
+  resolutionDueAt?: string | null;
+  firstHumanResponseAt?: string | null;
+  lastHumanResponseAt?: string | null;
+  resolvedAt?: string | null;
+  reopenedAt?: string | null;
   summary?: string | null;
   internalNotes?: string | null;
   tags: string[];
@@ -89,6 +101,24 @@ interface Conversation {
   _count: { messages: number };
 }
 type Status = "all" | "open" | "escalated" | "resolved";
+type Priority = "all" | Conversation["priority"];
+type SlaFilter = "all" | "healthy" | "due_soon" | "breached" | "untracked";
+type AssignmentFilter = "all" | "assigned" | "unassigned";
+type InboxSort = "recent" | "oldest";
+interface SavedView {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  filters: {
+    botId?: string | null;
+    status: "all" | "open" | "handoff" | "resolved";
+    priority: Priority;
+    channel: string;
+    assignment: AssignmentFilter;
+    sla: SlaFilter;
+  };
+  sort: InboxSort;
+}
 
 export default function ConversationsPage() {
   const [items, setItems] = useState<Conversation[]>([]);
@@ -96,8 +126,21 @@ export default function ConversationsPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState<Status>("all");
   const [bot, setBot] = useState("all");
+  const [priority, setPriority] = useState<Priority>("all");
+  const [channel, setChannel] = useState("all");
+  const [sla, setSla] = useState<SlaFilter>("all");
+  const [assignment, setAssignment] = useState<AssignmentFilter>("all");
+  const [inboxSort, setInboxSort] = useState<InboxSort>("recent");
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [viewName, setViewName] = useState("");
+  const [savingView, setSavingView] = useState(false);
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const [viewError, setViewError] = useState("");
+  const [botOptions, setBotOptions] = useState<Array<{ id: string; companyName: string }>>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -159,12 +202,31 @@ export default function ConversationsPage() {
     [],
   );
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
+
+  const listQuery = useMemo(() => {
+    const params = new URLSearchParams({ limit: "50" });
+    if (bot !== "all") params.set("botId", bot);
+    params.set("status", status === "escalated" ? "handoff" : status);
+    params.set("priority", priority);
+    params.set("channel", channel);
+    params.set("sla", sla);
+    params.set("assignment", assignment);
+    params.set("sort", inboxSort);
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    return params.toString();
+  }, [bot, status, priority, channel, sla, assignment, inboxSort, debouncedSearch]);
+
   const load = useCallback(async () => {
     try {
-      const response = await fetch("/api/conversations");
+      const response = await fetch(`/api/conversations?${listQuery}`);
       const result = await response.json();
       const conversations = result.success ? result.data : [];
       setItems(conversations);
+      setNextCursor(result.pagination?.nextCursor || null);
       if (conversations[0] && !selectedRef.current) {
         const requestedId =
           typeof window !== "undefined"
@@ -179,11 +241,49 @@ export default function ConversationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [openConversation]);
+  }, [openConversation, listQuery]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadSavedViews = useCallback(async () => {
+    const response = await fetch("/api/helpdesk/views", { cache: "no-store" });
+    const result = await response.json();
+    if (response.ok && result.success) {
+      const views = (result.data || []) as SavedView[];
+      setSavedViews(views);
+      const defaultView = views.find((view) => view.isDefault);
+      if (defaultView) {
+        setBot(defaultView.filters.botId || "all");
+        setStatus(defaultView.filters.status === "handoff" ? "escalated" : defaultView.filters.status);
+        setPriority(defaultView.filters.priority || "all");
+        setChannel(defaultView.filters.channel || "all");
+        setSla(defaultView.filters.sla || "all");
+        setAssignment(defaultView.filters.assignment || "all");
+        setInboxSort(defaultView.sort || "recent");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSavedViews();
+  }, [loadSavedViews]);
+
+  useEffect(() => {
+    fetch("/api/chatbots")
+      .then((response) => response.json())
+      .then((result) => result.success && setBotOptions(result.data.map((item: { id: string; companyName: string }) => ({ id: item.id, companyName: item.companyName }))));
+  }, []);
+
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    const response = await fetch(`/api/conversations?${listQuery}&cursor=${encodeURIComponent(nextCursor)}`);
+    const result = await response.json();
+    if (!response.ok || !result.success) return;
+    setItems((current) => [...current, ...result.data.filter((item: Conversation) => !current.some((existing) => existing.id === item.id))]);
+    setNextCursor(result.pagination?.nextCursor || null);
+  };
 
   useEffect(() => {
     let active = true;
@@ -194,13 +294,16 @@ export default function ConversationsPage() {
       try {
         const current = selectedRef.current;
         const [listResult, detailResult] = await Promise.all([
-          fetch("/api/conversations", { cache: "no-store" }).then((response) => response.json()),
+          fetch(`/api/conversations?${listQuery}`, { cache: "no-store" }).then((response) => response.json()),
           current
             ? fetch(`/api/conversations/${current.id}`, { cache: "no-store" }).then((response) => response.json())
             : Promise.resolve(null),
         ]);
         if (!active) return;
-        if (listResult.success) setItems(listResult.data);
+        if (listResult.success) setItems((current) => [
+          ...listResult.data,
+          ...current.filter((item) => !listResult.data.some((fresh: Conversation) => fresh.id === item.id)),
+        ]);
         if (detailResult?.success) {
           setSelected((selectedConversation) =>
             selectedConversation && selectedConversation.id === detailResult.data.id
@@ -212,25 +315,19 @@ export default function ConversationsPage() {
         running = false;
       }
     };
-    const interval = window.setInterval(() => void refresh(), 8_000);
+    const interval = debouncedSearch ? null : window.setInterval(() => void refresh(), 8_000);
     const onVisibilityChange = () => {
       if (!document.hidden) void refresh();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       active = false;
-      window.clearInterval(interval);
+      if (interval !== null) window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [listQuery, debouncedSearch]);
 
-  const bots = useMemo(
-    () =>
-      Array.from(
-        new Map(items.map((item) => [item.chatbot.id, item.chatbot])).values(),
-      ),
-    [items],
-  );
+  const bots = botOptions;
   const lastInboundAt = useMemo(
     () =>
       selected?.messages.filter((message) => message.role === "user").at(-1)
@@ -301,10 +398,64 @@ export default function ConversationsPage() {
           (status === "open" && !item.isResolved) ||
           (status === "resolved" && item.isResolved) ||
           (status === "escalated" && item.needsHumanEscalation);
-        return matchSearch && matchBot && matchStatus;
+        const matchPriority = priority === "all" || item.priority === priority;
+        const matchChannel = channel === "all" || item.channel === channel;
+        const matchSla = sla === "all" || helpDeskSlaState(item) === sla;
+        const matchAssignment = assignment === "all" || (assignment === "assigned" ? Boolean(item.assignedAgent) : !item.assignedAgent);
+        return matchSearch && matchBot && matchStatus && matchPriority && matchChannel && matchSla && matchAssignment;
       }),
-    [items, search, bot, status],
+    [items, search, bot, status, priority, channel, sla, assignment],
   );
+
+  const applySavedView = (view: SavedView) => {
+    setBot(view.filters.botId || "all");
+    setStatus(view.filters.status === "handoff" ? "escalated" : view.filters.status);
+    setPriority(view.filters.priority || "all");
+    setChannel(view.filters.channel || "all");
+    setSla(view.filters.sla || "all");
+    setAssignment(view.filters.assignment || "all");
+    setInboxSort(view.sort || "recent");
+  };
+
+  const saveCurrentView = async () => {
+    if (!viewName.trim()) return;
+    setSavingView(true);
+    setViewError("");
+    try {
+      const response = await fetch("/api/helpdesk/views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: viewName.trim(),
+          filters: {
+            botId: bot === "all" ? null : bot,
+            status: status === "escalated" ? "handoff" : status,
+            priority,
+            channel,
+            assignment,
+            sla,
+          },
+          sort: inboxSort,
+          isDefault: saveAsDefault,
+        }),
+      });
+      if (response.ok) {
+        setViewName("");
+        setSaveAsDefault(false);
+        await loadSavedViews();
+      } else {
+        const result = await response.json();
+        setViewError(result.error || "Vista non salvata");
+      }
+    } finally {
+      setSavingView(false);
+    }
+  };
+
+  const deleteSavedView = async (id: string) => {
+    const response = await fetch(`/api/helpdesk/views/${id}`, { method: "DELETE" });
+    if (response.ok) setSavedViews((current) => current.filter((view) => view.id !== id));
+  };
 
   const patchSelected = async (data: Partial<Conversation>) => {
     if (!selected) return;
@@ -438,6 +589,7 @@ export default function ConversationsPage() {
         await patchSelected({
           summary: result.data.summary,
           tags: [...new Set([...(selected.tags || []), ...result.data.tags])],
+          priority: result.data.priority === "medium" ? "normal" : result.data.priority,
         });
     } catch (error) {
       setAiError(
@@ -581,7 +733,7 @@ export default function ConversationsPage() {
               </div>
               <div className="flex gap-1">
                 <a
-                  href={`/api/conversations/export?botId=${encodeURIComponent(bot)}&status=${encodeURIComponent(status)}`}
+                  href={`/api/conversations/export?botId=${encodeURIComponent(bot)}&status=${encodeURIComponent(status)}&priority=${encodeURIComponent(priority)}&channel=${encodeURIComponent(channel)}&sla=${encodeURIComponent(sla)}`}
                   className="rounded-lg p-2 text-gray-400 hover:bg-gray-100"
                   aria-label="Esporta conversazioni CSV"
                   title="Esporta CSV"
@@ -630,6 +782,54 @@ export default function ConversationsPage() {
                 <option value="resolved">Risolte</option>
               </select>
             </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <select value={priority} onChange={(event) => setPriority(event.target.value as Priority)} className="input py-2 text-[10px]" aria-label="Filtra per priorità">
+                <option value="all">Priorità</option>
+                <option value="urgent">Urgente</option>
+                <option value="high">Alta</option>
+                <option value="normal">Normale</option>
+                <option value="low">Bassa</option>
+              </select>
+              <select value={channel} onChange={(event) => setChannel(event.target.value)} className="input py-2 text-[10px]" aria-label="Filtra per canale">
+                <option value="all">Canale</option>
+                <option value="widget">Widget</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="instagram">Instagram</option>
+              </select>
+              <select value={sla} onChange={(event) => setSla(event.target.value as SlaFilter)} className="input py-2 text-[10px]" aria-label="Filtra per SLA">
+                <option value="all">SLA</option>
+                <option value="breached">Scaduto</option>
+                <option value="due_soon">In scadenza</option>
+                <option value="healthy">Regolare</option>
+                <option value="untracked">Non avviato</option>
+              </select>
+              <select value={assignment} onChange={(event) => setAssignment(event.target.value as AssignmentFilter)} className="input py-2 text-[10px]" aria-label="Filtra per assegnazione">
+                <option value="all">Assegnazione</option>
+                <option value="assigned">Assegnate</option>
+                <option value="unassigned">Non assegnate</option>
+              </select>
+              <select value={inboxSort} onChange={(event) => setInboxSort(event.target.value as InboxSort)} className="input py-2 text-[10px]" aria-label="Ordina conversazioni">
+                <option value="recent">Più recenti</option>
+                <option value="oldest">Più vecchie</option>
+              </select>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {savedViews.map((view) => (
+                <span key={view.id} className="inline-flex items-center rounded-full border border-gray-200 bg-white text-[9px] font-semibold text-gray-600">
+                  <button type="button" onClick={() => applySavedView(view)} className="inline-flex items-center gap-1 py-1 pl-2.5 pr-1 hover:text-brand-700"><Bookmark className="h-3 w-3" />{view.name}</button>
+                  <button type="button" onClick={() => void deleteSavedView(view.id)} className="rounded-full p-1 text-gray-300 hover:text-red-500" aria-label={`Elimina vista ${view.name}`}><X className="h-2.5 w-2.5" /></button>
+                </span>
+              ))}
+            </div>
+            <div className="mt-2 flex gap-1.5">
+              <input value={viewName} onChange={(event) => setViewName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void saveCurrentView()} className="input py-1.5 text-[10px]" placeholder="Salva vista corrente" maxLength={80} />
+              <button type="button" onClick={() => void saveCurrentView()} disabled={!viewName.trim() || savingView} className="rounded-lg border border-gray-200 px-2 text-gray-500 hover:bg-gray-50 disabled:opacity-40" aria-label="Salva vista"><Bookmark className="h-3.5 w-3.5" /></button>
+            </div>
+            <label className="mt-1.5 inline-flex items-center gap-1.5 text-[9px] text-gray-500">
+              <input type="checkbox" checked={saveAsDefault} onChange={(event) => setSaveAsDefault(event.target.checked)} />
+              Apri automaticamente questa vista
+            </label>
+            {viewError && <p role="alert" className="mt-1.5 text-[9px] text-red-600">{viewError}</p>}
           </div>
           <div className="flex-1 overflow-y-auto">
             {filtered.map((item) => (
@@ -655,7 +855,9 @@ export default function ConversationsPage() {
                       {item.chatbot.companyName} · {item._count.messages}{" "}
                       messaggi
                     </p>
-                    <div className="mt-2 flex gap-1.5">
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <PriorityTag priority={item.priority} />
+                      <SlaTag conversation={item} />
                       {item.needsHumanEscalation && (
                         <Tag color="red">Handoff</Tag>
                       )}
@@ -675,6 +877,11 @@ export default function ConversationsPage() {
             {!filtered.length && (
               <div className="p-8 text-center text-xs text-gray-400">
                 Nessuna conversazione trovata.
+              </div>
+            )}
+            {nextCursor && (
+              <div className="p-3">
+                <Button variant="secondary" size="sm" fullWidth onClick={() => void loadMore()}>Carica altre conversazioni</Button>
               </div>
             )}
           </div>
@@ -718,18 +925,32 @@ export default function ConversationsPage() {
                     <Info className="h-4 w-4" />
                   </button>
                   {selected.needsHumanEscalation ? (
-                    <Button
-                      aria-label="Restituisci la conversazione al chatbot"
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        patchSelected({ needsHumanEscalation: false })
-                      }
-                    >
-                      <span className="hidden sm:inline">Ritorna al bot</span>
-                      <span className="sm:hidden">Bot</span>
-                    </Button>
+                    <>
+                      {!selected.assignedAgent && (
+                        <Button
+                          aria-label="Prendi in carico la conversazione"
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => patchSelected({ assignedAgent: "Proprietario" })}
+                          icon={<UserRoundCheck className="h-4 w-4" />}
+                        >
+                          <span className="hidden sm:inline">Prendi in carico</span>
+                        </Button>
+                      )}
+                      <Button
+                        aria-label="Restituisci la conversazione al chatbot"
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          patchSelected({ needsHumanEscalation: false })
+                        }
+                      >
+                        <span className="hidden sm:inline">Ritorna al bot</span>
+                        <span className="sm:hidden">Bot</span>
+                      </Button>
+                    </>
                   ) : (
                     <Button
                       aria-label="Prendi in carico la conversazione"
@@ -740,6 +961,7 @@ export default function ConversationsPage() {
                         patchSelected({
                           needsHumanEscalation: true,
                           escalationReason: "Presa in carico manuale",
+                          assignedAgent: "Proprietario",
                         })
                       }
                       icon={<UserRoundCheck className="h-4 w-4" />}
@@ -1046,6 +1268,19 @@ export default function ConversationsPage() {
               <h2 className="text-xs font-semibold text-gray-900">
                 Stato conversazione
               </h2>
+              <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <label className="text-[9px] font-semibold uppercase tracking-wide text-gray-500" htmlFor="helpdesk-priority">Priorità operativa</label>
+                <select id="helpdesk-priority" value={selected.priority || "normal"} onChange={(event) => void patchSelected({ priority: event.target.value as Conversation["priority"] })} className="input mt-1.5 py-2 text-xs" disabled={busy}>
+                  <option value="urgent">Urgente · 15 min</option>
+                  <option value="high">Alta · 30 min</option>
+                  <option value="normal">Normale · 60 min</option>
+                  <option value="low">Bassa · 4 ore</option>
+                </select>
+                <div className="mt-2 flex items-center gap-1.5 text-[9px] text-gray-500">
+                  <Timer className="h-3 w-3" />
+                  {helpDeskSlaDescription(selected)}
+                </div>
+              </div>
               <div className="mt-3 space-y-2">
                 <StateLine
                   label="Stato"
@@ -1342,6 +1577,49 @@ function Tag({
       {children}
     </span>
   );
+}
+function PriorityTag({ priority }: { priority: Conversation["priority"] }) {
+  const labels = { low: "Bassa", normal: "Normale", high: "Alta", urgent: "Urgente" };
+  const classes = {
+    low: "bg-slate-100 text-slate-600",
+    normal: "bg-blue-50 text-blue-600",
+    high: "bg-amber-50 text-amber-700",
+    urgent: "bg-red-50 text-red-700",
+  };
+  const value = priority || "normal";
+  return <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${classes[value]}`}>{labels[value]}</span>;
+}
+function SlaTag({ conversation }: { conversation: Conversation }) {
+  const state = helpDeskSlaState(conversation);
+  if (state === "untracked") return null;
+  const config = {
+    healthy: { label: "SLA regolare", className: "bg-emerald-50 text-emerald-700" },
+    due_soon: { label: "In scadenza", className: "bg-amber-50 text-amber-700" },
+    breached: { label: "SLA scaduto", className: "bg-red-50 text-red-700" },
+  }[state];
+  return <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-semibold ${config.className}`}><AlertTriangle className="h-2.5 w-2.5" />{config.label}</span>;
+}
+function helpDeskSlaState(conversation: Conversation): Exclude<SlaFilter, "all"> {
+  if (!conversation.escalatedAt) return "untracked";
+  if (!conversation.needsHumanEscalation && !conversation.isResolved) return "untracked";
+  const completedAt = conversation.isResolved ? conversation.resolvedAt : null;
+  const dueAt = conversation.firstHumanResponseAt
+    ? conversation.resolutionDueAt
+    : conversation.firstResponseDueAt || conversation.resolutionDueAt;
+  if (!dueAt) return "untracked";
+  const comparedAt = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const remaining = new Date(dueAt).getTime() - comparedAt;
+  if (remaining < 0) return "breached";
+  if (!completedAt && remaining <= 30 * 60_000) return "due_soon";
+  return "healthy";
+}
+function helpDeskSlaDescription(conversation: Conversation) {
+  const state = helpDeskSlaState(conversation);
+  if (state === "untracked") return "Lo SLA parte quando viene richiesto un operatore.";
+  const dueAt = conversation.firstHumanResponseAt ? conversation.resolutionDueAt : conversation.firstResponseDueAt;
+  if (!dueAt) return "Scadenza non disponibile per questo ciclo storico.";
+  const label = conversation.firstHumanResponseAt ? "Risoluzione" : "Prima risposta";
+  return `${label}: ${new Date(dueAt).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}`;
 }
 function InfoRow({
   icon: Icon,

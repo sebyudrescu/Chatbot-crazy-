@@ -192,6 +192,17 @@ jobs:
         continue-on-error: true
         run: npm run test:observability
 
+      - name: Owner operations and Help Desk tests
+        id: owner_operations
+        continue-on-error: true
+        run: |
+          npm run test:agentic-contract
+          npm run test:response-revisions
+          npm run test:model-ab
+          npm run test:public-agent-api
+          npm run test:client-operations
+          npm run test:helpdesk
+
       - name: Meta and channel security tests
         id: channels
         continue-on-error: true
@@ -248,6 +259,7 @@ jobs:
             echo "| UI content and action safety | ${{ steps.ui_safety.outcome }} |"
             echo "| Authentication, prompt and memory | ${{ steps.agent_core.outcome }} |"
             echo "| Operational observability | ${{ steps.observability.outcome }} |"
+            echo "| Owner operations and Help Desk | ${{ steps.owner_operations.outcome }} |"
             echo "| Database backup/restore drill | ${{ steps.recovery.outcome }} |"
             echo "| Meta and channel security | ${{ steps.channels.outcome }} |"
             echo "| Automation idempotency | ${{ steps.automations.outcome }} |"
@@ -282,6 +294,7 @@ jobs:
              [ "${{ steps.ui_safety.outcome }}" != "success" ] ||
              [ "${{ steps.agent_core.outcome }}" != "success" ] ||
              [ "${{ steps.observability.outcome }}" != "success" ] ||
+             [ "${{ steps.owner_operations.outcome }}" != "success" ] ||
              [ "${{ steps.recovery.outcome }}" != "success" ] ||
              [ "${{ steps.channels.outcome }}" != "success" ] ||
              [ "${{ steps.automations.outcome }}" != "success" ]; then

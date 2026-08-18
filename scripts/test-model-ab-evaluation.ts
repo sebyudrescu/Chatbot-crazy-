@@ -15,7 +15,9 @@ assert.match(chat, /verifyOwnerSessionToken/);
 assert.match(chat, /Solo il proprietario può confrontare modelli/);
 assert.match(chat, /evaluationMode: Boolean\(body\.evaluationModel\)/);
 assert.match(chat, /aiModel: body\.evaluationModel \|\| chatbotSettings\.aiModel/);
-assert.match(chat, /agentic\.handoffRequested && !body\.evaluationModel/);
+assert.match(chat, /agentic\.handoffTransitioned && !body\.evaluationModel/);
+assert.match(runtime, /escalateHelpDeskConversation/);
+assert.doesNotMatch(runtime, /needsHumanEscalation:\s*true/);
 assert.match(chat, /Il modello di valutazione non ha completato il test/);
 assert.match(orchestrator, /context\.evaluationMode \? \[\] : await prisma\.agentAction\.findMany/);
 assert.match(orchestrator, /!semanticActionCallMade && !context\.evaluationMode/);
@@ -33,4 +35,4 @@ assert.match(page, /\/api\/chatbots\/\$\{selectedId\}/);
 assert.match(chatbotApi, /promptVersion\.create/);
 assert.match(chatbotApi, /changeSummary/);
 
-console.log("Model A/B evaluation: 23 controlli superati");
+console.log("Model A/B evaluation: 25 controlli superati");
