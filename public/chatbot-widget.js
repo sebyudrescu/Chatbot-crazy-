@@ -178,13 +178,14 @@
     }
 
     .chatbot-launcher img {
-      width: 100%;
-      height: 100%;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      flex: 0 0 100%;
       border-radius: inherit;
       box-sizing: border-box;
       object-fit: contain;
-      padding: 1px;
-      transform: scale(1.12);
+      padding: 2px;
     }
 
     .chatbot-launcher-message {

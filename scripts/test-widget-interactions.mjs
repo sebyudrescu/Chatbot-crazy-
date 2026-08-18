@@ -10,7 +10,7 @@ assert.match(script, /right: var\(--litx-mobile-edge, 16px\) !important/, "mobil
 assert.match(script, /bottom: var\(--litx-mobile-bottom/, "mobile launcher must use the measured storefront bottom offset");
 assert.match(script, /right: var\(--litx-desktop-edge, 88px\)/, "desktop launcher must use the measured storefront edge");
 assert.match(script, /bottom: var\(--litx-desktop-bottom, 20px\)/, "desktop launcher must use the measured storefront bottom offset");
-assert.match(script, /padding: 1px;\s+transform: scale\(1\.12\)/, "the branded launcher logo must remain legible inside the circle");
+assert.match(script, /width: 100% !important;\s+height: 100% !important;\s+max-width: none !important;\s+flex: 0 0 100%/, "the branded launcher logo must resist merchant-theme image shrinking");
 assert.match(script, /#carthike-chat-button-container/, "layout coordinator must recognize the merchant WhatsApp launcher");
 assert.match(script, /window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight/, "layout coordinator must place LitX below the measured WhatsApp box");
 assert.match(script, /Math\.max\(edge, window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight\)/, "WhatsApp stacking must not be overridden by the old mobile bottom floor");
