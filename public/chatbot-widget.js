@@ -163,6 +163,7 @@
       background: ${config.launcherColor};
       color: white;
       border: none;
+      padding: 0 !important;
       cursor: pointer;
       display: flex;
       align-items: center;
