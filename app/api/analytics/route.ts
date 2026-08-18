@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')
   const days = Math.min(365, Math.max(1, Number(request.nextUrl.searchParams.get('days') || 30)))
   const since = new Date(Date.now() - days * 86_400_000)
-  const [conversations, pipelineEvents, usageEvents] = await Promise.all([
+  const [conversations, pipelineEvents, usageEvents, identifiedContacts] = await Promise.all([
     prisma.conversation.findMany({
       where: { ...(botId ? { botId } : {}), startedAt: { gte: since } },
       include: { chatbot: { select: { id: true, companyName: true } }, _count: { select: { messages: true } } },
@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       select: { feature: true, model: true, totalTokens: true, estimatedCostUsd: true, durationMs: true, success: true },
       take: 10_000,
     }),
+    prisma.cRMContact.count({ where: { ...(botId ? { botId } : {}), lastInteraction: { gte: since }, OR: [{ email: { not: null } }, { phone: { not: null } }] } }),
   ])
   const ids = conversations.map((item) => item.id)
   const feedback = ids.length ? await prisma.message.findMany({ where: { conversationId: { in: ids }, feedback: { not: null } }, select: { id: true, conversationId: true, feedback: true, feedbackComment: true, content: true, createdAt: true } }) : []
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({ success: true, data: {
     periodDays: days,
-    summary: { conversations: conversations.length, messages: totalMessages, resolved: conversations.filter((item) => item.isResolved).length, handoffs: conversations.filter((item) => item.needsHumanEscalation).length, identifiedContacts: conversations.filter((item) => item.userEmail || item.userPhone).length, positiveFeedback: positive, negativeFeedback: negative, satisfaction: positive + negative ? Math.round(positive / (positive + negative) * 100) : null, averageMessages: conversations.length ? Number((totalMessages / conversations.length).toFixed(1)) : 0 },
+    summary: { conversations: conversations.length, messages: totalMessages, resolved: conversations.filter((item) => item.isResolved).length, handoffs: conversations.filter((item) => item.needsHumanEscalation).length, identifiedContacts, positiveFeedback: positive, negativeFeedback: negative, satisfaction: positive + negative ? Math.round(positive / (positive + negative) * 100) : null, averageMessages: conversations.length ? Number((totalMessages / conversations.length).toFixed(1)) : 0 },
     intents: count(conversations.map((item) => item.userIntent)), sentiments: count(conversations.map((item) => item.sentiment)), byAgent, daily,
     attention: conversations.filter((item) => item.needsHumanEscalation && !item.isResolved).slice(0, 10).map((item) => ({ id: item.id, name: item.userName || item.userEmail || `Visitatore ${item.userSessionId.slice(-6)}`, agent: item.chatbot.companyName, reason: item.escalationReason, lastInteraction: item.lastMessageAt || item.startedAt })),
     negativeFeedback: feedback.filter((item) => item.feedback === 'negative').slice(0, 10),

@@ -41,6 +41,13 @@ export interface AgenticResult {
   intent: string;
   confidence: number;
   actions: ActionResult;
+  usage: {
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+  };
 }
 
 const emptyActionResult = (): ActionResult => ({
@@ -192,7 +199,8 @@ export async function orchestrateAgenticResponse(
   let totalToolCalls = 0;
   let actions = emptyActionResult();
   let semanticActionCallMade = false;
-  const semanticActions = await prisma.agentAction.findMany({
+  const totalUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
+  const semanticActions = context.evaluationMode ? [] : await prisma.agentAction.findMany({
     where: {
       botId: context.botId,
       enabled: true,
@@ -260,6 +268,7 @@ export async function orchestrateAgenticResponse(
       intent: "question",
       confidence: facts.length ? 1 : 0.75,
       actions,
+      usage: totalUsage,
     };
   }
 
@@ -289,14 +298,20 @@ export async function orchestrateAgenticResponse(
         tools,
       });
     }
-    await recordAIUsage({
+    const normalizedUsage = usageForRecord(response.usage);
+    const usageEvent = await recordAIUsage({
       botId: context.botId,
       conversationId: context.conversationId,
       feature: "agentic_response",
       model,
-      usage: usageForRecord(response.usage),
+      usage: normalizedUsage,
       durationMs: Date.now() - aiStartedAt,
     });
+    totalUsage.inputTokens += normalizedUsage?.prompt_tokens || 0;
+    totalUsage.cachedInputTokens += normalizedUsage?.prompt_tokens_details?.cached_tokens || 0;
+    totalUsage.outputTokens += normalizedUsage?.completion_tokens || 0;
+    totalUsage.totalTokens += normalizedUsage?.total_tokens || 0;
+    totalUsage.estimatedCostUsd = Number((totalUsage.estimatedCostUsd + (usageEvent?.estimatedCostUsd || 0)).toFixed(8));
 
     input.push(...response.output);
     const calls = response.output.filter((item): item is Extract<(typeof response.output)[number], { type: "function_call" }> => item.type === "function_call");
@@ -391,7 +406,7 @@ export async function orchestrateAgenticResponse(
   if (!finalText) {
     finalText = context.botConfig.fallbackMessage || "Non riesco a completare la verifica in questo momento. Posso passarti a una persona del team.";
   }
-  if (!semanticActionCallMade) {
+  if (!semanticActionCallMade && !context.evaluationMode) {
     actions = mergeActionResults(actions, await runTriggeredActions({
       botId: context.botId,
       conversationId: context.conversationId,
@@ -566,5 +581,6 @@ export async function orchestrateAgenticResponse(
     intent,
     confidence: hasVerifiedEvidence ? 1 : toolTrace.length ? 0.85 : 0.75,
     actions,
+    usage: totalUsage,
   };
 }

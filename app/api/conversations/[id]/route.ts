@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import { syncCRMContactFromConversation } from '@/lib/crm-sync'
 import { widgetsFromMessageMetadata } from '@/lib/widget-message-persistence'
+import { serializeResponseRevision } from '@/lib/response-revisions'
 
 const ConversationUpdateSchema = z.object({
   isResolved: z.boolean().optional(),
@@ -29,6 +30,9 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
+          include: {
+            responseRevisions: { orderBy: { version: 'desc' } },
+          },
         },
         chatbot: {
           select: {
@@ -59,6 +63,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
           ctas: parseJSON(msg.ctaData) || [],
           productCards: parseJSON(msg.productCards) || [],
           declarativeWidgets: widgetsFromMessageMetadata(parseJSON(msg.sourcesUsed)),
+          responseRevisions: msg.responseRevisions.map(serializeResponseRevision),
         })),
         chatbot: {
           ...conversation.chatbot,

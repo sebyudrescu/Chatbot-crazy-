@@ -53,6 +53,7 @@ function policyOnlyResult(
       forceProductCards: false, orderLookupForm: false, productWidget: null,
       declarativeWidgets: [],
     },
+    usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
   };
 }
 
@@ -235,6 +236,8 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
       },
       responseType: agentResult.responseType,
       processingTimeMs: agentResult.processingTimeMs,
+      model: agentResult.model,
+      usage: agentResult.usage,
       phaseTimings: { agentic: agentResult.processingTimeMs },
       workflow: { executed: [], failed: [], skipped: [], actions: [] },
       actions: {

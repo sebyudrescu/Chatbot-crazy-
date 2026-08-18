@@ -8,6 +8,7 @@ import { PrivacyDataManager } from '@/components/settings/PrivacyDataManager'
 import { RetentionPolicyManager } from '@/components/settings/RetentionPolicyManager'
 import { KnowledgeSyncManager } from '@/components/settings/KnowledgeSyncManager'
 import { OperationalMonitor } from '@/components/settings/OperationalMonitor'
+import { AgentApiKeyManager } from '@/components/settings/AgentApiKeyManager'
 
 interface Status {
   database: boolean
@@ -43,6 +44,7 @@ export default function SettingsPage() {
           <div className={`rounded-xl border p-4 ${status.deployment.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}><p className="text-xs font-semibold">Produzione: {status.deployment.completed}/{status.deployment.total} controlli</p><p className="mt-1 text-[11px] leading-5">{status.deployment.ready ? 'Le variabili obbligatorie risultano configurate per il deploy.' : `Mancano o non sono robuste: ${status.deployment.missing.join(', ')}.`}</p></div></aside>
       </div>
       <div className="mt-5"><PrivacyDataManager /></div>
+      <div className="mt-5"><AgentApiKeyManager /></div>
       {status.operations ? <div className="mt-5"><OperationalMonitor initialHealth={status.operations} /></div> : null}
       <div className="mt-5"><RetentionPolicyManager /></div>
       <div className="mt-5"><KnowledgeSyncManager /></div>

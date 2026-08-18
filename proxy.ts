@@ -3,7 +3,7 @@ import { verifyOwnerSessionToken } from '@/lib/auth-token'
 import { httpSecurityHeaders } from '@/lib/http-security'
 
 const publicPaths = ['/', '/login', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/api/internal/commerce-sync', '/api/shopify/widget.js', '/chatbot-widget.js']
-const publicPrefixes = ['/agent/', '/api/auth/', '/api/embed/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions', '/api/commerce/click']
+const publicPrefixes = ['/agent/', '/api/auth/', '/api/embed/', '/api/v1/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions', '/api/commerce/click']
 
 export async function proxy(request: NextRequest) {
   const password = process.env.APP_ACCESS_PASSWORD

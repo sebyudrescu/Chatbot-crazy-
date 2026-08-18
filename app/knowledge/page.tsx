@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Database, Upload, Globe, FileText, FileSpreadsheet, FileType2, PenLine, Trash2, Search, Plus, Loader2, CheckCircle, XCircle, AlertCircle, Globe2 } from 'lucide-react'
+import { Database, Upload, Globe, FileText, FileSpreadsheet, FileType2, PenLine, Trash2, Search, Plus, Loader2, CheckCircle, XCircle, AlertCircle, Globe2, ShieldCheck } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -14,7 +14,7 @@ import Link from 'next/link'
 interface KnowledgeSource {
   id: string
   botId: string
-  sourceType: 'url' | 'pdf' | 'docx' | 'txt' | 'csv' | 'manual'
+  sourceType: 'url' | 'pdf' | 'docx' | 'txt' | 'csv' | 'manual' | 'qa'
   sourceUrl: string | null
   originalFilename: string | null
   contentText: string
@@ -276,6 +276,7 @@ export default function KnowledgePage() {
     if (type === 'csv') return <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
     if (type === 'docx') return <FileType2 className="h-6 w-6 text-blue-600" />
     if (type === 'manual') return <PenLine className="h-6 w-6 text-violet-600" />
+    if (type === 'qa') return <ShieldCheck className="h-6 w-6 text-emerald-600" />
     return <FileText className={`h-6 w-6 ${type === 'pdf' ? 'text-danger-600' : 'text-gray-600'}`} />
   }
 
@@ -412,6 +413,7 @@ export default function KnowledgePage() {
                               {source.originalFilename || source.sourceUrl}
                             </h3>
                             {getStatusBadge(source.status)}
+                            {source.sourceType === 'qa' && <Badge variant="success">Verificata</Badge>}
                           </div>
 
                           <div className="grid grid-cols-3 gap-4 text-sm">
@@ -446,12 +448,14 @@ export default function KnowledgePage() {
                       {/* Actions */}
                       <div className="flex items-center gap-2 ml-4">
                         {getStatusIcon(source.status)}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteSource(source.id)}
-                          icon={<Trash2 className="w-4 h-4 text-danger-600" />}
-                        />
+                        {source.sourceType !== 'qa' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteSource(source.id)}
+                            icon={<Trash2 className="w-4 h-4 text-danger-600" />}
+                          />
+                        )}
                       </div>
                     </div>
                   </Card>

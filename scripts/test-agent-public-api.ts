@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+const keys = read("lib/agent-api-keys.ts");
+const ownerApi = read("app/api/api-keys/route.ts");
+const revokeApi = read("app/api/api-keys/[id]/route.ts");
+const chat = read("app/api/chat/route.ts");
+const alias = read("app/api/v1/chat/route.ts");
+const proxy = read("proxy.ts");
+const ui = read("components/settings/AgentApiKeyManager.tsx");
+const migration = read("prisma/migrations/20260818170000_add_agent_api_keys/migration.sql");
+
+assert.match(keys, /randomBytes\(32\)\.toString\("base64url"\)/);
+assert.match(keys, /createHash\("sha256"\)/);
+assert.match(keys, /KEY_PREFIX = "litx_live_"/);
+assert.match(keys, /secretHash: hashAgentApiKey\(secret\)/);
+assert.match(keys, /revokedAt/);
+assert.match(keys, /expiresAt && item\.expiresAt <= new Date\(\)/);
+assert.match(keys, /item\.chatbot\.isActive/);
+assert.match(keys, /scopes\.includes\(requiredScope\)/);
+assert.match(keys, /lastUsedAt: new Date\(\)/);
+assert.match(ownerApi, /items\.map\(publicAgentApiKey\)/);
+assert.match(revokeApi, /revokeAgentApiKey/);
+assert.match(chat, /source: z\.enum\(\["widget", "api"\]\)/);
+assert.match(chat, /authenticateAgentApiKey/);
+assert.match(chat, /api_key_invalid/);
+assert.match(chat, /api_session_required/);
+assert.match(chat, /public-api-chat:/);
+assert.match(chat, /existingConversation\.userSessionId !== body\.userSessionId/);
+assert.match(alias, /POST/);
+assert.match(proxy, /'\/api\/v1\/'/);
+assert.doesNotMatch(proxy, /'\/api\/api-keys\/'/);
+assert.match(ui, /non verrà mostrata di nuovo/i);
+assert.match(ui, /Authorization: Bearer YOUR_KEY/);
+assert.match(ui, /window\.confirm/);
+assert.match(migration, /UNIQUE INDEX "agent_api_keys_secretHash_key"/);
+assert.match(migration, /ON DELETE CASCADE/);
+
+console.log("Agent public API: 25 controlli superati");

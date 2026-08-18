@@ -74,6 +74,7 @@ export interface OrchestratorContext {
     topics?: string[]
   }
   verifiedCommerceContext?: string
+  evaluationMode?: boolean
   
   // Bot configuration
   botConfig: {

@@ -62,6 +62,7 @@ const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "server-only") return {};
   if (request === "@/lib/db") return { prisma };
+  if (request === "@/lib/crm-sync") return { syncCRMContactFromConversation: async () => ({ id: "contact-1" }) };
   if (request === "@/lib/agentic-orchestrator") return {
     orchestrateAgenticResponse: async (context) => {
       agentCalls += 1;

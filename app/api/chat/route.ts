@@ -36,6 +36,9 @@ import {
 import { readWidgetSession, widgetSessionToken } from "@/lib/widget-session";
 import { detectSentiment } from "@/lib/sentiment";
 import { verifyOwnerSessionToken } from "@/lib/auth-token";
+import { isSupportedAIModel } from "@/lib/ai-models";
+import { authenticateAgentApiKey } from "@/lib/agent-api-keys";
+import { syncCRMContactFromConversation } from "@/lib/crm-sync";
 import {
   pageContextMatchesOrigin,
   pageContextSchema,
@@ -74,9 +77,34 @@ const ChatRequestSchema = z.object({
   message: z.string().trim().min(1).max(4000),
   conversationId: z.string().uuid().nullable().optional(),
   userSessionId: z.string().max(300).optional(),
-  source: z.enum(["widget"]).optional(),
+  source: z.enum(["widget", "api"]).optional(),
   pageContext: pageContextSchema.optional(),
+  evaluationModel: z.string().refine(isSupportedAIModel, "Modello di valutazione non supportato").optional(),
 });
+
+async function canUseEvaluationOverride(request: NextRequest) {
+  const password = process.env.APP_ACCESS_PASSWORD;
+  if (!password) return process.env.NODE_ENV !== "production";
+  return verifyOwnerSessionToken(
+    request.cookies.get("litx_owner")?.value,
+    password,
+    process.env.APP_AUTH_SALT || "litx-private-owner",
+  );
+}
+
+function scheduleCRMContactSync(conversationId: string, evaluationMode: boolean) {
+  if (evaluationMode) return;
+  after(async () => {
+    try {
+      await syncCRMContactFromConversation(conversationId);
+    } catch (error) {
+      console.error("CRM sync failed after chat turn", {
+        conversationId,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  });
+}
 
 function latestActiveProductIds(
   messages: Array<{
@@ -127,6 +155,18 @@ export async function POST(request: NextRequest) {
     }
     const body = parsed.data;
     const { conversationId, message, botId } = body;
+    const apiAccess = body.source === "api"
+      ? await authenticateAgentApiKey(request.headers.get("authorization"), botId, "chat:write")
+      : null;
+    if (body.source === "api" && !apiAccess) {
+      return NextResponse.json({ success: false, error: "api_key_invalid" }, { status: 401 });
+    }
+    if (body.evaluationModel && !(await canUseEvaluationOverride(request))) {
+      return NextResponse.json(
+        { success: false, error: "Solo il proprietario può confrontare modelli di valutazione" },
+        { status: 403 },
+      );
+    }
     const existingConversation = conversationId
       ? await prisma.conversation.findFirst({
           where: { id: conversationId, botId },
@@ -147,7 +187,7 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
-    if (
+    if (body.source !== "api" &&
       !(await isAllowedWidgetOrigin(
         botId,
         request.headers.get("origin"),
@@ -160,7 +200,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const requestOrigin = request.headers.get("origin");
-    if (!requestOrigin && process.env.NODE_ENV === "production") {
+    if (body.source !== "api" && !requestOrigin && process.env.NODE_ENV === "production") {
       return NextResponse.json(
         { success: false, error: "origin_required" },
         { status: 403 },
@@ -242,6 +282,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { success: false, error: "Accesso non autorizzato" },
           { status: 401 },
+        );
+      }
+    }
+    if (body.source === "api") {
+      if (!body.userSessionId) {
+        return NextResponse.json({ success: false, error: "api_session_required" }, { status: 400 });
+      }
+      if (existingConversation && existingConversation.userSessionId !== body.userSessionId) {
+        return NextResponse.json({ success: false, error: "Conversation not found" }, { status: 404 });
+      }
+      const rate = await checkRateLimit(`public-api-chat:${apiAccess!.id}`, 60, 60 * 1000);
+      if (!rate.allowed) {
+        return NextResponse.json(
+          { success: false, error: "rate_limit_exceeded" },
+          { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil((rate.resetAt - Date.now()) / 1000))) } },
         );
       }
     }
@@ -349,6 +404,7 @@ export async function POST(request: NextRequest) {
             },
           }),
         );
+      scheduleCRMContactSync(conversation.id, Boolean(body.evaluationModel));
       return NextResponse.json({
         success: true,
         data: {
@@ -446,6 +502,7 @@ export async function POST(request: NextRequest) {
         ),
       },
     });
+    scheduleCRMContactSync(conversation.id, Boolean(body.evaluationModel));
 
     // ========================================================================
     // STEP 4: OPTIMIZE CONVERSATION CONTEXT
@@ -531,6 +588,7 @@ export async function POST(request: NextRequest) {
             })),
           })
         : undefined,
+      evaluationMode: Boolean(body.evaluationModel),
       botConfig: {
         companyName: conversation.chatbot.companyName,
         promptTemplateId: conversation.chatbot.promptTemplateId,
@@ -549,7 +607,7 @@ export async function POST(request: NextRequest) {
         responseLength: chatbotSettings.responseLength,
         fallbackMessage: chatbotSettings.fallbackMessage,
         handoffMessage: chatbotSettings.handoffMessage,
-        aiModel: chatbotSettings.aiModel,
+        aiModel: body.evaluationModel || chatbotSettings.aiModel,
         temperature: chatbotSettings.temperature,
         maxTokens: chatbotSettings.maxTokens,
         retrievalMinScore: chatbotSettings.retrievalMinScore,
@@ -588,9 +646,16 @@ export async function POST(request: NextRequest) {
           conversationId: conversation.id,
           error: error instanceof Error ? error.name : "unknown_error",
         }));
+        if (body.evaluationModel) {
+          await prisma.conversation.delete({ where: { id: conversation.id } }).catch(() => undefined);
+          return NextResponse.json(
+            { success: false, error: "Il modello di valutazione non ha completato il test" },
+            { status: 502 },
+          );
+        }
       }
       if (agentic) {
-        if (agentic.handoffRequested) {
+        if (agentic.handoffRequested && !body.evaluationModel) {
           after(() =>
             emitIntegrationWebhook({
               botId,

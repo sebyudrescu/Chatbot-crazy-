@@ -1,0 +1,46 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+const chat = read("app/api/chat/route.ts");
+const channel = read("lib/channel-message-processor.ts");
+const analyticsApi = read("app/api/analytics/route.ts");
+const analyticsUi = read("app/analytics/page.tsx");
+const contactsUi = read("app/contacts/page.tsx");
+const contactsApi = read("app/api/contacts/route.ts");
+const contactsUpdateApi = read("app/api/contacts/[id]/route.ts");
+const conversationsUi = read("app/conversations/page.tsx");
+const assistApi = read("app/api/conversations/[id]/assist/route.ts");
+
+assert.match(chat, /syncCRMContactFromConversation/);
+assert.match(chat, /function scheduleCRMContactSync\(conversationId: string, evaluationMode: boolean\)/);
+assert.match(chat, /if \(evaluationMode\) return/);
+assert.match(chat, /after\(async \(\) =>/);
+assert.equal((chat.match(/scheduleCRMContactSync\(conversation\.id, Boolean\(body\.evaluationModel\)\)/g) || []).length, 2);
+assert.match(channel, /syncCRMContactFromConversation\(conversation\.id\)/);
+assert.match(channel, /CRM sync failed after channel message/);
+
+assert.match(analyticsApi, /prisma\.cRMContact\.count/);
+assert.match(analyticsApi, /\.\.\.\(botId \? \{ botId \} : \{\}\)/);
+assert.match(analyticsApi, /lastInteraction: \{ gte: since \}/);
+assert.match(analyticsApi, /OR: \[\{ email: \{ not: null \} \}, \{ phone: \{ not: null \} \}\]/);
+assert.match(analyticsUi, /Tutti i clienti/);
+assert.match(analyticsUi, /query\.set\('botId',botId\)/);
+
+assert.match(contactsUi, /Contatti e Pipeline/);
+assert.match(contactsUi, /view === 'kanban'/);
+assert.match(contactsUi, /Esporta CSV/);
+assert.match(contactsUi, /Consenso contatto/);
+assert.match(contactsUi, /Note interne/);
+assert.match(contactsApi, /botId/);
+assert.match(contactsUpdateApi, /leadScore|potentialValue/);
+assert.match(contactsUpdateApi, /consentStatus/);
+
+assert.match(conversationsUi, /assignedAgent/);
+assert.match(conversationsUi, /Riepilogo AI/);
+assert.match(conversationsUi, /Note interne/);
+assert.match(conversationsUi, /Correggi e insegna/);
+assert.match(assistApi, /mode: z\.enum\(\['summary', 'reply'\]\)/);
+
+console.log("Client operations: 26 controlli superati");

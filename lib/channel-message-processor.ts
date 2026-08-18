@@ -16,6 +16,7 @@ import { emitIntegrationWebhook } from "@/lib/integration-webhooks";
 import { buildCatalogFollowUpQuery, buildConversationalCommerceQuery, classifyCommerceIntent, isGenericStyleAdviceRequest, needsProductDiscoveryClarification, parseCommerceQuery } from "@/lib/commerce-query";
 import { catalogUnavailableResponse, detectBusinessMode, isVerifiedCatalogIntent, productDiscoveryClarification, styleAdviceClarification } from "@/lib/conversation-guidance";
 import { productCardsSchema } from "@/lib/commerce-types";
+import { syncCRMContactFromConversation } from "@/lib/crm-sync";
 
 const CHANNEL_RATE_LIMIT = 30;
 const CHANNEL_RATE_WINDOW_MS = 5 * 60_000;
@@ -49,6 +50,14 @@ export async function processIncomingChannelMessage(input: { botId: string; chan
   const parsedOrderLookup = parseOrderLookupMessage(input.text, previousAssistantText);
   const persistedUserText = redactOrderLookupMessage(input.text, parsedOrderLookup);
   const userMessage = await prisma.message.create({ data: { conversationId: conversation.id, role: "user", content: persistedUserText, channel: input.channel, externalMessageId: input.externalMessageId, deliveryStatus: "received" } });
+  try {
+    await syncCRMContactFromConversation(conversation.id);
+  } catch (error) {
+    console.error("CRM sync failed after channel message", {
+      conversationId: conversation.id,
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
   if (conversation.needsHumanEscalation && !conversation.isResolved) return { duplicate: false as const, handoff: true as const, conversationId: conversation.id };
 
   const channelLimitKey = `${input.botId}:${input.channel}:${input.externalThreadId}`;

@@ -53,6 +53,8 @@ model Chatbot {
   commerceTrackingKey       CommerceTrackingKey?
   backstageSessions         BackstageSession[]
   backstageDrafts           BackstageDraft[]
+  responseRevisions         ResponseRevision[]
+  apiKeys                   AgentApiKey[]
 
   @@index([companyName])
   @@index([isActive])
@@ -336,6 +338,7 @@ model EvaluationCase {
 
   chatbot Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
   runs    EvaluationRun[]
+  responseRevision ResponseRevision?
 
   @@index([botId])
   @@index([isActive])
@@ -421,6 +424,7 @@ model KnowledgeSource {
 
   chatbot Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
   chunks  KnowledgeChunk[]
+  responseRevision ResponseRevision?
 
   @@index([botId])
   @@index([status])
@@ -528,6 +532,7 @@ model Conversation {
   messages        Message[]
   structuredFacts StructuredFact[] // Cognitive memory
   events          Event[] // Event Store
+  responseRevisions ResponseRevision[]
 
   @@unique([botId, channel, externalThreadId])
   @@index([botId])
@@ -559,12 +564,69 @@ model Message {
   productCards    String? // JSON array of server-hydrated commerce cards
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  responseRevisions ResponseRevision[]
 
   @@index([conversationId])
   @@index([createdAt])
   @@index([feedback])
   @@index([channel, createdAt])
   @@map("messages")
+}
+
+// Owner-approved corrections converted into durable Q&A knowledge and
+// anti-regression evaluations. Historical assistant messages remain immutable.
+model ResponseRevision {
+  id                String    @id @default(uuid())
+  botId             String
+  conversationId    String
+  assistantMessageId String
+  version           Int
+  question          String
+  originalAnswer    String
+  revisedAnswer     String
+  rationale         String?
+  expectedKeywords  String    @default("[]")
+  forbiddenKeywords String    @default("[]")
+  status            String    @default("draft")
+  knowledgeSourceId String?   @unique
+  evaluationCaseId  String?   @unique
+  createdBy         String    @default("owner")
+  publishedAt       DateTime?
+  archivedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  chatbot         Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation    Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  assistantMessage Message        @relation(fields: [assistantMessageId], references: [id], onDelete: Cascade)
+  knowledgeSource KnowledgeSource? @relation(fields: [knowledgeSourceId], references: [id], onDelete: SetNull)
+  evaluationCase  EvaluationCase?  @relation(fields: [evaluationCaseId], references: [id], onDelete: SetNull)
+
+  @@unique([assistantMessageId, version])
+  @@index([botId, status, updatedAt])
+  @@index([conversationId, createdAt])
+  @@map("response_revisions")
+}
+
+model AgentApiKey {
+  id         String    @id @default(uuid())
+  botId      String
+  name       String
+  keyPrefix  String
+  secretHash String    @unique
+  scopes     String    @default("[\"chat:write\"]")
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  chatbot Chatbot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, revokedAt])
+  @@index([keyPrefix])
+  @@index([expiresAt])
+  @@map("agent_api_keys")
 }
 
 // ============================================================================

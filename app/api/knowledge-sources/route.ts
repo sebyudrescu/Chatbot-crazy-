@@ -49,6 +49,12 @@ export async function DELETE(request: NextRequest) {
     if (!source) {
       return NextResponse.json({ success: false, error: 'Knowledge source not found' }, { status: 404 })
     }
+    if (source.sourceType === 'qa') {
+      return NextResponse.json(
+        { success: false, error: 'Le Q&A verificate vanno archiviate dai Chat Logs per mantenere allineati test, versioni e audit.' },
+        { status: 409 },
+      )
+    }
 
     // Remove vectors before deleting the source record so retrieval cannot use stale data.
     const { deleteDatabaseVectorsForSource } = await import('@/lib/database-vector-store')

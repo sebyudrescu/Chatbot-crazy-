@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Archive,
   Bot,
   Check,
   Clock3,
@@ -12,9 +13,11 @@ import {
   MessageSquare,
   Phone,
   Plus,
+  PencilLine,
   RefreshCw,
   Search,
   Send,
+  ShieldCheck,
   Sparkles,
   StickyNote,
   Tag as TagIcon,
@@ -36,6 +39,20 @@ interface Message {
   feedback?: string | null;
   channel?: string;
   deliveryStatus?: string | null;
+  responseRevisions?: ResponseRevision[];
+}
+interface ResponseRevision {
+  id: string;
+  version: number;
+  question: string;
+  originalAnswer: string;
+  revisedAnswer: string;
+  rationale: string | null;
+  expectedKeywords: string[];
+  forbiddenKeywords: string[];
+  status: "draft" | "publishing" | "published" | "failed" | "archiving" | "archived";
+  publishedAt: string | null;
+  archivedAt: string | null;
 }
 interface WhatsAppTemplate {
   id?: string;
@@ -87,6 +104,16 @@ export default function ConversationsPage() {
   const [aiBusy, setAiBusy] = useState<"summary" | "reply" | null>(null);
   const [aiError, setAiError] = useState("");
   const [replyError, setReplyError] = useState("");
+  const [revisionTarget, setRevisionTarget] = useState<Message | null>(null);
+  const [revisionQuestion, setRevisionQuestion] = useState("");
+  const [revisionAnswer, setRevisionAnswer] = useState("");
+  const [revisionRationale, setRevisionRationale] = useState("");
+  const [revisionExpected, setRevisionExpected] = useState("");
+  const [revisionForbidden, setRevisionForbidden] = useState("");
+  const [revisionDraftId, setRevisionDraftId] = useState<string | null>(null);
+  const [revisionReview, setRevisionReview] = useState(false);
+  const [revisionBusy, setRevisionBusy] = useState(false);
+  const [revisionError, setRevisionError] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
   const [tagDraft, setTagDraft] = useState("");
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
@@ -435,6 +462,101 @@ export default function ConversationsPage() {
     selected &&
     patchSelected({ tags: selected.tags.filter((item) => item !== tag) });
 
+  const openRevision = (message: Message) => {
+    if (!selected) return;
+    const messageIndex = selected.messages.findIndex((item) => item.id === message.id);
+    const precedingQuestion = selected.messages
+      .slice(0, messageIndex)
+      .reverse()
+      .find((item) => item.role === "user")?.content || "";
+    const editable = message.responseRevisions?.find((item) =>
+      ["draft", "failed"].includes(item.status),
+    );
+    setRevisionTarget(message);
+    setRevisionQuestion(editable?.question || precedingQuestion);
+    setRevisionAnswer(editable?.revisedAnswer || message.content);
+    setRevisionRationale(editable?.rationale || "");
+    setRevisionExpected(editable?.expectedKeywords.join(", ") || "");
+    setRevisionForbidden(editable?.forbiddenKeywords.join(", ") || "");
+    setRevisionDraftId(editable?.id || null);
+    setRevisionReview(false);
+    setRevisionError("");
+  };
+
+  const revisionPayload = () => ({
+    question: revisionQuestion.trim(),
+    revisedAnswer: revisionAnswer.trim(),
+    rationale: revisionRationale.trim() || null,
+    expectedKeywords: revisionExpected.split(",").map((item) => item.trim()).filter(Boolean),
+    forbiddenKeywords: revisionForbidden.split(",").map((item) => item.trim()).filter(Boolean),
+  });
+
+  const saveRevisionDraft = async () => {
+    if (!revisionTarget) return null;
+    setRevisionBusy(true);
+    setRevisionError("");
+    try {
+      const response = await fetch(
+        revisionDraftId
+          ? `/api/response-revisions/${revisionDraftId}`
+          : `/api/messages/${revisionTarget.id}/revisions`,
+        {
+          method: revisionDraftId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(revisionPayload()),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Salvataggio bozza non riuscito");
+      setRevisionDraftId(result.data.id);
+      setRevisionExpected(result.data.expectedKeywords.join(", "));
+      setRevisionForbidden(result.data.forbiddenKeywords.join(", "));
+      setRevisionReview(true);
+      return result.data as ResponseRevision;
+    } catch (error) {
+      setRevisionError(error instanceof Error ? error.message : "Salvataggio bozza non riuscito");
+      return null;
+    } finally {
+      setRevisionBusy(false);
+    }
+  };
+
+  const publishRevision = async () => {
+    if (!revisionDraftId || !selected) return;
+    setRevisionBusy(true);
+    setRevisionError("");
+    try {
+      const response = await fetch(`/api/response-revisions/${revisionDraftId}/publish`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Pubblicazione non riuscita");
+      const current = selected;
+      setRevisionTarget(null);
+      await openConversation(current, false);
+    } catch (error) {
+      setRevisionError(error instanceof Error ? error.message : "Pubblicazione non riuscita");
+    } finally {
+      setRevisionBusy(false);
+    }
+  };
+
+  const archiveRevision = async (revision: ResponseRevision) => {
+    if (!selected || !window.confirm("Rimuovere questa Q&A verificata dalla knowledge base e disattivare il relativo test?")) return;
+    setRevisionBusy(true);
+    setRevisionError("");
+    try {
+      const response = await fetch(`/api/response-revisions/${revision.id}/archive`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Archiviazione non riuscita");
+      const current = selected;
+      setRevisionTarget(null);
+      await openConversation(current, false);
+    } catch (error) {
+      setRevisionError(error instanceof Error ? error.message : "Archiviazione non riuscita");
+    } finally {
+      setRevisionBusy(false);
+    }
+  };
+
   if (loading)
     return (
       <DashboardLayout>
@@ -674,6 +796,26 @@ export default function ConversationsPage() {
                             ? ` · ${deliveryLabel(message.deliveryStatus)}`
                             : ""}
                         </p>
+                        {message.role === "assistant" && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/20 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => openRevision(message)}
+                              className="flex items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-[9px] font-semibold text-white hover:bg-white/25"
+                            >
+                              <PencilLine className="h-3 w-3" />
+                              Correggi e insegna
+                            </button>
+                            {message.responseRevisions?.slice(0, 2).map((revision) => (
+                              <span
+                                key={revision.id}
+                                className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${revision.status === "published" ? "bg-emerald-100 text-emerald-800" : revision.status === "archived" ? "bg-gray-200 text-gray-600" : "bg-amber-100 text-amber-800"}`}
+                              >
+                                v{revision.version} · {revision.status === "published" ? "verificata" : revision.status === "archived" ? "archiviata" : "bozza"}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))
@@ -1032,6 +1174,107 @@ export default function ConversationsPage() {
           )}
         </aside>
       </div>
+      {revisionTarget && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-950/55 p-3 backdrop-blur-sm sm:p-5"
+          onMouseDown={(event) => event.target === event.currentTarget && !revisionBusy && setRevisionTarget(null)}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="revision-title" className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b p-5">
+              <div>
+                <p className="eyebrow">Apprendimento supervisionato</p>
+                <h2 id="revision-title" className="mt-1 text-lg font-bold text-gray-950">Correggi e insegna al chatbot</h2>
+                <p className="mt-1 text-[11px] text-gray-500">Il messaggio storico resta immutato. La correzione diventa una Q&A verificata e un test anti-regressione.</p>
+              </div>
+              <button disabled={revisionBusy} onClick={() => setRevisionTarget(null)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 disabled:opacity-50" aria-label="Chiudi">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              {!revisionReview ? (
+                <div className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
+                  <div className="space-y-4">
+                    <label className="block">
+                      <span className="label">Domanda canonica dell’utente</span>
+                      <textarea className="textarea mt-1 min-h-20 text-xs" value={revisionQuestion} onChange={(event) => setRevisionQuestion(event.target.value)} />
+                    </label>
+                    <label className="block">
+                      <span className="label">Risposta corretta e verificata</span>
+                      <textarea className="textarea mt-1 min-h-40 text-xs leading-5" value={revisionAnswer} onChange={(event) => setRevisionAnswer(event.target.value)} />
+                    </label>
+                    <label className="block">
+                      <span className="label">Perché la risposta originale era sbagliata (nota interna)</span>
+                      <textarea className="textarea mt-1 min-h-20 text-xs" value={revisionRationale} onChange={(event) => setRevisionRationale(event.target.value)} placeholder="Es. categoria dimenticata, prodotto non pertinente, informazione mancante..." />
+                    </label>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="rounded-xl border bg-gray-50 p-4">
+                      <p className="label">Risposta originale</p>
+                      <div className="mt-2 max-h-44 overflow-y-auto text-[11px] leading-5 text-gray-600"><SafeRichText content={revisionTarget.content} /></div>
+                    </div>
+                    <label className="block">
+                      <span className="label">Parole o frasi che devono comparire</span>
+                      <input className="input mt-1 text-xs" value={revisionExpected} onChange={(event) => setRevisionExpected(event.target.value)} placeholder="lino, donna, disponibile" />
+                      <span className="mt-1 block text-[9px] text-gray-400">Separate da virgola. Se vuoto, vengono proposte automaticamente.</span>
+                    </label>
+                    <label className="block">
+                      <span className="label">Parole vietate nel test</span>
+                      <input className="input mt-1 text-xs" value={revisionForbidden} onChange={(event) => setRevisionForbidden(event.target.value)} placeholder="giacca, uomo" />
+                    </label>
+                    <div className="rounded-xl bg-amber-50 p-4 text-[10px] leading-5 text-amber-800">
+                      Non inserire email, telefoni, dati di pagamento o credenziali. Il server blocca automaticamente questi dati prima dell’indicizzazione.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className="rounded-xl border p-4">
+                    <p className="label">Domanda verificata</p>
+                    <p className="mt-2 text-sm font-semibold text-gray-900">{revisionQuestion}</p>
+                    <p className="label mt-5">Risposta che verrà indicizzata</p>
+                    <div className="mt-2 text-xs leading-6 text-gray-700"><SafeRichText content={revisionAnswer} /></div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="rounded-xl bg-emerald-50 p-4 text-[11px] leading-5 text-emerald-800">
+                      <div className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Pubblicazione controllata</div>
+                      <p className="mt-2">Verrà creata una sola fonte Q&A verificata, una versione auditabile e un caso di valutazione attivo. La versione pubblicata precedente verrà disattivata per evitare contraddizioni.</p>
+                    </div>
+                    <div className="rounded-xl border p-4">
+                      <p className="label">Criteri anti-regressione</p>
+                      <p className="mt-2 text-[11px] text-gray-600"><strong>Attesi:</strong> {revisionExpected || "—"}</p>
+                      <p className="mt-2 text-[11px] text-gray-600"><strong>Vietati:</strong> {revisionForbidden || "nessuno"}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {revisionTarget.responseRevisions && revisionTarget.responseRevisions.length > 0 && (
+                <div className="mt-5 border-t pt-4">
+                  <p className="label">Cronologia versioni</p>
+                  <div className="mt-2 space-y-2">
+                    {revisionTarget.responseRevisions.map((revision) => (
+                      <div key={revision.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-[10px]">
+                        <span className="font-semibold text-gray-700">v{revision.version} · {revision.status}</span>
+                        {revision.status === "published" && (
+                          <button disabled={revisionBusy} onClick={() => archiveRevision(revision)} className="flex items-center gap-1 font-semibold text-red-600 disabled:opacity-50"><Archive className="h-3 w-3" /> Rimuovi dalla KB</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {revisionError && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{revisionError}</p>}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t p-4">
+              <Button variant="secondary" disabled={revisionBusy} onClick={() => revisionReview ? setRevisionReview(false) : setRevisionTarget(null)}>{revisionReview ? "Torna alla modifica" : "Annulla"}</Button>
+              {!revisionReview ? (
+                <Button loading={revisionBusy} disabled={!revisionQuestion.trim() || revisionAnswer.trim().length < 10} onClick={saveRevisionDraft} icon={<ShieldCheck className="h-4 w-4" />}>Salva e rivedi</Button>
+              ) : (
+                <Button variant="success" loading={revisionBusy} onClick={publishRevision} icon={<Check className="h-4 w-4" />}>Pubblica Q&A verificata</Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
