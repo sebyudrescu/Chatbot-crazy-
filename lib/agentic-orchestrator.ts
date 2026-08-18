@@ -11,7 +11,7 @@ import { prisma } from "./db";
 import { runTriggeredActions, type ActionResult } from "./action-engine";
 import { decryptConfigSecrets } from "./secret-config";
 import { safeHttpsUrl } from "./integration-catalog";
-import { parseCommerceQuery } from "./commerce-query";
+import { claimsCatalogNoResult, parseCommerceQuery } from "./commerce-query";
 
 const openai = createLazyOpenAI();
 const MAX_AGENT_ROUNDS = 4;
@@ -431,7 +431,7 @@ export async function orchestrateAgenticResponse(
   if (
     currentCommerceQuery.category &&
     ["product_discovery", "product_detail", "variant_availability"].includes(currentCommerceQuery.intent) &&
-    (!latestProductSearch || latestProductSearch.resultCount === 0)
+    (!latestProductSearch || latestProductSearch.resultCount === 0 || claimsCatalogNoResult(finalText))
   ) {
     const searchStartedAt = Date.now();
     const toolContext = {
@@ -449,12 +449,12 @@ export async function orchestrateAgenticResponse(
       const retry = await executeAgentTool("search_products", {
         query: context.query,
         category: null,
-        color: null,
-        material: null,
-        gender: null,
-        min_price: null,
-        max_price: null,
-        available_only: true,
+        color: currentCommerceQuery.colors[0] || null,
+        material: currentCommerceQuery.materials[0] || null,
+        gender: currentCommerceQuery.gender || null,
+        min_price: currentCommerceQuery.minPrice ?? null,
+        max_price: currentCommerceQuery.maxPrice ?? null,
+        available_only: currentCommerceQuery.availableOnly,
         exclude_product_ids: [],
         limit: Math.max(1, Math.min(5, currentCommerceQuery.maxCards || 3)),
       }, toolContext);

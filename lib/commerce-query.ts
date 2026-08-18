@@ -125,6 +125,18 @@ export function normalizeCommerceText(value: string) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9€]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Identifies an assistant claim that the verified catalogue has no matching
+ * item. It is used only as a truth-integrity guard: before exposing the claim,
+ * the current self-contained request is searched again without inherited
+ * conversation constraints.
+ */
+export function claimsCatalogNoResult(value: string) {
+  const normalized = normalizeCommerceText(value);
+  return /\b(?:non (?:trovo|abbiamo|abbiam|risultano|vedo)|nessun[oa]?|zero)\b.*\b(?:catalogo|prodott[oi]|articol[oi]|magliett[ae]|t shirt|camici[ae]|pantalon[ei]|giacch[ae]|abit[oi]|bors[ae]|zain[oi]|scarp[ae])\b/i.test(normalized)
+    || /\b(?:no|cannot|can t|couldn t)\b.*\b(?:matching|products?|items?|results?)\b/i.test(normalized);
+}
+
 function parseAmount(value: string) {
   const parsed = Number(value.replace(".", "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : undefined;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   categoryConflicts,
   categoryMatches,
+  claimsCatalogNoResult,
   buildCatalogFollowUpQuery,
   buildConversationalCommerceQuery,
   classifyCommerceIntent,
@@ -86,6 +87,8 @@ assert.equal(parseCommerceQuery(loggedTshirtRequest).category, "shirt");
 assert.equal(parseCommerceQuery("Avete delle magliette?").category, "shirt");
 assert.equal(categoryMatches("shirt", "T-Shirt Suddenly Woman — Scritta Glitterata"), true);
 assert.equal(categoryMatches("shirt", "T Shirt Suddenly Man"), true);
+assert.equal(claimsCatalogNoResult("Al momento non trovo magliette del brand Suddenly nel catalogo verificato."), true);
+assert.equal(claimsCatalogNoResult("Ho trovato tre magliette verificate nel catalogo."), false);
 assert.equal(classifyCommerceIntent("Volgio dei pantaloni neri"), "product_discovery");
 assert.deepEqual(parseCommerceQuery("Volgio dei pantaloni neri").colors, ["nero"]);
 assert.equal(classifyCommerceIntent("Cosa mi consigli?"), "product_discovery");
