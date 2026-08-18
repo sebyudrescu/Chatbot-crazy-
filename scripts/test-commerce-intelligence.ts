@@ -85,6 +85,24 @@ const loggedTshirtRequest = "oerfetto grazie, volgio anceh una maglietta suddenl
 assert.equal(classifyCommerceIntent(loggedTshirtRequest), "product_discovery");
 assert.equal(parseCommerceQuery(loggedTshirtRequest).category, "shirt");
 assert.equal(parseCommerceQuery("Avete delle magliette?").category, "shirt");
+assert.equal(parseCommerceQuery("Avete delle magliette?").productForm, "tshirt");
+assert.equal(parseCommerceQuery("Cerco una magleta Suddenly da donna").productForm, "tshirt");
+assert.equal(parseCommerceQuery("Cerco una camicia da donna").productForm, "shirt");
+const misspelledTshirt = parseCommerceQuery("Cerco una magleta Suddenly da donna");
+assert.equal(matchesCommerceConstraints(misspelledTshirt, {
+  structuredText: "T-Shirt Suddenly Woman abbigliamento donna",
+  descriptiveText: "Maglietta con scritta glitterata",
+  availableForSale: true,
+  availablePrices: [35],
+  availableOptionValues: ["S", "M"],
+}), true);
+assert.equal(matchesCommerceConstraints(misspelledTshirt, {
+  structuredText: "Camicia Arles Suddenly donna",
+  descriptiveText: "Camicia in lino",
+  availableForSale: true,
+  availablePrices: [72],
+  availableOptionValues: ["One Size"],
+}), false);
 assert.equal(categoryMatches("shirt", "T-Shirt Suddenly Woman — Scritta Glitterata"), true);
 assert.equal(categoryMatches("shirt", "T Shirt Suddenly Man"), true);
 assert.equal(claimsCatalogNoResult("Al momento non trovo magliette del brand Suddenly nel catalogo verificato."), true);

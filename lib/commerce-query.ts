@@ -29,6 +29,7 @@ export interface ParsedCommerceQuery {
   normalized: string;
   intent: CommerceIntent;
   category?: ProductCategory;
+  productForm?: "tshirt" | "shirt";
   excludedCategories: ProductCategory[];
   gender?: "men" | "women" | "children";
   colors: string[];
@@ -50,6 +51,8 @@ const EXPLICIT_PRODUCT_BROWSE = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far
 const STYLE_PREFERENCE = /\b(elegant\w*|casual|cerimoni\w*|matrimoni\w*|serat\w*|lavoro|sportiv\w*|streetwear|formal\w*)\b/i;
 const GENERIC_RECOMMENDATION = /\b(?:cosa|che cosa|qualcosa)\s+mi\s+consigli\b|\b(?:mi\s+)?consigli(?:ami|eresti)?\b/i;
 const MERCHANT_AVAILABILITY = /\b(?:avete|hai|vendete|trattate|disponete di)\b/i;
+const TSHIRT_FORM = /\b(magliett[ae]|t[\s-]?shirt|tee)\b/i;
+const SHIRT_FORM = /\b(camici[ae])\b/i;
 
 const CATEGORY_PATTERNS: Array<[ProductCategory, RegExp]> = [
   ["shorts", /\b(pantaloncin[oi]|shorts?|bermuda)\b/i],
@@ -315,6 +318,15 @@ function aliasesIn(value: string, aliases: Record<string, string[]>) {
   return Object.entries(aliases).filter(([, forms]) => forms.some((form) => new RegExp(`\\b${form}\\b`, "i").test(value))).map(([canonical]) => canonical);
 }
 
+function requestedProductForm(value: string): ParsedCommerceQuery["productForm"] {
+  if (TSHIRT_FORM.test(value)) return "tshirt";
+  if (SHIRT_FORM.test(value)) return "shirt";
+  const words = value.split(/\s+/).filter((word) => word.length >= 5);
+  if (words.some((word) => ["maglietta", "magliette"].some((term) => editDistance(word, term) <= 2))) return "tshirt";
+  if (words.some((word) => ["camicia", "camicie"].some((term) => editDistance(word, term) <= 1))) return "shirt";
+  return undefined;
+}
+
 export function parseCommerceQuery(message: string, commerceMode = true): ParsedCommerceQuery {
   const normalized = normalizeCommerceText(message);
   const attributeScope = requestedAttributeScope(normalized);
@@ -327,6 +339,7 @@ export function parseCommerceQuery(message: string, commerceMode = true): Parsed
     normalized,
     intent,
     category: primaryCategory(normalized),
+    productForm: requestedProductForm(normalized),
     excludedCategories: excludedCategories(normalized),
     gender: /\b(bambin[oi]|junior|kids?)\b/i.test(attributeScope) ? "children" : /\b(donna|women|woman|femminile)\b/i.test(attributeScope) ? "women" : /\b(uomo|men|man|maschile)\b/i.test(attributeScope) ? "men" : undefined,
     colors: aliasesIn(attributeScope, COLOR_ALIASES),
@@ -384,6 +397,8 @@ export function matchesCommerceConstraints(query: ParsedCommerceQuery, candidate
   const structured = normalizeCommerceText(candidate.structuredText);
   const descriptive = normalizeCommerceText(candidate.descriptiveText);
   if (query.category && (!categoryMatches(query.category, structured) || categoryConflicts(query.category, structured))) return false;
+  if (query.productForm === "tshirt" && !TSHIRT_FORM.test(structured)) return false;
+  if (query.productForm === "shirt" && !SHIRT_FORM.test(structured)) return false;
   if (query.excludedCategories.some((category) => categoryMatches(category, structured))) return false;
   if (query.gender) {
     const men = /\b(uomo|men|man|maschile)\b/i.test(structured);
