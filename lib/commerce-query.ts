@@ -133,7 +133,7 @@ export function normalizeCommerceText(value: string) {
  */
 export function claimsCatalogNoResult(value: string) {
   const normalized = normalizeCommerceText(value);
-  return /\b(?:non (?:trovo|abbiamo|abbiam|risultano|vedo)|nessun[oa]?|zero)\b.*\b(?:catalogo|prodott[oi]|articol[oi]|magliett[ae]|t shirt|camici[ae]|pantalon[ei]|giacch[ae]|abit[oi]|bors[ae]|zain[oi]|scarp[ae])\b/i.test(normalized)
+  return /\b(?:non (?:ne )?(?:trovo|abbiamo|abbiam|risultano|vedo)|nessun[oa]?|zero)\b.*\b(?:catalogo|prodott[oi]|articol[oi]|magliett[ae]|t shirt|camici[ae]|pantalon[ei]|giacch[ae]|abit[oi]|bors[ae]|zain[oi]|scarp[ae])\b/i.test(normalized)
     || /\b(?:no|cannot|can t|couldn t)\b.*\b(?:matching|products?|items?|results?)\b/i.test(normalized);
 }
 

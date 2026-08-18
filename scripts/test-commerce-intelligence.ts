@@ -88,6 +88,7 @@ assert.equal(parseCommerceQuery("Avete delle magliette?").category, "shirt");
 assert.equal(categoryMatches("shirt", "T-Shirt Suddenly Woman — Scritta Glitterata"), true);
 assert.equal(categoryMatches("shirt", "T Shirt Suddenly Man"), true);
 assert.equal(claimsCatalogNoResult("Al momento non trovo magliette del brand Suddenly nel catalogo verificato."), true);
+assert.equal(claimsCatalogNoResult("Ho cercato una t-shirt uomo, ma al momento non ne trovo una verificata disponibile in catalogo."), true);
 assert.equal(claimsCatalogNoResult("Ho trovato tre magliette verificate nel catalogo."), false);
 assert.equal(classifyCommerceIntent("Volgio dei pantaloni neri"), "product_discovery");
 assert.deepEqual(parseCommerceQuery("Volgio dei pantaloni neri").colors, ["nero"]);
