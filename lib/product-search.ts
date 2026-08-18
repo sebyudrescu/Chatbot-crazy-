@@ -230,6 +230,12 @@ export async function searchVerifiedProducts(
       },
     },
   ]);
+  // Category aliases are resolved in memory against all structured catalogue
+  // fields. Do not also require PostgreSQL to match one textual alias first:
+  // provider data can call the same item "T-Shirt" while the customer says
+  // "maglietta", and sparse productType/tags would otherwise hide it before
+  // the category matcher gets a chance to evaluate the product.
+  const scanStructuredCategory = Boolean(parsed.category);
 
   const [products, catalogSize] = await Promise.all([
     prisma.product.findMany({
@@ -238,7 +244,7 @@ export async function searchVerifiedProducts(
         id: excludedProductIds.length ? { notIn: excludedProductIds } : undefined,
         status: "active",
         recommendationStatus: { notIn: ["excluded", "blocked"] },
-        OR: [...exactSelectors, ...textSelectors].length
+        OR: !scanStructuredCategory && [...exactSelectors, ...textSelectors].length
           ? ([...exactSelectors, ...textSelectors] as any)
           : undefined,
       },

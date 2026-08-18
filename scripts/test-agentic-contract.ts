@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 const toolsSource = readFileSync(resolve(process.cwd(), 'lib/agentic-tools.ts'), 'utf8')
 const orchestratorSource = readFileSync(resolve(process.cwd(), 'lib/agentic-orchestrator.ts'), 'utf8')
 const runtimeSource = readFileSync(resolve(process.cwd(), 'lib/agentic-chat-runtime.ts'), 'utf8')
+const productSearchSource = readFileSync(resolve(process.cwd(), 'lib/product-search.ts'), 'utf8')
 
 for (const toolName of [
   'search_products',
@@ -45,5 +46,7 @@ assert.match(runtimeSource, /commerce\.order_lookup\.verified/)
 assert.match(runtimeSource, /protectedDataStored:\s*false/)
 assert.doesNotMatch(toolsSource, /filter\(\(variant\) => !args\.variant_id/)
 assert.match(toolsSource, /selected_reference: variant\.id === args\.variant_id/)
+assert.match(productSearchSource, /const scanStructuredCategory = Boolean\(parsed\.category\)/)
+assert.match(productSearchSource, /!scanStructuredCategory && \[\.\.\.exactSelectors, \.\.\.textSelectors\]\.length/)
 
 console.log(JSON.stringify({ success: true, tools: 6, multiToolLoop: true }))
