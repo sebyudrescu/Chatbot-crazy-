@@ -150,8 +150,8 @@
   const CSS_STYLES = `
     .chatbot-widget-container {
       position: fixed;
-      ${config.position.includes('right') ? 'right: 88px;' : 'left: 88px;'}
-      ${config.position.includes('bottom') ? 'bottom: 20px;' : 'top: 20px;'}
+      ${config.position.includes('right') ? 'right: var(--litx-desktop-edge, 88px);' : 'left: var(--litx-desktop-edge, 88px);'}
+      ${config.position.includes('bottom') ? 'bottom: var(--litx-desktop-bottom, 20px);' : 'top: 20px;'}
       z-index: 2147483000;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
@@ -183,7 +183,8 @@
       border-radius: inherit;
       box-sizing: border-box;
       object-fit: contain;
-      padding: 7px;
+      padding: 1px;
+      transform: scale(1.12);
     }
 
     .chatbot-launcher-message {
@@ -1498,34 +1499,31 @@
     const applyLayout = () => {
       scheduled = false;
       if (layoutLocked) return;
-      if (!mobileQuery.matches) {
-        widgetContainer.style.removeProperty('--litx-mobile-edge');
-        widgetContainer.style.removeProperty('--litx-mobile-bottom');
-        document.body.classList.remove('litx-hide-back-to-top');
-        return;
-      }
-      document.body.classList.toggle('litx-hide-back-to-top', shopifyLayout.hideBackToTop !== false);
+      const isMobile = mobileQuery.matches;
+      const edgeProperty = isMobile ? '--litx-mobile-edge' : '--litx-desktop-edge';
+      const bottomProperty = isMobile ? '--litx-mobile-bottom' : '--litx-desktop-bottom';
+      document.body.classList.toggle('litx-hide-back-to-top', isMobile && shopifyLayout.hideBackToTop !== false);
       const launcherRect = launcher ? launcher.getBoundingClientRect() : null;
-      const launcherWidth = launcherRect?.width || 50;
-      const launcherHeight = launcherRect?.height || 50;
+      const launcherWidth = launcherRect?.width || (isMobile ? 50 : launcherSize);
+      const launcherHeight = launcherRect?.height || (isMobile ? 50 : launcherSize);
       const whatsapp = shopifyLayout.placement === 'corner' ? null : findWhatsAppLauncher();
       if (whatsapp) {
         const right = Math.max(edge, window.innerWidth - whatsapp.rect.right + Math.max(0, (whatsapp.rect.width - launcherWidth) / 2));
         const bottom = Math.max(edge, window.innerHeight - whatsapp.rect.bottom - gap - launcherHeight);
-        widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(right)}px`);
-        widgetContainer.style.setProperty('--litx-mobile-bottom', `${Math.round(bottom)}px`);
+        widgetContainer.style.setProperty(edgeProperty, `${Math.round(right)}px`);
+        widgetContainer.style.setProperty(bottomProperty, `${Math.round(bottom)}px`);
         if (launcher) {
           const positionedRect = launcher.getBoundingClientRect();
           const centerDelta = positionedRect.left + positionedRect.width / 2 - (whatsapp.rect.left + whatsapp.rect.width / 2);
           if (Math.abs(centerDelta) > 1) {
-            widgetContainer.style.setProperty('--litx-mobile-edge', `${Math.round(Math.max(8, right + centerDelta))}px`);
+            widgetContainer.style.setProperty(edgeProperty, `${Math.round(Math.max(8, right + centerDelta))}px`);
           }
         }
         layoutLocked = true;
         if (observer) observer.disconnect();
       } else {
-        widgetContainer.style.setProperty('--litx-mobile-edge', `${edge}px`);
-        widgetContainer.style.setProperty('--litx-mobile-bottom', `calc(env(safe-area-inset-bottom, 0px) + 84px)`);
+        widgetContainer.style.setProperty(edgeProperty, `${edge}px`);
+        widgetContainer.style.setProperty(bottomProperty, isMobile ? `calc(env(safe-area-inset-bottom, 0px) + 84px)` : `${edge}px`);
       }
     };
     const scheduleLayout = () => {

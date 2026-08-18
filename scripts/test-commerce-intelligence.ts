@@ -80,6 +80,10 @@ assert.equal(classifyCommerceIntent("Avete anche zaini?"), "product_discovery");
 assert.equal(classifyCommerceIntent("Che pantaloni hai?"), "product_discovery");
 assert.equal(classifyCommerceIntent("Che pantlaoni hai??"), "product_discovery");
 assert.equal(parseCommerceQuery("Che pantlaoni hai??").category, "trousers");
+const loggedTshirtRequest = "oerfetto grazie, volgio anceh una maglietta suddenly se ce lhai";
+assert.equal(classifyCommerceIntent(loggedTshirtRequest), "product_discovery");
+assert.equal(parseCommerceQuery(loggedTshirtRequest).category, "shirt");
+assert.equal(parseCommerceQuery("Avete delle magliette?").category, "shirt");
 assert.equal(classifyCommerceIntent("Volgio dei pantaloni neri"), "product_discovery");
 assert.deepEqual(parseCommerceQuery("Volgio dei pantaloni neri").colors, ["nero"]);
 assert.equal(classifyCommerceIntent("Cosa mi consigli?"), "product_discovery");
@@ -114,6 +118,11 @@ assert.equal(
 assert.equal(
   buildConversationalCommerceQuery("Avete giacche?", ["Che pantaloni hai?"]),
   "Avete giacche?",
+);
+assert.equal(
+  buildConversationalCommerceQuery(loggedTshirtRequest, ["Voglio pantaloni neri casual da uomo"]),
+  loggedTshirtRequest,
+  "Una nuova richiesta di magliette non deve ereditare il reparto uomo dai pantaloni",
 );
 const cardFollowUp = parseCommerceQuery("Dammi le card del prodotto");
 assert.equal(cardFollowUp.wantsCards, true);

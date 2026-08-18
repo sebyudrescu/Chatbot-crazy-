@@ -41,7 +41,7 @@ export interface ParsedCommerceQuery {
   maxCards: number;
 }
 
-const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarp[ae]|sneakers?|bors[ae]|zain[oi]|accessori?|intimo|costum[ei]|design\w*|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
+const PRODUCT_WORD = /\b(prodott[oi]|articol[oi]|cap[oi]|abbigliamento|vestit[oi]|pantalon(?:e|i|cin[oi])|jeans|shorts?|polo|magli[ae]|magliett[ae]|t-?shirt|camici[ae]|giacch[ae]|cappott[oi]|felp[ae]|scarp[ae]|sneakers?|bors[ae]|zain[oi]|accessori?|intimo|costum[ei]|design\w*|tagli[ae]|misur[ae]|color[ei]|variant[ei])\b/i;
 const DISCOVERY_ACTION = /\b(mostrami|mostrarmi|mostrare|fammi vedere|far vedere|dammi|cosa avete|quali avete|avete|vendete|cerco|cercando|vorrei|voglio|volevo|desidero|mi serve|consigliami|consiglia|raccomand|alternative?|foto|immagin[ei]|link|card|schede?|comprare|acquistare)\b/i;
 const DETAIL_ACTION = /\b(prezzo|cost[oa]|materiale|composizione|descrizione|dettagli[oi]|caratteristiche|scheda prodotto|disponibil)\b/i;
 const VARIANT_ACTION = /\b(tagli[ae]|misur[ae]|variant[ei]|numero|color[ei])\b/i;
@@ -55,7 +55,7 @@ const CATEGORY_PATTERNS: Array<[ProductCategory, RegExp]> = [
   ["shorts", /\b(pantaloncin[oi]|shorts?|bermuda)\b/i],
   ["trousers", /\b(pantalon[ei]|jeans?)\b/i],
   ["polo", /\bpolo\b/i],
-  ["shirt", /\b(camici[ae]|shirt|t-?shirt)\b/i],
+  ["shirt", /\b(camici[ae]|magliett[ae]|shirt|t-?shirt)\b/i],
   ["top", /\b(magli[ae]|top)\b/i],
   ["jacket", /\b(giacch[ae]|blazer)\b/i],
   ["coat", /\b(cappott[oi]|trench)\b/i],
@@ -71,7 +71,7 @@ const CATEGORY_TERMS: Record<ProductCategory, string[]> = {
   trousers: ["pantalone", "pantaloni", "jeans"],
   shorts: ["pantaloncino", "pantaloncini", "short", "shorts", "bermuda"],
   polo: ["polo"],
-  shirt: ["camicia", "camicie", "shirt", "tshirt"],
+  shirt: ["camicia", "camicie", "maglietta", "magliette", "shirt", "tshirt"],
   top: ["maglia", "maglie", "top"],
   jacket: ["giacca", "giacche", "blazer"],
   coat: ["cappotto", "cappotti", "trench"],
@@ -87,7 +87,7 @@ const CATEGORY_MATCHERS: Record<ProductCategory, RegExp> = {
   trousers: /\b(pantalon[ei]|jeans?)\b/i,
   shorts: /\b(pantaloncin[oi]|shorts?|bermuda)\b/i,
   polo: /\bpolo\b/i,
-  shirt: /\b(camici[ae]|shirt|t-?shirt)\b/i,
+  shirt: /\b(camici[ae]|magliett[ae]|shirt|t-?shirt)\b/i,
   top: /\b(magli[ae]|top)\b/i,
   jacket: /\b(giacch[ae]|blazer)\b/i,
   coat: /\b(cappott[oi]|trench)\b/i,
