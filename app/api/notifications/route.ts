@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { parseMetaConnection } from '@/lib/meta-connections'
+import { parseShopifyConfig } from '@/lib/shopify-auth'
+import { errorRateAlert, operationalWindowKey, tokenExpiryAlert } from '@/lib/operational-alert-policy'
+import { redactOperationalText } from '@/lib/operational-error-safety'
 
 interface Notification { key: string; type: string; severity: 'critical' | 'warning' | 'info'; title: string; description: string; href: string; createdAt: Date }
 export async function GET(request: NextRequest) {
+  const now = new Date()
   const limit = Math.min(100, Number(request.nextUrl.searchParams.get('limit')) || 30)
-  const staleCutoff = new Date(Date.now() - 20 * 60 * 1000)
-  const incidentCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const [handoffs, failedSources, failedRuns, failedActions, failedIntegrations, ingestionIncidents, systemErrors] = await Promise.all([
+  const staleCutoff = new Date(now.getTime() - 20 * 60 * 1000)
+  const commerceStaleCutoff = new Date(now.getTime() - 30 * 60 * 1000)
+  const errorRateCutoff = new Date(now.getTime() - 60 * 60 * 1000)
+  const recentIncidentCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const incidentCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const [handoffs, failedSources, failedRuns, failedActions, failedIntegrations, ingestionIncidents, commerceSyncIncidents, commerceWebhookFailures, expiringConnections, eventTotals, eventFailures, systemErrors] = await Promise.all([
     prisma.conversation.findMany({ where: { needsHumanEscalation: true, isResolved: false }, include: { chatbot: { select: { companyName: true } } }, orderBy: { escalatedAt: 'desc' }, take: 30 }),
     prisma.knowledgeSource.findMany({ where: { status: 'failed' }, include: { chatbot: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' }, take: 20 }),
     prisma.evaluationRun.findMany({ where: { passed: false }, include: { evaluationCase: { include: { chatbot: { select: { companyName: true } } } } }, orderBy: { createdAt: 'desc' }, take: 20 }),
@@ -23,6 +31,38 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
       take: 20,
     }),
+    prisma.productSyncJob.findMany({
+      where: {
+        OR: [
+          { status: 'failed', completedAt: { gte: recentIncidentCutoff } },
+          { status: 'running', startedAt: { lt: commerceStaleCutoff } },
+        ],
+      },
+      include: { chatbot: { select: { companyName: true } }, source: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    }),
+    prisma.commerceWebhookDelivery.findMany({
+      where: { status: 'failed', updatedAt: { gte: recentIncidentCutoff } },
+      include: { chatbot: { select: { companyName: true } } },
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+    }),
+    prisma.integrationConnection.findMany({
+      where: { enabled: true, status: { in: ['connected', 'syncing'] }, provider: { in: ['whatsapp', 'instagram', 'shopify'] } },
+      include: { chatbot: { select: { companyName: true } } },
+      orderBy: { updatedAt: 'desc' },
+    }),
+    prisma.event.groupBy({
+      by: ['botId'],
+      where: { botId: { not: null }, timestamp: { gte: errorRateCutoff } },
+      _count: { _all: true },
+    }),
+    prisma.event.groupBy({
+      by: ['botId'],
+      where: { botId: { not: null }, success: false, severity: { in: ['error', 'critical'] }, timestamp: { gte: errorRateCutoff } },
+      _count: { _all: true },
+    }),
     prisma.event.findMany({
       where: {
         eventType: 'system.request.unhandled',
@@ -33,6 +73,50 @@ export async function GET(request: NextRequest) {
       take: 20,
     }),
   ])
+  const botIds = eventTotals.map(item => item.botId).filter((id): id is string => Boolean(id))
+  const botNames = new Map((await prisma.chatbot.findMany({ where: { id: { in: botIds } }, select: { id: true, companyName: true } })).map(item => [item.id, item.companyName]))
+  const failuresByBot = new Map(eventFailures.map(item => [item.botId, item._count._all]))
+  const errorRateNotifications: Notification[] = eventTotals.flatMap(item => {
+    if (!item.botId) return []
+    const alert = errorRateAlert(item._count._all, failuresByBot.get(item.botId) || 0)
+    if (!alert) return []
+    return [{
+      key: operationalWindowKey('error-rate', item.botId, now.getTime()),
+      type: 'system',
+      severity: alert.level,
+      title: alert.level === 'critical' ? 'Error rate critico' : 'Error rate elevato',
+      description: `${botNames.get(item.botId) || 'Agente'}: ${(alert.rate * 100).toFixed(1)}% di eventi falliti nell’ultima ora su ${item._count._all} eventi`,
+      href: '/dashboard/traces',
+      createdAt: now,
+    }]
+  })
+  const tokenNotifications: Notification[] = expiringConnections.flatMap(connection => {
+    let expiresAt: string | undefined
+    try {
+      if (connection.provider === 'shopify') {
+        const config = parseShopifyConfig(connection.config)
+        expiresAt = config.refreshTokenExpiresAt || (!config.refreshToken ? config.accessTokenExpiresAt : undefined)
+      } else {
+        const config = parseMetaConnection(connection.config)
+        if (!config) throw new Error('Configurazione Meta non valida')
+        expiresAt = config.tokenExpiresAt
+      }
+    } catch {
+      return [{ key: `token-config:${connection.id}:${connection.updatedAt.getTime()}`, type: 'integration', severity: 'critical' as const, title: 'Credenziali integrazione non leggibili', description: `${connection.chatbot.companyName}: ricollega ${connection.displayName}`, href: '/integrations', createdAt: connection.updatedAt }]
+    }
+    const alert = tokenExpiryAlert(expiresAt, now.getTime())
+    if (!alert) return []
+    const expiryKey = alert.expiresAt.getTime() > 0 ? alert.expiresAt.getTime() : connection.updatedAt.getTime()
+    return [{
+      key: `token-expiry:${connection.id}:${expiryKey}`,
+      type: 'integration',
+      severity: alert.level,
+      title: alert.level === 'critical' ? 'Token integrazione scaduto' : 'Token integrazione in scadenza',
+      description: `${connection.chatbot.companyName}: ${connection.displayName} ${alert.level === 'critical' ? 'deve essere ricollegata' : `scade il ${alert.expiresAt.toLocaleDateString('it-IT')}`}`,
+      href: '/integrations',
+      createdAt: now,
+    }]
+  })
   const notifications: Notification[] = [
     ...handoffs.flatMap(item => {
       const now = Date.now()
@@ -58,6 +142,29 @@ export async function GET(request: NextRequest) {
         createdAt: item.completedAt || item.startedAt || item.createdAt,
       }
     }),
+    ...commerceSyncIncidents.map(item => {
+      const stale = item.status === 'running'
+      return {
+        key: `commerce-sync:${item.id}:${item.leaseVersion}`,
+        type: 'integration',
+        severity: stale ? 'critical' as const : 'warning' as const,
+        title: stale ? 'Sincronizzazione catalogo bloccata' : 'Sincronizzazione catalogo fallita',
+        description: `${item.chatbot.companyName}: ${item.source.name} · ${stale ? 'nessun checkpoint da oltre 30 minuti' : redactOperationalText(item.errorMessage || 'sincronizzazione non completata', 240)}`,
+        href: '/commerce',
+        createdAt: item.completedAt || item.startedAt || item.createdAt,
+      }
+    }),
+    ...commerceWebhookFailures.map(item => ({
+      key: `commerce-webhook:${item.id}`,
+      type: 'integration',
+      severity: 'warning' as const,
+      title: 'Webhook commerce non elaborato',
+      description: `${item.chatbot.companyName}: ${item.provider} · ${item.topic}`,
+      href: '/integrations',
+      createdAt: item.updatedAt,
+    })),
+    ...tokenNotifications,
+    ...errorRateNotifications,
     ...systemErrors.map(item => ({
       key: `system-error:${item.id}`,
       type: 'system',
