@@ -1,7 +1,46 @@
 import "server-only";
 import { prisma } from "./db";
+import {
+  COMMERCE_SLO_THRESHOLDS,
+  INGESTION_SLO_THRESHOLDS,
+  jobSloAlert,
+  summarizeOperationalJobs,
+} from "./operational-alert-policy";
 
 const HOUR = 60 * 60 * 1000;
+const RETRY_GRACE_MS = 5 * 60 * 1000;
+
+export async function getOperationalJobSlos(now = new Date()) {
+  const windowStart = new Date(now.getTime() - 24 * HOUR);
+  const overdueRetryCutoff = new Date(now.getTime() - RETRY_GRACE_MS);
+  const [ingestionJobs, commerceJobs, ingestionOverdueRetries, commerceOverdueRetries] = await Promise.all([
+    prisma.ingestionJob.findMany({
+      where: { status: { in: ["completed", "failed"] }, completedAt: { gte: windowStart } },
+      select: { status: true, createdAt: true, startedAt: true, completedAt: true },
+    }),
+    prisma.productSyncJob.findMany({
+      where: { status: { in: ["completed", "failed"] }, completedAt: { gte: windowStart } },
+      select: { status: true, createdAt: true, startedAt: true, snapshotStartedAt: true, completedAt: true },
+    }),
+    prisma.ingestionJob.count({
+      where: { status: "pending", nextRetryAt: { lte: overdueRetryCutoff } },
+    }),
+    prisma.productSyncJob.count({
+      where: { status: "pending", nextRetryAt: { lte: overdueRetryCutoff } },
+    }),
+  ]);
+  return {
+    windowHours: 24,
+    ingestion: {
+      ...summarizeOperationalJobs(ingestionJobs),
+      overdueRetries: ingestionOverdueRetries,
+    },
+    commerce: {
+      ...summarizeOperationalJobs(commerceJobs.map((job) => ({ ...job, runStartedAt: job.snapshotStartedAt }))),
+      overdueRetries: commerceOverdueRetries,
+    },
+  };
+}
 
 export async function getOperationalHealth() {
   const now = new Date();
@@ -21,6 +60,7 @@ export async function getOperationalHealth() {
     recentErrors,
     latestCompletedJob,
     incidents,
+    jobSlos,
   ] = await Promise.all([
     prisma.ingestionJob.count({ where: { status: "pending" } }),
     prisma.ingestionJob.count({ where: { status: "running" } }),
@@ -66,15 +106,26 @@ export async function getOperationalHealth() {
         chatbot: { select: { companyName: true } },
       },
     }),
+    getOperationalJobSlos(now),
   ]);
 
-  const critical = staleJobs > 0 || failedAgents > 0;
+  const ingestionSloAlert = jobSloAlert(jobSlos.ingestion, INGESTION_SLO_THRESHOLDS);
+  const commerceSloAlert = jobSloAlert(jobSlos.commerce, COMMERCE_SLO_THRESHOLDS);
+  const critical =
+    staleJobs > 0 ||
+    failedAgents > 0 ||
+    jobSlos.ingestion.overdueRetries > 0 ||
+    jobSlos.commerce.overdueRetries > 0 ||
+    ingestionSloAlert?.level === "critical" ||
+    commerceSloAlert?.level === "critical";
   const warning =
     failedJobs > 0 ||
     failedSources > 0 ||
     webhookFailures > 0 ||
     recentErrors > 0 ||
-    pendingJobs > 10;
+    pendingJobs > 10 ||
+    ingestionSloAlert?.level === "warning" ||
+    commerceSloAlert?.level === "warning";
 
   return {
     level: critical ? "critical" : warning ? "warning" : "healthy",
@@ -93,6 +144,11 @@ export async function getOperationalHealth() {
     },
     integrations: { deliveryFailuresLast24Hours: webhookFailures },
     events: { errorsLast24Hours: recentErrors },
+    jobSlos: {
+      ...jobSlos,
+      ingestion: { ...jobSlos.ingestion, alert: ingestionSloAlert },
+      commerce: { ...jobSlos.commerce, alert: commerceSloAlert },
+    },
     incidents: incidents.map((job) => ({
       id: job.id,
       botId: job.botId,
