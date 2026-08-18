@@ -12,6 +12,11 @@ import { runTriggeredActions, type ActionResult } from "./action-engine";
 import { decryptConfigSecrets } from "./secret-config";
 import { safeHttpsUrl } from "./integration-catalog";
 import { claimsCatalogNoResult, parseCommerceQuery } from "./commerce-query";
+import {
+  selectMentionedProductsForPresentation,
+  shouldSuppressProductArtifacts,
+  type ProductPresentationCandidate,
+} from "./product-presentation-policy";
 
 const openai = createLazyOpenAI();
 const MAX_AGENT_ROUNDS = 4;
@@ -199,6 +204,7 @@ export async function orchestrateAgenticResponse(
   let totalToolCalls = 0;
   let actions = emptyActionResult();
   let semanticActionCallMade = false;
+  const searchedProducts: ProductPresentationCandidate[] = [];
   const totalUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
   const semanticActions = context.evaluationMode ? [] : await prisma.agentAction.findMany({
     where: {
@@ -392,6 +398,16 @@ export async function orchestrateAgenticResponse(
           : Array.isArray(execution.output.facts)
             ? execution.output.facts.length
             : undefined;
+        if (call.name === "search_products" && Array.isArray(execution.output.products)) {
+          for (const product of execution.output.products as Array<Record<string, unknown>>) {
+            if (typeof product.product_id !== "string" || typeof product.title !== "string") continue;
+            searchedProducts.push({
+              product_id: product.product_id,
+              variant_id: typeof product.variant_id === "string" ? product.variant_id : null,
+              title: product.title,
+            });
+          }
+        }
         toolTrace.push({ name: call.name, durationMs: Date.now() - toolStartedAt, success: true, resultCount });
         input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(execution.output) });
       } catch (error) {
@@ -461,6 +477,14 @@ export async function orchestrateAgenticResponse(
       const verifiedProducts = Array.isArray(retry.output.products)
         ? retry.output.products as Array<{ product_id?: unknown; variant_id?: unknown; title?: unknown }>
         : [];
+      for (const product of verifiedProducts) {
+        if (typeof product.product_id !== "string" || typeof product.title !== "string") continue;
+        searchedProducts.push({
+          product_id: product.product_id,
+          variant_id: typeof product.variant_id === "string" ? product.variant_id : null,
+          title: product.title,
+        });
+      }
       toolTrace.push({
         name: "search_products",
         durationMs: Date.now() - searchStartedAt,
@@ -498,6 +522,49 @@ export async function orchestrateAgenticResponse(
         success: false,
         error: error instanceof Error ? error.message.slice(0, 160) : "catalog_truth_guard_failed",
       });
+    }
+  }
+  if (productCards.length === 0 && searchedProducts.length > 0) {
+    const selected = selectMentionedProductsForPresentation({
+      response: finalText,
+      intent: currentCommerceQuery.intent,
+      candidates: searchedProducts,
+    });
+    if (selected.length) {
+      const toolContext = {
+        botId: context.botId,
+        conversationId: context.conversationId,
+        rateLimitScope: context.rateLimitScope,
+        recentMessages: context.conversationHistory,
+        previousAssistantText: context.previousAssistantText,
+        retrievalMinScore: context.botConfig.ragCalibration?.retrievalMinScore ?? context.botConfig.retrievalMinScore,
+        rerankerEnabled: context.botConfig.rerankerEnabled,
+        liveWebSearchEnabled: false,
+        liveWebAllowedDomains: [],
+      };
+      const presentStartedAt = Date.now();
+      try {
+        const presented = await executeAgentTool("present_products", {
+          products: selected.map((product) => ({
+            product_id: product.product_id,
+            variant_id: product.variant_id || null,
+          })),
+        }, toolContext);
+        productCards = mergeCards(productCards, presented.artifacts.productCards);
+        toolTrace.push({
+          name: "present_products",
+          durationMs: Date.now() - presentStartedAt,
+          success: productCards.length > 0,
+          resultCount: productCards.length,
+        });
+      } catch (error) {
+        toolTrace.push({
+          name: "present_products",
+          durationMs: Date.now() - presentStartedAt,
+          success: false,
+          error: error instanceof Error ? error.message.slice(0, 160) : "product_presentation_recovery_failed",
+        });
+      }
     }
   }
   if (actions.forceProductCards && productCards.length === 0) {
@@ -564,7 +631,19 @@ export async function orchestrateAgenticResponse(
       finalText = "Non ho trovato prodotti verificati da mostrarti in questo momento. Posso aiutarti a restringere la ricerca per categoria, stile o budget.";
     }
   }
-  const intent = inferIntent(toolTrace);
+  const usedKnowledgeBase = toolTrace.some((trace) => trace.name === "search_knowledge_base" && trace.success);
+  const productArtifactsSuppressed = shouldSuppressProductArtifacts({
+    intent: currentCommerceQuery.intent,
+    usedKnowledgeBase,
+  });
+  if (productArtifactsSuppressed) {
+    productCards = [];
+  }
+  const intent = currentCommerceQuery.intent === "returns_policy" || currentCommerceQuery.intent === "shipping_policy"
+    ? currentCommerceQuery.intent
+    : productArtifactsSuppressed && usedKnowledgeBase
+      ? "question"
+      : inferIntent(toolTrace);
   const hasVerifiedEvidence = productCards.length > 0 || Boolean(orderStatusCard) || sources.length > 0;
   return {
     response: finalText,

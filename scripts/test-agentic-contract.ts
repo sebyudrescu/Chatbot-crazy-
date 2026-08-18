@@ -44,6 +44,8 @@ assert.match(orchestratorSource, /const currentCommerceQuery = parseCommerceQuer
 assert.match(orchestratorSource, /claimsCatalogNoResult\(finalText\)/)
 assert.match(orchestratorSource, /gender: currentCommerceQuery\.gender \|\| null/)
 assert.match(orchestratorSource, /latestProductSearch\.resultCount === 0/)
+assert.match(orchestratorSource, /selectMentionedProductsForPresentation/)
+assert.match(orchestratorSource, /shouldSuppressProductArtifacts/)
 assert.match(runtimeSource, /commerce\.order_lookup\.verified/)
 assert.match(runtimeSource, /protectedDataStored:\s*false/)
 assert.doesNotMatch(toolsSource, /filter\(\(variant\) => !args\.variant_id/)
