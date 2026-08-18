@@ -10,7 +10,7 @@ assert.match(script, /right: var\(--litx-mobile-edge, 16px\) !important/, "mobil
 assert.match(script, /bottom: var\(--litx-mobile-bottom/, "mobile launcher must use the measured storefront bottom offset");
 assert.match(script, /right: var\(--litx-desktop-edge, 88px\)/, "desktop launcher must use the measured storefront edge");
 assert.match(script, /bottom: var\(--litx-desktop-bottom, 20px\)/, "desktop launcher must use the measured storefront bottom offset");
-assert.match(script, /width: 100% !important;\s+height: 100% !important;\s+max-width: none !important;\s+flex: 0 0 100%/, "the branded launcher logo must resist merchant-theme image shrinking");
+assert.match(script, /\.chatbot-launcher-logo[\s\S]*background-size: contain/, "the branded launcher logo must use an isolated background unaffected by merchant image CSS");
 assert.match(script, /#carthike-chat-button-container/, "layout coordinator must recognize the merchant WhatsApp launcher");
 assert.match(script, /window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight/, "layout coordinator must place LitX below the measured WhatsApp box");
 assert.match(script, /Math\.max\(edge, window\.innerHeight - whatsapp\.rect\.bottom - gap - launcherHeight\)/, "WhatsApp stacking must not be overridden by the old mobile bottom floor");
@@ -317,8 +317,8 @@ await new Promise((resolve) => window.setTimeout(resolve, 5));
 
 assert.ok(window.ChatbotWidget?.isLoaded(), "Il widget non si inizializza");
 assert.equal(
-  window.document.querySelector(".chatbot-launcher img")?.getAttribute("src"),
-  "https://litx.example/assets/client-logo.png",
+  window.document.querySelector(".chatbot-launcher-logo")?.style.backgroundImage,
+  'url("https://litx.example/assets/client-logo.png")',
   "Il logo personalizzato non viene renderizzato",
 );
 assert.equal(

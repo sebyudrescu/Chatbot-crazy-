@@ -177,15 +177,15 @@
       box-shadow: ${config.shadow ? '0 6px 20px rgba(0,0,0,0.3)' : 'none'};
     }
 
-    .chatbot-launcher img {
-      width: 100% !important;
-      height: 100% !important;
-      max-width: none !important;
-      flex: 0 0 100%;
+    .chatbot-launcher-logo {
+      width: calc(100% - 4px);
+      height: calc(100% - 4px);
+      flex: none;
       border-radius: inherit;
       box-sizing: border-box;
-      object-fit: contain;
-      padding: 2px;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
     }
 
     .chatbot-launcher-message {
@@ -1113,9 +1113,10 @@
       if (config.iconType === 'logo') {
         const logoUrl = safeImageUrl(config.iconValue);
         if (logoUrl) {
-          const logo = document.createElement('img');
-          logo.src = logoUrl;
-          logo.alt = '';
+          const logo = document.createElement('span');
+          logo.className = 'chatbot-launcher-logo';
+          logo.setAttribute('aria-hidden', 'true');
+          logo.style.backgroundImage = `url(${JSON.stringify(logoUrl)})`;
           launcher.replaceChildren(logo);
         }
       }
