@@ -128,8 +128,8 @@ export async function GET(request: NextRequest) {
     }),
     ...failedSources.map(item => ({ key: `source:${item.id}`, type: 'source', severity: 'warning' as const, title: 'Fonte non sincronizzata', description: `${item.chatbot.companyName}: ${item.originalFilename || item.sourceUrl || 'fonte'} non disponibile`, href: '/knowledge', createdAt: item.createdAt })),
     ...failedRuns.map(item => ({ key: `evaluation:${item.id}`, type: 'evaluation', severity: 'warning' as const, title: 'Valutazione non superata', description: `${item.evaluationCase.chatbot.companyName}: ${item.evaluationCase.name}`, href: '/evaluations', createdAt: item.createdAt })),
-    ...failedActions.map(item => ({ key: `action:${item.id}`, type: 'action', severity: 'warning' as const, title: 'Azione non riuscita', description: `${item.action.chatbot.companyName}: ${item.action.name} · ${item.error || 'errore'}`, href: '/actions', createdAt: item.createdAt })),
-    ...failedIntegrations.map(item => ({ key: `integration:${item.id}:${item.updatedAt.getTime()}`, type: 'integration', severity: 'warning' as const, title: 'Errore integrazione', description: `${item.chatbot.companyName}: ${item.displayName} · ${item.lastError || 'connessione interrotta'}`, href: '/integrations', createdAt: item.updatedAt })),
+    ...failedActions.map(item => ({ key: `action:${item.id}`, type: 'action', severity: 'warning' as const, title: 'Azione non riuscita', description: `${item.action.chatbot.companyName}: ${item.action.name} · ${redactOperationalText(item.error || 'errore', 180)}`, href: '/actions', createdAt: item.createdAt })),
+    ...failedIntegrations.map(item => ({ key: `integration:${item.id}:${item.updatedAt.getTime()}`, type: 'integration', severity: 'warning' as const, title: 'Errore integrazione', description: `${item.chatbot.companyName}: ${item.displayName} · ${redactOperationalText(item.lastError || 'connessione interrotta', 180)}`, href: '/integrations', createdAt: item.updatedAt })),
     ...ingestionIncidents.map(item => {
       const stale = item.status === 'running'
       return {
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
         type: 'ingestion',
         severity: stale ? 'critical' as const : 'warning' as const,
         title: stale ? 'Crawler bloccato' : 'Importazione non riuscita',
-        description: `${item.chatbot.companyName}: ${stale ? 'elaborazione attiva da oltre 20 minuti' : (item.errorMessage || 'la fonte non è stata indicizzata')}`,
+        description: `${item.chatbot.companyName}: ${stale ? 'elaborazione attiva da oltre 20 minuti' : redactOperationalText(item.errorMessage || 'la fonte non è stata indicizzata', 180)}`,
         href: `/chatbot/${item.botId}/jobs`,
         createdAt: item.completedAt || item.startedAt || item.createdAt,
       }
@@ -170,8 +170,8 @@ export async function GET(request: NextRequest) {
       type: 'system',
       severity: 'critical' as const,
       title: 'Errore server rilevato',
-      description: item.errorMessage || 'Una richiesta server non gestita ha generato un errore.',
-      href: '/settings',
+      description: 'Una richiesta server non gestita ha generato un errore. Consulta le tracce operative per il dettaglio redatto.',
+      href: '/dashboard/traces',
       createdAt: item.timestamp,
     })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit)
