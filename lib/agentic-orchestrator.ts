@@ -13,6 +13,7 @@ import { decryptConfigSecrets } from "./secret-config";
 import { safeHttpsUrl } from "./integration-catalog";
 import { claimsCatalogNoResult, parseCommerceQuery } from "./commerce-query";
 import {
+  normalizeProductSurfaceCopy,
   selectMentionedProductsForPresentation,
   shouldRetryCatalogDiscovery,
   shouldSuppressProductArtifacts,
@@ -641,6 +642,7 @@ export async function orchestrateAgenticResponse(
   if (productArtifactsSuppressed) {
     productCards = [];
   }
+  finalText = normalizeProductSurfaceCopy(finalText, productCards.length > 0);
   const intent = currentCommerceQuery.intent === "returns_policy" || currentCommerceQuery.intent === "shipping_policy"
     ? currentCommerceQuery.intent
     : productArtifactsSuppressed && usedKnowledgeBase

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  normalizeProductSurfaceCopy,
   selectMentionedProductsForPresentation,
   shouldRetryCatalogDiscovery,
   shouldSuppressProductArtifacts,
@@ -53,6 +54,18 @@ for (const intent of ["returns_policy", "shipping_policy", "order_tracking"] as 
 assert.equal(shouldSuppressProductArtifacts({ intent: "none", usedKnowledgeBase: true }), true);
 assert.equal(shouldSuppressProductArtifacts({ intent: "product_discovery", usedKnowledgeBase: true }), false);
 assert.equal(shouldSuppressProductArtifacts({ intent: "none", usedKnowledgeBase: false }), false);
+assert.equal(
+  normalizeProductSurfaceCopy("Le trovi nel carosello qui sopra.", true),
+  "Le trovi nel carosello qui.",
+);
+assert.equal(
+  normalizeProductSurfaceCopy("Le trovi nel carosello qui sotto.", true),
+  "Le trovi nel carosello qui.",
+);
+assert.equal(
+  normalizeProductSurfaceCopy("Le trovi qui sopra.", false),
+  "Le trovi qui sopra.",
+);
 
 assert.equal(shouldRetryCatalogDiscovery({
   intent: "product_discovery",

@@ -91,3 +91,8 @@ export function shouldRetryCatalogDiscovery(input: {
     && input.intent === "product_discovery"
     && (!input.latestSearchFound || input.claimsNoResult);
 }
+
+export function normalizeProductSurfaceCopy(response: string, hasProductCards: boolean) {
+  if (!hasProductCards) return response;
+  return response.replace(/\bqui\s+(?:sopra|sotto)\b/gi, "qui");
+}
