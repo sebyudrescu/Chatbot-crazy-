@@ -75,3 +75,19 @@ export function shouldSuppressProductArtifacts(input: {
   return NON_PRODUCT_INTENTS.has(input.intent)
     || (input.usedKnowledgeBase && !PRESENTABLE_INTENTS.has(input.intent));
 }
+
+/**
+ * The catalogue truth retry repairs false zero-results during discovery only.
+ * Detail and inventory turns already have dedicated tools and must never be
+ * converted into a fresh carousel merely because no search tool was called.
+ */
+export function shouldRetryCatalogDiscovery(input: {
+  intent: CommerceIntent;
+  hasCategory: boolean;
+  latestSearchFound: boolean;
+  claimsNoResult: boolean;
+}) {
+  return input.hasCategory
+    && input.intent === "product_discovery"
+    && (!input.latestSearchFound || input.claimsNoResult);
+}

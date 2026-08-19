@@ -43,7 +43,7 @@ assert.match(orchestratorSource, /Se introduce esplicitamente una nuova categori
 assert.match(orchestratorSource, /const currentCommerceQuery = parseCommerceQuery\(context\.query\)/)
 assert.match(orchestratorSource, /claimsCatalogNoResult\(finalText\)/)
 assert.match(orchestratorSource, /gender: currentCommerceQuery\.gender \|\| null/)
-assert.match(orchestratorSource, /latestProductSearch\.resultCount === 0/)
+assert.match(orchestratorSource, /shouldRetryCatalogDiscovery/)
 assert.match(orchestratorSource, /selectMentionedProductsForPresentation/)
 assert.match(orchestratorSource, /shouldSuppressProductArtifacts/)
 assert.match(runtimeSource, /commerce\.order_lookup\.verified/)

@@ -14,6 +14,7 @@ import { safeHttpsUrl } from "./integration-catalog";
 import { claimsCatalogNoResult, parseCommerceQuery } from "./commerce-query";
 import {
   selectMentionedProductsForPresentation,
+  shouldRetryCatalogDiscovery,
   shouldSuppressProductArtifacts,
   type ProductPresentationCandidate,
 } from "./product-presentation-policy";
@@ -444,11 +445,12 @@ export async function orchestrateAgenticResponse(
   const latestProductSearch = [...toolTrace]
     .reverse()
     .find((trace) => trace.name === "search_products" && trace.success);
-  if (
-    currentCommerceQuery.category &&
-    ["product_discovery", "product_detail", "variant_availability"].includes(currentCommerceQuery.intent) &&
-    (!latestProductSearch || latestProductSearch.resultCount === 0 || claimsCatalogNoResult(finalText))
-  ) {
+  if (shouldRetryCatalogDiscovery({
+    intent: currentCommerceQuery.intent,
+    hasCategory: Boolean(currentCommerceQuery.category),
+    latestSearchFound: Boolean(latestProductSearch && (latestProductSearch.resultCount || 0) > 0),
+    claimsNoResult: claimsCatalogNoResult(finalText),
+  })) {
     const searchStartedAt = Date.now();
     const toolContext = {
       botId: context.botId,

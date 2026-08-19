@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   selectMentionedProductsForPresentation,
+  shouldRetryCatalogDiscovery,
   shouldSuppressProductArtifacts,
 } from "../lib/product-presentation-policy";
 
@@ -53,4 +54,25 @@ assert.equal(shouldSuppressProductArtifacts({ intent: "none", usedKnowledgeBase:
 assert.equal(shouldSuppressProductArtifacts({ intent: "product_discovery", usedKnowledgeBase: true }), false);
 assert.equal(shouldSuppressProductArtifacts({ intent: "none", usedKnowledgeBase: false }), false);
 
-console.log(JSON.stringify({ success: true, selectedProducts: 3, negativeCases: 6 }));
+assert.equal(shouldRetryCatalogDiscovery({
+  intent: "product_discovery",
+  hasCategory: true,
+  latestSearchFound: false,
+  claimsNoResult: false,
+}), true);
+assert.equal(shouldRetryCatalogDiscovery({
+  intent: "product_discovery",
+  hasCategory: true,
+  latestSearchFound: true,
+  claimsNoResult: false,
+}), false);
+for (const intent of ["variant_availability", "product_detail"] as const) {
+  assert.equal(shouldRetryCatalogDiscovery({
+    intent,
+    hasCategory: true,
+    latestSearchFound: false,
+    claimsNoResult: true,
+  }), false);
+}
+
+console.log(JSON.stringify({ success: true, selectedProducts: 3, negativeCases: 10 }));
