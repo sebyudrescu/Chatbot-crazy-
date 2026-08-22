@@ -45,6 +45,7 @@
         "test:auth": "node scripts/test-owner-session.cjs",
         "test:prompt": "node scripts/test-agent-instructions.cjs",
         "test:evaluations": "node scripts/evaluate-agents.mjs",
+        "test:evaluation-runner": "node scripts/test-evaluation-runner.mjs",
         "test:readiness-metrics": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-readiness-metrics.ts",
         "test:intent-context": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-intent-context-policy.ts",
         "test:quality": "node scripts/test-quality-signals.cjs",

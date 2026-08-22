@@ -182,6 +182,7 @@ jobs:
           npm run test:memory
           npm run test:quality
           npm run test:conversation-quality
+          npm run test:evaluation-runner
           npm run test:conversation-guidance
           npm run test:grounding-policy
           npm run test:rag-retrieval
