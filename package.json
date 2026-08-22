@@ -52,6 +52,7 @@
         "test:ai-models": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-ai-models.ts",
         "test:agentic-contract": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-agentic-contract.ts",
         "test:product-presentation": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-product-presentation-policy.ts",
+        "test:conversation-quality": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-conversation-quality-benchmark.ts",
         "test:http-security": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-http-security.ts",
         "test:public-agent-bundle": "node scripts/test-public-agent-bundle.mjs",
         "test:backstage": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-backstage-control-room.ts",

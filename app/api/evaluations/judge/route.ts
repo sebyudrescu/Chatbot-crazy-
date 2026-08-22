@@ -11,6 +11,10 @@ import { deterministicPassForBenchmark, inferEvaluationBenchmarkType, judgedPass
 import { formatBusinessContextForPrompt, getCachedBusinessContext } from "@/lib/business-context";
 import { partitionEvaluationContextRelevance } from "@/lib/evaluation-context-relevance";
 import { matchesIdentityQuestion } from "@/lib/intent-patterns";
+import {
+  conversationQualityRequestSchema,
+  evaluateConversationQuality,
+} from "@/lib/conversation-quality-benchmark";
 
 const InputSchema = z.object({
   botId: z.string().uuid(),
@@ -20,7 +24,29 @@ const InputSchema = z.object({
   forbiddenKeywords: z.array(z.string().max(100)).max(20).default([]),
   minimumConfidence: z.number().min(0).max(1).default(0.5),
   confidence: z.number().min(0).max(1).nullable().optional(),
+  conversationQuality: conversationQualityRequestSchema.optional(),
 });
+
+function attachConversationQuality<
+  T extends {
+    passed: boolean;
+    failureReason: string | null;
+    dimensions: Record<string, unknown>;
+  },
+>(result: T, input: z.infer<typeof InputSchema>, answerSemanticScore: number): T {
+  if (!input.conversationQuality) return result;
+  const quality = evaluateConversationQuality(input.conversationQuality.contract, {
+    ...input.conversationQuality.observation,
+    answerSemanticScore,
+  });
+  const failureReason = [result.failureReason, ...quality.failures].filter(Boolean).join(" · ") || null;
+  return {
+    ...result,
+    passed: result.passed && quality.passed,
+    failureReason,
+    dimensions: { ...result.dimensions, conversationQuality: quality },
+  };
+}
 
 function deterministicRelevantIndexes(question: string, expectedKeywords: string[], contexts: string[]) {
   const queryTokens = new Set(tokenizeForRetrieval(`${question} ${expectedKeywords.join(" ")}`));
@@ -88,7 +114,10 @@ export async function POST(request: NextRequest) {
     };
 
     if (process.env.CI_MOCK_AI === "true" || !process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ success: true, data: deterministicResult });
+      return NextResponse.json({
+        success: true,
+        data: attachConversationQuality(deterministicResult, input, deterministic.score),
+      });
     }
 
     try {
@@ -175,27 +204,35 @@ export async function POST(request: NextRequest) {
       };
       const passed = judgedPassForBenchmark(benchmarkType, deterministic.passed, judged);
       const reasons = [deterministic.failureReason, !passed ? judged.reason : null].filter(Boolean);
+      const judgedResult = attachConversationQuality({
+        passed,
+        failureReason: reasons.join(" · ") || null,
+        score: judged.score,
+        dimensions: {
+          ...judged,
+          benchmarkType,
+          retrieval,
+          contextEvidence: {
+            authoritativeBusinessContextIncluded: includesAuthoritativeBusinessContext,
+            authoritativeBusinessContextRelevant: judgedRelevance.authoritativeBusinessContextRelevant,
+          },
+        },
+        evaluator: model,
+      }, input, judged.answerAccuracy);
       return NextResponse.json({
         success: true,
-        data: {
-          passed,
-          failureReason: reasons.join(" · ") || null,
-          score: judged.score,
-          dimensions: {
-            ...judged,
-            benchmarkType,
-            retrieval,
-            contextEvidence: {
-              authoritativeBusinessContextIncluded: includesAuthoritativeBusinessContext,
-              authoritativeBusinessContextRelevant: judgedRelevance.authoritativeBusinessContextRelevant,
-            },
-          },
-          evaluator: model,
-        },
+        data: judgedResult,
       });
     } catch (error) {
       console.error(JSON.stringify({ level: "error", message: "RAG judge fallback", error: error instanceof Error ? error.message : String(error) }));
-      return NextResponse.json({ success: true, data: { ...deterministicResult, evaluator: "deterministic_fallback" } });
+      return NextResponse.json({
+        success: true,
+        data: attachConversationQuality(
+          { ...deterministicResult, evaluator: "deterministic_fallback" },
+          input,
+          deterministic.score,
+        ),
+      });
     }
   } catch (error) {
     return NextResponse.json({
