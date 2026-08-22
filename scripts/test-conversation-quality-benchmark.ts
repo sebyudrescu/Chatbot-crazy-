@@ -6,6 +6,7 @@ import {
   summarizeConversationQuality,
 } from "../lib/conversation-quality-benchmark";
 import { buildConversationQualityObservation } from "../lib/evaluation-observation";
+import { assessCommerceEvaluationCoverage } from "../lib/commerce-readiness-coverage";
 
 const productDiscovery = evaluateConversationQuality({
   minimumAnswerScore: 0.75,
@@ -196,4 +197,66 @@ assert.match(evaluationsPageSource, /\[\.\.\.item\.conversationTurns, item\.ques
 assert.match(evaluationsPageSource, /conversationQuality: qualityRequest\(item, result\.data\)/);
 assert.match(runtimeSource, /evaluationTrace: evaluationTrace\(agentResult\)/);
 
-console.log("Conversation quality benchmark: 5 scenari e-commerce superati");
+const qualityMetrics = JSON.stringify({
+  conversationQuality: {
+    passed: true,
+    dimensions: {
+      answerSemanticScore: 0.95,
+      forbiddenToolHits: [],
+      cardPolicyPassed: true,
+      toolPrecision: 1,
+      toolRecall: 1,
+      productPrecision: null,
+      productRecall: null,
+      productMrr: null,
+      memoryRetention: 1,
+    },
+  },
+});
+const run = { passed: true, createdAt: new Date("2026-08-22T12:00:00Z"), metrics: qualityMetrics };
+const discoveryCoverage = {
+  conversationTurns: '["Cerco qualcosa per casa"]',
+  qualityContract: JSON.stringify({
+    expectedTools: ["search_products"],
+    cardPolicy: "required",
+    expectedMemory: { category: "lamp" },
+  }),
+  latestRun: run,
+};
+const followUpCoverage = {
+  conversationTurns: '["Mostrami le lampade nere"]',
+  qualityContract: JSON.stringify({
+    expectedTools: ["get_product", "check_inventory"],
+    cardPolicy: "forbidden",
+    expectedMemory: { product: "lamp-nero" },
+  }),
+  latestRun: run,
+};
+const knowledgeCoverage = {
+  conversationTurns: '["Mostrami le lampade nere"]',
+  qualityContract: JSON.stringify({
+    expectedTools: ["search_knowledge_base"],
+    forbiddenTools: ["search_products"],
+    cardPolicy: "forbidden",
+  }),
+  latestRun: run,
+};
+
+assert.deepEqual(assessCommerceEvaluationCoverage([discoveryCoverage], null), {
+  complete: false,
+  covered: { discovery: true, product_follow_up: false, knowledge_boundary: false },
+  missing: ["product_follow_up", "knowledge_boundary"],
+});
+assert.equal(assessCommerceEvaluationCoverage([discoveryCoverage, followUpCoverage, knowledgeCoverage], null).complete, true);
+assert.equal(assessCommerceEvaluationCoverage([
+  discoveryCoverage,
+  { ...followUpCoverage, latestRun: { ...run, createdAt: new Date("2026-08-21T12:00:00Z") } },
+  knowledgeCoverage,
+], new Date("2026-08-22T00:00:00Z")).complete, false);
+assert.equal(assessCommerceEvaluationCoverage([
+  discoveryCoverage,
+  { ...followUpCoverage, conversationTurns: "[]" },
+  knowledgeCoverage,
+], null).complete, false);
+
+console.log("Conversation quality benchmark: 5 scenari e-commerce e copertura readiness superati");

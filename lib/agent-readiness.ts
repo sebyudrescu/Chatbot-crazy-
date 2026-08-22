@@ -1,7 +1,8 @@
 import 'server-only'
 import { prisma } from './db'
 import { parseJSON } from './utils'
-import { hasProductionConversationQualityMetrics, latestReadinessDate, productionEvaluationMetricType } from './readiness-metrics'
+import { latestReadinessDate, productionEvaluationMetricType } from './readiness-metrics'
+import { assessCommerceEvaluationCoverage } from './commerce-readiness-coverage'
 
 export type ReadinessCheckKey = 'instructions' | 'knowledge' | 'conversation' | 'evaluations' | 'channel' | 'commerce'
 
@@ -109,23 +110,27 @@ export async function getAgentReadiness(botId: string) {
     !allowedDomains.includes('*')
   const connectedChannel = agent.integrations.length > 0
   const commerceConfigured = agent.productSources.length > 0
-  const commerceConversationQualityPassed = agent.evaluationCases.some(test => {
-    const latestRun = test.runs[0]
-    const turns = parseJSON<unknown[]>(test.conversationTurns) || []
-    return Boolean(
-      test.qualityContract && turns.length > 0 && latestRun?.passed === true &&
-      (!verificationChangedAt || latestRun.createdAt >= verificationChangedAt) &&
-      hasProductionConversationQualityMetrics(latestRun.metrics)
-    )
-  })
+  const commerceConversationCoverage = assessCommerceEvaluationCoverage(
+    agent.evaluationCases.map(test => ({
+      conversationTurns: test.conversationTurns,
+      qualityContract: test.qualityContract,
+      latestRun: test.runs[0],
+    })),
+    verificationChangedAt,
+  )
   const evaluationsPassed = agent.evaluationCases.length > 0 &&
     evaluationMetricTypes.length === agent.evaluationCases.length &&
     evaluationMetricTypes.includes('grounded') &&
     evaluationMetricTypes.includes('policy') &&
-    (!commerceConfigured || commerceConversationQualityPassed)
+    (!commerceConfigured || commerceConversationCoverage.complete)
   const commerceCatalogReady = commerceConfigured &&
     agent.productSources.some(source => source.status === 'active' && !source.lastError) &&
     agent.products.some(product => isPublicHttps(product.canonicalUrl) && isPublicHttps(product.mainImageUrl))
+  const commerceCoverageMissing = commerceConversationCoverage.missing.map(dimension => ({
+    discovery: 'discovery e raccomandazione',
+    product_follow_up: 'dettaglio o inventario senza card ripetute',
+    knowledge_boundary: 'spedizioni/resi dalla knowledge senza prodotti',
+  })[dimension])
 
   const checks: AgentReadinessCheck[] = [
     {
@@ -153,7 +158,7 @@ export async function getAgentReadiness(botId: string) {
       key: 'evaluations',
       label: 'Valutazioni automatiche',
       description: commerceConfigured
-        ? 'I controlli recenti includono RAG, sicurezza e almeno una prova multi-turno su tool, memoria, prodotti e card.'
+        ? `I controlli recenti includono RAG, sicurezza e prove multi-turno su discovery, follow-up prodotto/inventario e passaggio a knowledge senza card.${commerceCoverageMissing.length ? ` Mancano: ${commerceCoverageMissing.join(', ')}.` : ''}`
         : 'I controlli recenti includono almeno un caso RAG con faithfulness, accuratezza, Precision@K, Recall@K e MRR, più un caso di sicurezza.',
       done: evaluationsPassed,
       href: `/evaluations?botId=${botId}`,

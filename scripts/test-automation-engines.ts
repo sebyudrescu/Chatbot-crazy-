@@ -339,34 +339,81 @@ async function testAgentPublicationReadiness() {
         forbiddenKeywords: "[]",
       },
     });
+    const conversationQualityMetrics = JSON.stringify({
+      ...JSON.parse(productionMetrics),
+      conversationQuality: {
+        passed: true,
+        score: 1,
+        failures: [],
+        dimensions: {
+          answerSemanticScore: 0.95,
+          intentCorrect: true,
+          toolPrecision: 1,
+          toolRecall: 1,
+          toolRoutingScore: 1,
+          forbiddenToolHits: [],
+          cardPolicyPassed: true,
+          productPrecision: 1,
+          productRecall: 1,
+          productMrr: 1,
+          memoryRetention: 1,
+        },
+      },
+    });
     await prisma.evaluationRun.create({
       data: {
         caseId: commerceEvaluationCase.id,
         passed: true,
         response: "Prodotto verificato consigliato.",
-        metrics: JSON.stringify({
-          ...JSON.parse(productionMetrics),
-          conversationQuality: {
-            passed: true,
-            score: 1,
-            failures: [],
-            dimensions: {
-              answerSemanticScore: 0.95,
-              intentCorrect: true,
-              toolPrecision: 1,
-              toolRecall: 1,
-              toolRoutingScore: 1,
-              forbiddenToolHits: [],
-              cardPolicyPassed: true,
-              productPrecision: 1,
-              productRecall: 1,
-              productMrr: 1,
-              memoryRetention: 1,
-            },
-          },
-        }),
+        metrics: conversationQualityMetrics,
         createdAt: new Date(knowledgeChangedAt.getTime() + 2_000),
       },
+    });
+    const partialCommerceCoverage = await getAgentReadiness(bot.id);
+    assert(
+      partialCommerceCoverage?.checks.find((check) => check.key === "evaluations")?.done === false,
+      "A single product discovery scenario incorrectly released commerce",
+    );
+    const productFollowUpCase = await prisma.evaluationCase.create({
+      data: {
+        botId: bot.id,
+        name: "Dettaglio e inventario senza card ripetute",
+        question: "Quali taglie sono disponibili?",
+        conversationTurns: '["Mostrami quel prodotto"]',
+        qualityContract: JSON.stringify({
+          expectedIntents: ["inventory"],
+          expectedTools: ["get_product", "check_inventory"],
+          cardPolicy: "forbidden",
+          expectedMemory: { product: "readiness-product" },
+        }),
+        expectedKeywords: '["disponibile"]',
+        forbiddenKeywords: "[]",
+      },
+    });
+    const knowledgeBoundaryCase = await prisma.evaluationCase.create({
+      data: {
+        botId: bot.id,
+        name: "Policy dopo una ricerca prodotto",
+        question: "Come funziona la spedizione?",
+        conversationTurns: '["Mostrami un prodotto"]',
+        qualityContract: JSON.stringify({
+          expectedIntents: ["shipping_policy"],
+          expectedTools: ["search_knowledge_base"],
+          forbiddenTools: ["search_products"],
+          cardPolicy: "forbidden",
+        }),
+        expectedKeywords: '["spedizione"]',
+        forbiddenKeywords: "[]",
+      },
+    });
+    await prisma.evaluationRun.createMany({
+      data: [productFollowUpCase, knowledgeBoundaryCase].map(test => ({
+        caseId: test.id,
+        passed: true,
+        response: "Risposta verificata senza card fuori contesto.",
+        metrics: conversationQualityMetrics,
+        createdAt: new Date(knowledgeChangedAt.getTime() + 2_000),
+      })),
     });
     const readyCommerce = await getAgentReadiness(bot.id);
     assert(
