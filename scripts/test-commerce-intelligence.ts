@@ -9,6 +9,8 @@ import {
   isGenericStyleAdviceRequest,
   needsProductDiscoveryClarification,
   shouldClarifyProductDiscoveryTurn,
+  shouldClarifyProductDiscoveryPresentation,
+  shouldClarifySemanticProductSearchTurn,
   matchesCommerceConstraints,
   parseCommerceQuery,
 } from "../lib/commerce-query";
@@ -112,7 +114,7 @@ assert.equal(claimsCatalogNoResult("Ho trovato tre magliette verificate nel cata
 assert.equal(classifyCommerceIntent("Volgio dei pantaloni neri"), "product_discovery");
 assert.deepEqual(parseCommerceQuery("Volgio dei pantaloni neri").colors, ["nero"]);
 assert.equal(classifyCommerceIntent("Cosa mi consigli?"), "product_discovery");
-assert.equal(classifyCommerceIntent("Avete macchine da caffÃ¨?"), "product_discovery");
+assert.equal(classifyCommerceIntent("Avete macchine da caffè?"), "product_discovery");
 assert.equal(needsProductDiscoveryClarification("Cosa mi consigli?"), true);
 assert.equal(parseCommerceQuery("Avete anche zaini?").category, "bag");
 assert.equal(needsProductDiscoveryClarification("Avete anche zaini?"), true);
@@ -126,6 +128,14 @@ assert.equal(needsProductDiscoveryClarification("Mostrami subito le camicie da d
 assert.equal(shouldClarifyProductDiscoveryTurn("Cosa mi consigli?", false), true);
 assert.equal(shouldClarifyProductDiscoveryTurn("Cosa mi consigli?", true), false);
 assert.equal(shouldClarifyProductDiscoveryTurn("Sto cercando una camicia da donna", true), true);
+assert.equal(shouldClarifySemanticProductSearchTurn("Avete lampade?", false, { resultCount: 8 }), true);
+assert.equal(shouldClarifySemanticProductSearchTurn("Cerco un siero viso", true, { resultCount: 6 }), true);
+assert.equal(shouldClarifySemanticProductSearchTurn("Mostrami gli smartphone", false, { resultCount: 12 }), false);
+assert.equal(shouldClarifySemanticProductSearchTurn("Cerco iPhone 15", false, { resultCount: 1 }), false);
+assert.equal(shouldClarifySemanticProductSearchTurn("Quale mi consigli?", true, { resultCount: 6 }), false);
+assert.equal(shouldClarifySemanticProductSearchTurn("Avete lampade nere sotto 80 euro?", false, { resultCount: 4, color: "nero", maxPrice: 80 }), false);
+assert.equal(shouldClarifyProductDiscoveryPresentation({ message: "Avete lampade?", hasPriorUserTurn: true, semanticSearch: { resultCount: 8 } }), true);
+assert.equal(shouldClarifyProductDiscoveryPresentation({ message: "Quale mi consigli?", hasPriorUserTurn: true, semanticSearch: { resultCount: 8 } }), false);
 assert.match(productDiscoveryClarification("bag"), /zaini o borse/i);
 assert.match(productDiscoveryClarification("bag"), /che stile ti piace o per quale occasione/i);
 assert.match(productDiscoveryClarification("bag"), /colore preferito o una fascia di budget/i);
@@ -189,4 +199,4 @@ const fitResponse = buildVerifiedProductResponse([lordCard], "fit_advice");
 assert.match(fitResponse, /Non posso garantire al 100%/);
 assert.match(fitResponse, /girovita/i);
 
-console.log(JSON.stringify({ success: true, checks: 22 }));
+console.log(JSON.stringify({ success: true, checks: 30 }));

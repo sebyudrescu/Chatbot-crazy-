@@ -62,7 +62,7 @@ export function catalogUnavailableResponse(catalogSize: number): string {
 }
 
 export function styleAdviceClarification() {
-  return "Posso aiutarti a costruire un look, ma per consigliarti prodotti reali senza andare a caso mi serve un dettaglio in piÃ¹: cerchi un outfit per lavoro, cerimonia, serata o tutti i giorni? Dimmi anche una fascia di budget e ti mostro solo capi verificati del catalogo.";
+  return "Posso aiutarti a costruire un look, ma per consigliarti prodotti reali senza andare a caso mi serve un dettaglio in più: cerchi un outfit per lavoro, cerimonia, serata o tutti i giorni? Dimmi anche una fascia di budget e ti mostro solo capi verificati del catalogo.";
 }
 
 const CATEGORY_LABELS: Partial<Record<ProductCategory, string>> = {
@@ -82,7 +82,10 @@ const CATEGORY_LABELS: Partial<Record<ProductCategory, string>> = {
 };
 
 export function productDiscoveryClarification(category?: ProductCategory) {
-  const label = category ? CATEGORY_LABELS[category] || "prodotti" : "prodotti";
+  if (!category) {
+    return "Certo! Per consigliarti qualcosa di davvero utile, qual è l’uso principale o la caratteristica più importante per te? Hai anche una preferenza o una fascia di budget? Se preferisci esplorare subito, scrivi “mostrami i prodotti” e ti faccio vedere quelli verificati disponibili.";
+  }
+  const label = CATEGORY_LABELS[category] || "prodotti";
   return `Certo! Per ${label}, che stile ti piace o per quale occasione li cerchi? Hai un colore preferito o una fascia di budget? Se preferisci esplorare subito, scrivi “mostrami ${label}” e ti faccio vedere i prodotti verificati disponibili.`;
 }
 

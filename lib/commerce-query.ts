@@ -201,6 +201,50 @@ export function shouldClarifyProductDiscoveryTurn(
     && (Boolean(query.category) || !hasPriorUserTurn);
 }
 
+export interface SemanticProductSearchSignal {
+  resultCount: number;
+  color?: string | null;
+  material?: string | null;
+  gender?: string | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+}
+
+/**
+ * Extends the presentation boundary to catalogues whose categories are not
+ * known by the local fashion parser. The LLM remains the semantic router: this
+ * function only observes its structured search decision and prevents a broad
+ * result set from becoming a wall of cards before one useful preference is
+ * known.
+ */
+export function shouldClarifySemanticProductSearchTurn(
+  message: string,
+  hasPriorUserTurn: boolean,
+  search: SemanticProductSearchSignal | undefined,
+) {
+  if (!search || search.resultCount <= 1) return false;
+  const normalized = normalizeCommerceText(message);
+  if (EXPLICIT_PRODUCT_BROWSE.test(normalized)) return false;
+  if (
+    search.color || search.material || search.gender ||
+    search.minPrice !== undefined && search.minPrice !== null ||
+    search.maxPrice !== undefined && search.maxPrice !== null
+  ) return false;
+  if (hasPriorUserTurn && GENERIC_RECOMMENDATION.test(normalized)) return false;
+  return true;
+}
+
+export function shouldClarifyProductDiscoveryPresentation(input: {
+  message: string;
+  hasPriorUserTurn: boolean;
+  query?: ParsedCommerceQuery;
+  semanticSearch?: SemanticProductSearchSignal;
+}) {
+  const query = input.query || parseCommerceQuery(input.message);
+  return shouldClarifyProductDiscoveryTurn(input.message, input.hasPriorUserTurn, query)
+    || shouldClarifySemanticProductSearchTurn(input.message, input.hasPriorUserTurn, input.semanticSearch);
+}
+
 /**
  * Carries product constraints across short natural follow-ups without turning
  * the whole conversation into a search query. The most recent verified

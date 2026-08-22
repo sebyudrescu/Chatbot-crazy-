@@ -11,7 +11,7 @@ import { prisma } from "./db";
 import { runTriggeredActions, type ActionResult } from "./action-engine";
 import { decryptConfigSecrets } from "./secret-config";
 import { safeHttpsUrl } from "./integration-catalog";
-import { claimsCatalogNoResult, parseCommerceQuery, shouldClarifyProductDiscoveryTurn } from "./commerce-query";
+import { claimsCatalogNoResult, parseCommerceQuery, shouldClarifyProductDiscoveryPresentation, type SemanticProductSearchSignal } from "./commerce-query";
 import { productDiscoveryClarification } from "./conversation-guidance";
 import {
   normalizeProductSurfaceCopy,
@@ -257,6 +257,7 @@ export async function orchestrateAgenticResponse(
     },
   }] : [];
   const tools = [...AGENT_TOOLS, ...configuredActionTool];
+  let latestProductSearchSignal: SemanticProductSearchSignal | undefined;
 
   // CI exercises the complete retrieval/persistence contract without making
   // external model calls. Production never enters this branch.
@@ -418,6 +419,14 @@ export async function orchestrateAgenticResponse(
             ? execution.output.facts.length
             : undefined;
         if (call.name === "search_products" && Array.isArray(execution.output.products)) {
+          latestProductSearchSignal = {
+            resultCount: execution.output.products.length,
+            color: typeof args.color === "string" ? args.color : null,
+            material: typeof args.material === "string" ? args.material : null,
+            gender: typeof args.gender === "string" ? args.gender : null,
+            minPrice: typeof args.min_price === "number" ? args.min_price : null,
+            maxPrice: typeof args.max_price === "number" ? args.max_price : null,
+          };
           for (const product of execution.output.products as Array<Record<string, unknown>>) {
             if (typeof product.product_id !== "string" || typeof product.title !== "string") continue;
             searchedProducts.push({
@@ -467,19 +476,20 @@ export async function orchestrateAgenticResponse(
   // not the primary intent router.
   const currentCommerceQuery = parseCommerceQuery(context.query);
   const hasPriorUserTurn = context.conversationHistory.some((message) => message.role === "user");
-  const genericDiscoveryNeedsClarification = shouldClarifyProductDiscoveryTurn(
-    context.query,
+  const discoveryNeedsClarification = shouldClarifyProductDiscoveryPresentation({
+    message: context.query,
     hasPriorUserTurn,
-    currentCommerceQuery,
-  );
-  if (genericDiscoveryNeedsClarification) {
+    query: currentCommerceQuery,
+    semanticSearch: latestProductSearchSignal,
+  });
+  if (discoveryNeedsClarification) {
     finalText = productDiscoveryClarification(currentCommerceQuery.category);
     productCards = [];
   }
   const latestProductSearch = [...toolTrace]
     .reverse()
     .find((trace) => trace.name === "search_products" && trace.success);
-  if (!genericDiscoveryNeedsClarification && shouldRetryCatalogDiscovery({
+  if (!discoveryNeedsClarification && shouldRetryCatalogDiscovery({
     intent: currentCommerceQuery.intent,
     hasCategory: Boolean(currentCommerceQuery.category),
     latestSearchFound: Boolean(latestProductSearch && (latestProductSearch.resultCount || 0) > 0),
@@ -560,7 +570,7 @@ export async function orchestrateAgenticResponse(
       });
     }
   }
-  if (!genericDiscoveryNeedsClarification && productCards.length === 0 && searchedProducts.length > 0) {
+  if (!discoveryNeedsClarification && productCards.length === 0 && searchedProducts.length > 0) {
     const selected = selectMentionedProductsForPresentation({
       response: finalText,
       intent: currentCommerceQuery.intent,
@@ -603,7 +613,7 @@ export async function orchestrateAgenticResponse(
       }
     }
   }
-  if (!genericDiscoveryNeedsClarification && actions.forceProductCards && productCards.length === 0) {
+  if (!discoveryNeedsClarification && actions.forceProductCards && productCards.length === 0) {
     const toolContext = {
       botId: context.botId,
       conversationId: context.conversationId,
