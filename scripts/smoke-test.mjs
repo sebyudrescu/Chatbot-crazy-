@@ -1122,6 +1122,27 @@ try {
     ),
     "Suggestion engine failed",
   );
+  const knowledgeSuggestion = suggestions.data.find(
+    (item) => item.botId === restoredId && item.category === "knowledge",
+  );
+  await request(`/api/suggestions/${knowledgeSuggestion.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "saved" }),
+  });
+  const suggestionAudit = await prisma.event.findFirst({
+    where: { botId: restoredId, eventType: "suggestion.saved" },
+    orderBy: { timestamp: "desc" },
+  });
+  assert(
+    suggestionAudit && JSON.parse(suggestionAudit.metadata).suggestionId === knowledgeSuggestion.id,
+    "Suggestion review audit failed",
+  );
+  const manualSuggestion = await request(`/api/suggestions/${knowledgeSuggestion.id}/apply`, { method: "POST" });
+  const unchangedSuggestion = await prisma.improvementSuggestion.findUnique({ where: { id: knowledgeSuggestion.id } });
+  assert(
+    manualSuggestion.applied === false && unchangedSuggestion.status === "saved",
+    "Manual suggestion navigation must not claim an applied change",
+  );
 
   const privacyConversation = await request("/api/conversations", {
     method: "POST",

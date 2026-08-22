@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { buildRecurringTopicInsights, buildRevisionOutcomeInsights, type ConversationTopicInput } from "../lib/conversation-insights";
 import { isSuggestionRefreshFresh, SUGGESTION_REFRESH_WINDOW_MS } from "../lib/suggestion-refresh-policy";
+import { buildSuggestionAuditEvent } from "../lib/suggestion-audit";
 
 const conversation = (id: string, botId: string, topics: string[], values: Partial<ConversationTopicInput> = {}): ConversationTopicInput => ({
   id, botId, channel: "widget", topicsDiscussed: JSON.stringify(topics), needsHumanEscalation: false,
@@ -60,4 +62,13 @@ assert.equal(isSuggestionRefreshFresh(new Date(refreshNow.getTime() - SUGGESTION
 assert.equal(isSuggestionRefreshFresh(new Date(refreshNow.getTime() - SUGGESTION_REFRESH_WINDOW_MS), refreshNow), false, "alla soglia il refresh è dovuto");
 assert.equal(isSuggestionRefreshFresh(new Date(refreshNow.getTime() + 1_000), refreshNow), true, "un lieve clock skew non deve generare refresh concorrenti");
 
-console.log("Conversation insights: 21 controlli superati");
+const auditEvent = buildSuggestionAuditEvent({ suggestionId: "suggestion-1", botId: "bot-1", actionType: "open_knowledge", previousStatus: "pending", outcome: "dismissed" });
+assert.equal(auditEvent.eventType, "suggestion.dismissed");
+assert.deepEqual(JSON.parse(auditEvent.metadata), { suggestionId: "suggestion-1", actionType: "open_knowledge", previousStatus: "pending", outcome: "dismissed", aggregateOnly: true });
+assert.ok(!auditEvent.metadata.includes("evidence") && !auditEvent.metadata.includes("description"), "l'audit non deve copiare evidenze o testo del suggerimento");
+const applyRouteSource = readFileSync("app/api/suggestions/[id]/apply/route.ts", "utf8");
+const statusRouteSource = readFileSync("app/api/suggestions/[id]/route.ts", "utf8");
+assert.match(applyRouteSource, /executableActions\.has\(suggestion\.actionType\)[\s\S]*applied: false/, "le azioni di sola navigazione non devono risultare applicate");
+assert.match(statusRouteSource, /buildSuggestionAuditEvent[\s\S]*previousStatus: current\.status/, "ogni decisione di review deve produrre un audit con stato precedente");
+
+console.log("Conversation insights: 26 controlli superati");
