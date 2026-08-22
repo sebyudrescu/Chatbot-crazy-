@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ActionFieldsSchema, validateActionDefinition } from "./action-schema";
 import { WorkflowFieldsSchema, validateWorkflowDefinition } from "./workflow-schema";
 import { assertSafeRemoteUrl } from "./url-safety";
+import { conversationQualityContractSchema } from "./conversation-quality-benchmark";
 
 export const BackstageDraftTypeSchema = z.enum([
   "action",
@@ -28,6 +29,8 @@ const EvaluationDraftSchema = z.object({
   cases: z.array(z.object({
     name: z.string().trim().min(1).max(120),
     question: z.string().trim().min(1).max(2000),
+    conversationTurns: z.array(z.string().trim().min(1).max(2000)).max(8).default([]),
+    qualityContract: conversationQualityContractSchema.nullable().default(null),
     expectedKeywords: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
     forbiddenKeywords: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
     minimumConfidence: z.number().min(0).max(1).default(0.5),

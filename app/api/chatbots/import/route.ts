@@ -2,10 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { normalizeAgentSettings } from '@/lib/ai-models'
+import { conversationQualityContractSchema } from '@/lib/conversation-quality-benchmark'
 
 const Text = z.string().max(30000)
 const Workflow = z.object({ name: z.string().min(1).max(160), description: z.string().max(1000).nullable().optional(), triggerType: z.string().max(80).default('new_message'), steps: z.string().max(200000), isActive: z.boolean().optional() })
-const Evaluation = z.object({ name: z.string().min(1).max(160), question: z.string().min(1).max(5000), expectedKeywords: z.string().max(10000), forbiddenKeywords: z.string().max(10000), minimumConfidence: z.number().min(0).max(1), isActive: z.boolean().optional() })
+const SerializedConversationTurns = z.string().max(20000).refine(value => {
+  try {
+    return z.array(z.string().trim().min(1).max(2000)).max(8).safeParse(JSON.parse(value)).success
+  } catch {
+    return false
+  }
+}, 'Turni conversazione non validi')
+const SerializedQualityContract = z.string().max(30000).refine(value => {
+  try {
+    return conversationQualityContractSchema.safeParse(JSON.parse(value)).success
+  } catch {
+    return false
+  }
+}, 'Contratto di qualità non valido')
+const Evaluation = z.object({ name: z.string().min(1).max(160), question: z.string().min(1).max(5000), conversationTurns: SerializedConversationTurns.optional().default('[]'), qualityContract: SerializedQualityContract.nullable().optional().default(null), expectedKeywords: z.string().max(10000), forbiddenKeywords: z.string().max(10000), minimumConfidence: z.number().min(0).max(1), isActive: z.boolean().optional() })
 const Action = z.object({ name: z.string().min(1).max(160), type: z.string().max(80), description: z.string().max(1000).nullable().optional(), triggerKeywords: z.array(z.string().max(100)).max(100), config: z.record(z.unknown()), enabled: z.boolean().optional() })
 const Widget = z.object({
   title: z.string().max(160).nullable().optional(), subtitle: z.string().max(500).nullable().optional(), theme: z.string().max(30), position: z.string().max(30), primaryColor: z.string().max(30),
@@ -46,7 +61,7 @@ export async function POST(request: NextRequest) {
         } })
       }
       if (backup.workflows.length) await tx.workflow.createMany({ data: backup.workflows.map(item => ({ botId: agent.id, name: item.name, description: item.description, triggerType: item.triggerType, steps: item.steps, isActive: false })) })
-      if (backup.evaluations.length) await tx.evaluationCase.createMany({ data: backup.evaluations.map(item => ({ botId: agent.id, name: item.name, question: item.question, expectedKeywords: item.expectedKeywords, forbiddenKeywords: item.forbiddenKeywords, minimumConfidence: item.minimumConfidence, isActive: item.isActive ?? true })) })
+      if (backup.evaluations.length) await tx.evaluationCase.createMany({ data: backup.evaluations.map(item => ({ botId: agent.id, name: item.name, question: item.question, conversationTurns: item.conversationTurns, qualityContract: item.qualityContract, expectedKeywords: item.expectedKeywords, forbiddenKeywords: item.forbiddenKeywords, minimumConfidence: item.minimumConfidence, isActive: item.isActive ?? true })) })
       if (backup.actions.length) await tx.agentAction.createMany({ data: backup.actions.map(item => ({ botId: agent.id, name: item.name, type: item.type, description: item.description, triggerKeywords: JSON.stringify(item.triggerKeywords), config: JSON.stringify(item.config), enabled: false })) })
       await tx.promptVersion.create({ data: { botId: agent.id, version: 1, systemPrompt: agent.systemPrompt, promptTemplateId: agent.promptTemplateId, settings: agent.settings || '{}', changeSummary: 'Ripristinato da backup LitX' } })
       return agent

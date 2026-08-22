@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         await tx.embedSettings.create({ data: { ...appearance, enabled: false, allowedDomains: null, chatbotId: agent.id } })
       }
       if (source.workflows.length) await tx.workflow.createMany({ data: source.workflows.map(item => ({ botId: agent.id, name: item.name, description: item.description, triggerType: item.triggerType, steps: item.steps, isActive: false })) })
-      if (source.evaluationCases.length) await tx.evaluationCase.createMany({ data: source.evaluationCases.map(item => ({ botId: agent.id, name: item.name, question: item.question, expectedKeywords: item.expectedKeywords, forbiddenKeywords: item.forbiddenKeywords, minimumConfidence: item.minimumConfidence, isActive: item.isActive })) })
+      if (source.evaluationCases.length) await tx.evaluationCase.createMany({ data: source.evaluationCases.map(item => ({ botId: agent.id, name: item.name, question: item.question, conversationTurns: item.conversationTurns, qualityContract: item.qualityContract, expectedKeywords: item.expectedKeywords, forbiddenKeywords: item.forbiddenKeywords, minimumConfidence: item.minimumConfidence, isActive: item.isActive })) })
       if (source.actions.length) await tx.agentAction.createMany({ data: source.actions.map(item => ({ botId: agent.id, name: item.name, type: item.type, description: item.description, triggerKeywords: item.triggerKeywords, config: item.config, enabled: false })) })
       await tx.promptVersion.create({ data: { botId: agent.id, version: 1, systemPrompt: agent.systemPrompt, promptTemplateId: agent.promptTemplateId, settings: agent.settings || '{}', changeSummary: `Clonato da ${source.companyName}` } })
       return agent

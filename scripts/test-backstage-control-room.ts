@@ -13,6 +13,16 @@ async function main() {
   await assert.rejects(() => validateBackstagePayload('knowledge_url', { url: 'file:///etc/passwd' }, botId), /HTTP|URL/i)
   await assert.rejects(() => validateBackstagePayload('prompt', { settingsPatch: { apiKey: 'secret' } }, botId), /unrecognized|non riconosciut/i)
   await assert.rejects(() => validateBackstagePayload('evaluations', { cases: [] }, botId))
+  const evaluations: any = await validateBackstagePayload('evaluations', { cases: [{
+    name: 'Memoria commerce',
+    question: 'Quali mi consigli?',
+    conversationTurns: ['Cerco una camicia da donna', 'Elegante e nera'],
+    expectedKeywords: ['camicia'],
+    forbiddenKeywords: [],
+    qualityContract: { expectedIntents: ['product_discovery'], expectedTools: ['search_products'], cardPolicy: 'required', expectedMemory: { gender: 'women', category: 'shirt' } },
+  }] }, botId)
+  assert.equal(evaluations.cases[0].conversationTurns.length, 2)
+  assert.equal(evaluations.cases[0].qualityContract.minimumMemoryRetention, 1)
 
   const root = join(__dirname, '..')
   const service = readFileSync(join(root, 'lib/backstage-service.ts'), 'utf8')
@@ -29,12 +39,14 @@ async function main() {
   assert.match(service, /volume non ancora esistente/)
   assert.match(service, /backstage\.draft\.applied/)
   assert.match(service, /backstage\.draft\.rolled_back/)
+  assert.match(service, /conversationTurns: JSON\.stringify\(item\.conversationTurns\)/)
+  assert.match(service, /qualityContract: item\.qualityContract \? JSON\.stringify/)
   assert.match(page, /Approva e applica/)
   assert.match(page, /Nessuna modifica automatica/)
   assert.match(page, /previewOnly/)
   assert.match(proxy, /api\//, 'le API non pubbliche devono attraversare la sessione owner')
   assert.match(migration, /FOREIGN KEY \("botId"\).*ON DELETE CASCADE/)
-  console.log('Backstage Control Room: 16 controlli superati')
+  console.log('Backstage Control Room: 20 controlli superati')
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1 })

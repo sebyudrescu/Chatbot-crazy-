@@ -651,6 +651,15 @@ try {
       botId,
       name: "Smoke evaluation",
       question: "Cosa fate?",
+      conversationTurns: [
+        "Cerco un servizio adatto alle mie esigenze",
+        "Preferisco una soluzione semplice",
+      ],
+      qualityContract: {
+        expectedIntents: ["conversation"],
+        cardPolicy: "forbidden",
+        expectedMemory: { preference: "semplice" },
+      },
       expectedKeywords: ["servizio"],
       forbiddenKeywords: ["inventato"],
       minimumConfidence: 0.4,
@@ -1050,6 +1059,15 @@ try {
       cloned.copied.knowledgeSources === 0,
     "Agent clone contents failed",
   );
+  const clonedEvaluation = await prisma.evaluationCase.findFirst({
+    where: { botId: cloneId, name: "Smoke evaluation" },
+  });
+  assert(
+    JSON.parse(clonedEvaluation?.conversationTurns || "[]").length === 2 &&
+      JSON.parse(clonedEvaluation?.qualityContract || "null")?.cardPolicy ===
+        "forbidden",
+    "Agent clone lost the multi-turn quality contract",
+  );
   const cloneDetail = await request(`/api/chatbots/${cloneId}`);
   assert(
     cloneDetail.data.isActive === false &&
@@ -1070,6 +1088,15 @@ try {
       restored.imported.knowledgeSources === 0 &&
       restored.imported.integrations === 0,
     "Agent backup import contents failed",
+  );
+  const restoredEvaluation = await prisma.evaluationCase.findFirst({
+    where: { botId: restoredId, name: "Smoke evaluation" },
+  });
+  assert(
+    JSON.parse(restoredEvaluation?.conversationTurns || "[]").length === 2 &&
+      JSON.parse(restoredEvaluation?.qualityContract || "null")?.cardPolicy ===
+        "forbidden",
+    "Agent backup import lost the multi-turn quality contract",
   );
   const restoredDetail = await request(`/api/chatbots/${restoredId}`);
   assert(

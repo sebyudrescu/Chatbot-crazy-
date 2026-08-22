@@ -12,6 +12,8 @@ const contactsApi = read("app/api/contacts/route.ts");
 const contactsUpdateApi = read("app/api/contacts/[id]/route.ts");
 const conversationsUi = read("app/conversations/page.tsx");
 const assistApi = read("app/api/conversations/[id]/assist/route.ts");
+const cloneApi = read("app/api/chatbots/[id]/clone/route.ts");
+const importApi = read("app/api/chatbots/import/route.ts");
 
 assert.match(chat, /syncCRMContactFromConversation/);
 assert.match(chat, /function scheduleCRMContactSync\(conversationId: string, evaluationMode: boolean\)/);
@@ -42,5 +44,11 @@ assert.match(conversationsUi, /Riepilogo AI/);
 assert.match(conversationsUi, /Note interne/);
 assert.match(conversationsUi, /Correggi e insegna/);
 assert.match(assistApi, /mode: z\.enum\(\['summary', 'reply'\]\)/);
+assert.match(cloneApi, /conversationTurns: item\.conversationTurns/);
+assert.match(cloneApi, /qualityContract: item\.qualityContract/);
+assert.match(importApi, /SerializedConversationTurns/);
+assert.match(importApi, /conversationQualityContractSchema\.safeParse/);
+assert.match(importApi, /conversationTurns: item\.conversationTurns/);
+assert.match(importApi, /qualityContract: item\.qualityContract/);
 
-console.log("Client operations: 26 controlli superati");
+console.log("Client operations: 32 controlli superati");

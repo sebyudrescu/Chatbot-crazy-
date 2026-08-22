@@ -1,7 +1,7 @@
 import 'server-only'
 import { prisma } from './db'
 import { parseJSON } from './utils'
-import { latestReadinessDate, productionEvaluationMetricType } from './readiness-metrics'
+import { hasProductionConversationQualityMetrics, latestReadinessDate, productionEvaluationMetricType } from './readiness-metrics'
 
 export type ReadinessCheckKey = 'instructions' | 'knowledge' | 'conversation' | 'evaluations' | 'channel' | 'commerce'
 
@@ -47,6 +47,8 @@ export async function getAgentReadiness(botId: string) {
         where: { isActive: true },
         select: {
           id: true,
+          conversationTurns: true,
+          qualityContract: true,
           runs: {
             select: { passed: true, createdAt: true, metrics: true },
             orderBy: { createdAt: 'desc' },
@@ -98,10 +100,6 @@ export async function getAgentReadiness(botId: string) {
       const metricType = productionEvaluationMetricType(latestRun.metrics)
       return metricType ? [metricType] : []
     })
-  const evaluationsPassed = agent.evaluationCases.length > 0 &&
-    evaluationMetricTypes.length === agent.evaluationCases.length &&
-    evaluationMetricTypes.includes('grounded') &&
-    evaluationMetricTypes.includes('policy')
   const allowedDomains = agent.embedSettings?.allowedDomains
     ?.split(/[\n,]/)
     .map(domain => domain.trim())
@@ -111,6 +109,20 @@ export async function getAgentReadiness(botId: string) {
     !allowedDomains.includes('*')
   const connectedChannel = agent.integrations.length > 0
   const commerceConfigured = agent.productSources.length > 0
+  const commerceConversationQualityPassed = agent.evaluationCases.some(test => {
+    const latestRun = test.runs[0]
+    const turns = parseJSON<unknown[]>(test.conversationTurns) || []
+    return Boolean(
+      test.qualityContract && turns.length > 0 && latestRun?.passed === true &&
+      (!verificationChangedAt || latestRun.createdAt >= verificationChangedAt) &&
+      hasProductionConversationQualityMetrics(latestRun.metrics)
+    )
+  })
+  const evaluationsPassed = agent.evaluationCases.length > 0 &&
+    evaluationMetricTypes.length === agent.evaluationCases.length &&
+    evaluationMetricTypes.includes('grounded') &&
+    evaluationMetricTypes.includes('policy') &&
+    (!commerceConfigured || commerceConversationQualityPassed)
   const commerceCatalogReady = commerceConfigured &&
     agent.productSources.some(source => source.status === 'active' && !source.lastError) &&
     agent.products.some(product => isPublicHttps(product.canonicalUrl) && isPublicHttps(product.mainImageUrl))
@@ -140,7 +152,9 @@ export async function getAgentReadiness(botId: string) {
     {
       key: 'evaluations',
       label: 'Valutazioni automatiche',
-      description: 'I controlli recenti includono almeno un caso RAG con faithfulness, accuratezza, Precision@K, Recall@K e MRR, più un caso di sicurezza.',
+      description: commerceConfigured
+        ? 'I controlli recenti includono RAG, sicurezza e almeno una prova multi-turno su tool, memoria, prodotti e card.'
+        : 'I controlli recenti includono almeno un caso RAG con faithfulness, accuratezza, Precision@K, Recall@K e MRR, più un caso di sicurezza.',
       done: evaluationsPassed,
       href: `/evaluations?botId=${botId}`,
     },

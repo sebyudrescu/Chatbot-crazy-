@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hasProductionEvaluationMetrics, latestReadinessDate, productionEvaluationMetricType } from "../lib/readiness-metrics";
+import { hasProductionConversationQualityMetrics, hasProductionEvaluationMetrics, latestReadinessDate, productionEvaluationMetricType } from "../lib/readiness-metrics";
 import { evaluationJudgeSchema, strictDeterministicEvaluationPass } from "../lib/evaluation-judge-contract";
 import { deterministicPassForBenchmark, inferEvaluationBenchmarkType, judgedPassForBenchmark } from "../lib/evaluation-benchmark-policy";
 
@@ -24,6 +24,30 @@ assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), grounded: false })), false);
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), retrieval: { precisionAtK: 0.4, recallAtK: 0.8 } })), false, "MRR is mandatory");
 assert.equal(hasProductionEvaluationMetrics(JSON.stringify({ ...JSON.parse(valid), policySafe: true, safe: undefined })), true, "deterministic evaluator safety is supported");
+
+const validConversationQuality = JSON.stringify({
+  conversationQuality: {
+    passed: true,
+    score: 0.95,
+    dimensions: {
+      answerSemanticScore: 0.92,
+      intentCorrect: true,
+      toolPrecision: 1,
+      toolRecall: 1,
+      forbiddenToolHits: [],
+      cardPolicyPassed: true,
+      productPrecision: 1,
+      productRecall: 1,
+      productMrr: 1,
+      memoryRetention: 1,
+    },
+  },
+});
+assert.equal(hasProductionConversationQualityMetrics(validConversationQuality), true);
+assert.equal(hasProductionConversationQualityMetrics(null), false);
+assert.equal(hasProductionConversationQualityMetrics(JSON.stringify({ ...JSON.parse(validConversationQuality), conversationQuality: { ...JSON.parse(validConversationQuality).conversationQuality, passed: false } })), false);
+assert.equal(hasProductionConversationQualityMetrics(JSON.stringify({ conversationQuality: { ...JSON.parse(validConversationQuality).conversationQuality, dimensions: { ...JSON.parse(validConversationQuality).conversationQuality.dimensions, cardPolicyPassed: false } } })), false);
+assert.equal(hasProductionConversationQualityMetrics(JSON.stringify({ conversationQuality: { ...JSON.parse(validConversationQuality).conversationQuality, dimensions: { ...JSON.parse(validConversationQuality).conversationQuality.dimensions, memoryRetention: 0.8 } } })), false);
 
 const descriptiveLabelJudge = evaluationJudgeSchema.parse({
   score: "92% (eccellente)",

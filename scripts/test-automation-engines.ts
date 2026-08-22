@@ -322,6 +322,52 @@ async function testAgentPublicationReadiness() {
       where: { id: product.id },
       data: { mainImageUrl: "https://shop.example/images/readiness.jpg" },
     });
+    const missingConversationQuality = await getAgentReadiness(bot.id);
+    assert(
+      missingConversationQuality?.checks.find((check) => check.key === "evaluations")?.done === false &&
+        missingConversationQuality.status === "attention",
+      "Commerce readiness did not require a multi-turn conversation quality gate",
+    );
+    const commerceEvaluationCase = await prisma.evaluationCase.create({
+      data: {
+        botId: bot.id,
+        name: "Qualita commerce multi-turno",
+        question: "Quali mi consigli?",
+        conversationTurns: '["Cerco un prodotto","Preferisco quello disponibile"]',
+        qualityContract: JSON.stringify({ expectedIntents: ["product_discovery"], expectedTools: ["search_products"], cardPolicy: "required", expectedMemory: { category: "product" } }),
+        expectedKeywords: '["prodotto"]',
+        forbiddenKeywords: "[]",
+      },
+    });
+    await prisma.evaluationRun.create({
+      data: {
+        caseId: commerceEvaluationCase.id,
+        passed: true,
+        response: "Prodotto verificato consigliato.",
+        metrics: JSON.stringify({
+          ...JSON.parse(productionMetrics),
+          conversationQuality: {
+            passed: true,
+            score: 1,
+            failures: [],
+            dimensions: {
+              answerSemanticScore: 0.95,
+              intentCorrect: true,
+              toolPrecision: 1,
+              toolRecall: 1,
+              toolRoutingScore: 1,
+              forbiddenToolHits: [],
+              cardPolicyPassed: true,
+              productPrecision: 1,
+              productRecall: 1,
+              productMrr: 1,
+              memoryRetention: 1,
+            },
+          },
+        }),
+        createdAt: new Date(knowledgeChangedAt.getTime() + 2_000),
+      },
+    });
     const readyCommerce = await getAgentReadiness(bot.id);
     assert(
       readyCommerce?.ready === true &&

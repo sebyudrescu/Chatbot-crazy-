@@ -53,3 +53,23 @@ export function productionEvaluationMetricType(value: string | null | undefined)
 export function hasProductionEvaluationMetrics(value: string | null | undefined) {
   return productionEvaluationMetricType(value) !== null
 }
+
+export function hasProductionConversationQualityMetrics(value: string | null | undefined) {
+  const metrics = parseEvaluationMetrics(value)
+  const quality = metrics?.conversationQuality as Record<string, unknown> | undefined
+  const dimensions = quality?.dimensions as Record<string, unknown> | undefined
+  if (quality?.passed !== true || !dimensions) return false
+  const answerSemanticScore = Number(dimensions.answerSemanticScore)
+  const forbiddenToolHits = dimensions.forbiddenToolHits
+  if (!Number.isFinite(answerSemanticScore) || answerSemanticScore < 0.75) return false
+  if (dimensions.cardPolicyPassed !== true) return false
+  if (!Array.isArray(forbiddenToolHits) || forbiddenToolHits.length > 0) return false
+  return [
+    [dimensions.toolPrecision, 0.5],
+    [dimensions.toolRecall, 1],
+    [dimensions.productPrecision, 0.8],
+    [dimensions.productRecall, 0.8],
+    [dimensions.productMrr, 0.5],
+    [dimensions.memoryRetention, 1],
+  ].every(([raw, threshold]) => raw === null || raw === undefined || (Number.isFinite(Number(raw)) && Number(raw) >= Number(threshold)))
+}
