@@ -2,6 +2,10 @@ import "server-only";
 import { prisma } from "./db";
 import { assessCommerceEvaluationCoverage } from "./commerce-readiness-coverage";
 import { buildRecurringTopicInsights, buildRevisionOutcomeInsights } from "./conversation-insights";
+import { checkRateLimit } from "./rate-limit";
+import { isSuggestionRefreshFresh, SUGGESTION_REFRESH_WINDOW_MS } from "./suggestion-refresh-policy";
+
+const SUGGESTION_REFRESH_KEY = "system:suggestions:refresh";
 
 interface Candidate {
   key: string;
@@ -163,4 +167,49 @@ export async function refreshSuggestions() {
   const activeKeys = candidates.map(candidate => candidate.key);
   await prisma.improvementSuggestion.deleteMany({ where: { status: "pending", ...(activeKeys.length ? { key: { notIn: activeKeys } } : {}) } });
   return candidates.length;
+}
+
+export async function refreshSuggestionsIfStale() {
+  const lastSuccess = await prisma.event.findFirst({
+    where: { eventType: "suggestions.refresh.completed", success: true },
+    select: { timestamp: true },
+    orderBy: { timestamp: "desc" },
+  });
+  if (isSuggestionRefreshFresh(lastSuccess?.timestamp || null)) {
+    return { refreshed: false, reason: "fresh" as const };
+  }
+
+  const lease = await checkRateLimit(SUGGESTION_REFRESH_KEY, 1, SUGGESTION_REFRESH_WINDOW_MS);
+  if (!lease.allowed) return { refreshed: false, reason: "in_progress" as const };
+
+  const startedAt = Date.now();
+  try {
+    const suggestions = await refreshSuggestions();
+    await prisma.event.create({
+      data: {
+        eventType: "suggestions.refresh.completed",
+        category: "quality",
+        severity: "info",
+        success: true,
+        durationMs: Date.now() - startedAt,
+        metadata: JSON.stringify({ suggestions, aggregateOnly: true }),
+      },
+    });
+    return { refreshed: true, reason: "completed" as const, suggestions };
+  } catch (error) {
+    await Promise.allSettled([
+      prisma.rateLimitBucket.deleteMany({ where: { key: SUGGESTION_REFRESH_KEY } }),
+      prisma.event.create({
+        data: {
+          eventType: "suggestions.refresh.failed",
+          category: "quality",
+          severity: "warning",
+          success: false,
+          durationMs: Date.now() - startedAt,
+          metadata: JSON.stringify({ errorType: error instanceof Error ? error.name : "UnknownError", sensitiveDetailsStored: false }),
+        },
+      }),
+    ]);
+    throw error;
+  }
 }

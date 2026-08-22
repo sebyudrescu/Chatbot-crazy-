@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { buildRecurringTopicInsights, buildRevisionOutcomeInsights, type ConversationTopicInput } from "../lib/conversation-insights";
+import { isSuggestionRefreshFresh, SUGGESTION_REFRESH_WINDOW_MS } from "../lib/suggestion-refresh-policy";
 
 const conversation = (id: string, botId: string, topics: string[], values: Partial<ConversationTopicInput> = {}): ConversationTopicInput => ({
   id, botId, channel: "widget", topicsDiscussed: JSON.stringify(topics), needsHumanEscalation: false,
@@ -53,4 +54,10 @@ assert.equal(revisionA.negativeRatePercent, 50);
 assert.equal(revisionA.sampleReady, true);
 assert.equal(outcomes.find((item) => item.revisionId === "revision-b")?.exposureCount, 0);
 
-console.log("Conversation insights: 17 controlli superati");
+const refreshNow = new Date("2026-08-22T12:00:00.000Z");
+assert.equal(isSuggestionRefreshFresh(null, refreshNow), false, "senza un refresh riuscito i dati sono stale");
+assert.equal(isSuggestionRefreshFresh(new Date(refreshNow.getTime() - SUGGESTION_REFRESH_WINDOW_MS + 1), refreshNow), true, "prima della soglia i dati sono freschi");
+assert.equal(isSuggestionRefreshFresh(new Date(refreshNow.getTime() - SUGGESTION_REFRESH_WINDOW_MS), refreshNow), false, "alla soglia il refresh è dovuto");
+assert.equal(isSuggestionRefreshFresh(new Date(refreshNow.getTime() + 1_000), refreshNow), true, "un lieve clock skew non deve generare refresh concorrenti");
+
+console.log("Conversation insights: 21 controlli superati");

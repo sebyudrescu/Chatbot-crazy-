@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { prisma } from "./db";
+import { refreshSuggestionsIfStale } from "./suggestion-engine";
 import { createLazyOpenAI } from "./openai-client";
 import { recordAIUsage } from "./ai-usage";
 import { DEFAULT_AGENTIC_MODEL } from "./ai-models";
@@ -165,6 +166,7 @@ async function inspectKnowledge(botId: string, args: any) {
 }
 
 async function inspectQuality(botId: string) {
+  await refreshSuggestionsIfStale().catch(() => undefined);
   const [cases, suggestions, negatives] = await Promise.all([
     prisma.evaluationCase.findMany({ where: { botId }, include: { runs: { orderBy: { createdAt: "desc" }, take: 5 } }, orderBy: { updatedAt: "desc" }, take: 50 }),
     prisma.improvementSuggestion.findMany({ where: { botId, status: "pending" }, orderBy: { updatedAt: "desc" }, take: 30 }),
