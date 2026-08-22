@@ -188,6 +188,7 @@ const migrationSource = readFileSync("prisma/migrations/20260822123000_add_conve
 const evaluationsApiSource = readFileSync("app/api/evaluations/route.ts", "utf8");
 const evaluationsPageSource = readFileSync("app/evaluations/page.tsx", "utf8");
 const runtimeSource = readFileSync("lib/agentic-chat-runtime.ts", "utf8");
+const suggestionSource = readFileSync("lib/suggestion-engine.ts", "utf8");
 
 assert.match(schemaSource, /conversationTurns\s+String\s+@default\("\[\]"\)/);
 assert.match(schemaSource, /qualityContract\s+String\?/);
@@ -196,6 +197,8 @@ assert.match(evaluationsApiSource, /conversationQualityContractSchema\.nullable\
 assert.match(evaluationsPageSource, /\[\.\.\.item\.conversationTurns, item\.question\]/);
 assert.match(evaluationsPageSource, /conversationQuality: qualityRequest\(item, result\.data\)/);
 assert.match(runtimeSource, /evaluationTrace: evaluationTrace\(agentResult\)/);
+assert.match(suggestionSource, /assessCommerceEvaluationCoverage/);
+assert.match(suggestionSource, /commerce-evaluation-coverage/);
 
 const qualityMetrics = JSON.stringify({
   conversationQuality: {

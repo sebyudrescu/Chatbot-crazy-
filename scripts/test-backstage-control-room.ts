@@ -37,6 +37,8 @@ async function main() {
   assert.match(service, /classificationCoverage/)
   assert.match(service, /metricDefinitions/)
   assert.match(service, /volume non ancora esistente/)
+  assert.match(service, /crea una suite e non un singolo caso/)
+  assert.match(service, /follow-up prodotto\/inventario/)
   assert.match(service, /backstage\.draft\.applied/)
   assert.match(service, /backstage\.draft\.rolled_back/)
   assert.match(service, /conversationTurns: JSON\.stringify\(item\.conversationTurns\)/)

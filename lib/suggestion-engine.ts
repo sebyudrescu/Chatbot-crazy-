@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "./db";
+import { assessCommerceEvaluationCoverage } from "./commerce-readiness-coverage";
 
 interface Candidate {
   key: string;
@@ -62,6 +63,23 @@ export async function refreshSuggestions() {
     const failedTests = agent.evaluationCases.filter(test => test.runs[0] && !test.runs[0].passed);
     if (failedTests.length) candidates.push({ key: `${agent.id}:failed-tests`, botId: agent.id, category: "prompt", title: `${failedTests.length} regressioni da correggere`, description: "Le ultime valutazioni automatiche hanno trovato risposte non conformi. Rivedi prompt e fonti prima della consegna.", impact: "high", actionType: "open_evaluations", evidence: { failedTests: failedTests.length, cases: failedTests.map(test => test.name) } });
     if (!agent.evaluationCases.length) candidates.push({ key: `${agent.id}:safety-tests`, botId: agent.id, category: "testing", title: `Aggiungi test di sicurezza a ${agent.companyName}`, description: "Non esistono controlli automatici per allucinazioni, prompt injection e fallback.", impact: "high", actionType: "create_safety_tests", evidence: { cases: 0 } });
+    if (agent._count.products > 0) {
+      const coverage = assessCommerceEvaluationCoverage(agent.evaluationCases.map(test => ({
+        conversationTurns: test.conversationTurns,
+        qualityContract: test.qualityContract,
+        latestRun: test.runs[0],
+      })), null);
+      if (!coverage.complete) candidates.push({
+        key: `${agent.id}:commerce-evaluation-coverage`,
+        botId: agent.id,
+        category: "testing",
+        title: `Completa le Evaluation commerce di ${agent.companyName}`,
+        description: "La pubblicazione richiede prove separate per discovery, follow-up prodotto/inventario e passaggio a knowledge senza card fuori contesto.",
+        impact: "high",
+        actionType: "open_evaluations",
+        evidence: { missingDimensions: coverage.missing },
+      });
+    }
     const negative = agent.conversations.reduce((sum, conversation) => sum + conversation.messages.length, 0);
     if (negative) candidates.push({ key: `${agent.id}:negative-feedback`, botId: agent.id, category: "conversations", title: `${negative} feedback negativi da analizzare`, description: "Esamina le risposte segnalate per trovare informazioni mancanti o istruzioni ambigue.", impact: negative >= 3 ? "high" : "medium", actionType: "open_negative_feedback", evidence: { negativeFeedback: negative } });
     const handoffs = agent.conversations.filter(item => item.needsHumanEscalation).length;
