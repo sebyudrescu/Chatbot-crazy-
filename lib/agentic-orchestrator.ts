@@ -466,10 +466,13 @@ export async function orchestrateAgenticResponse(
   // catalogue before allowing that claim. This guards data integrity; it is
   // not the primary intent router.
   const currentCommerceQuery = parseCommerceQuery(context.query);
+  const productDiscoveryAttempted = toolTrace.some(
+    (trace) => trace.name === "search_products" || trace.name === "present_products",
+  ) || actions.forceProductCards;
   const genericDiscoveryNeedsClarification = needsProductDiscoveryClarification(
     context.query,
     currentCommerceQuery,
-  ) && (searchedProducts.length > 0 || productCards.length > 0);
+  ) && productDiscoveryAttempted;
   if (genericDiscoveryNeedsClarification) {
     finalText = productDiscoveryClarification(currentCommerceQuery.category);
     productCards = [];
