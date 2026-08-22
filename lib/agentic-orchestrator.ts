@@ -31,6 +31,7 @@ export interface AgentToolTrace {
   success: boolean;
   resultCount?: number;
   error?: string;
+  evaluationArgs?: Record<string, string | number | boolean>;
 }
 
 export interface AgenticResult {
@@ -152,6 +153,21 @@ function inferIntent(toolTrace: AgentToolTrace[]) {
   if (names.has("search_products")) return "product_discovery";
   if (names.has("search_knowledge_base")) return "question";
   return "conversation";
+}
+
+function evaluationArgsForTool(name: AgentToolName, args: Record<string, unknown>) {
+  const allowed = name === "search_products"
+    ? ["category", "color", "material", "gender", "min_price", "max_price", "available_only"]
+    : name === "get_product" || name === "check_inventory"
+      ? ["product_id", "variant_id"]
+      : [];
+  const values = Object.fromEntries(allowed.flatMap((key) => {
+    const value = args[key];
+    return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+      ? [[key, value]]
+      : [];
+  }));
+  return Object.keys(values).length ? values : undefined;
 }
 
 function isModelAvailabilityError(error: unknown) {
@@ -410,7 +426,13 @@ export async function orchestrateAgenticResponse(
             });
           }
         }
-        toolTrace.push({ name: call.name, durationMs: Date.now() - toolStartedAt, success: true, resultCount });
+        toolTrace.push({
+          name: call.name,
+          durationMs: Date.now() - toolStartedAt,
+          success: true,
+          resultCount,
+          evaluationArgs: context.evaluationMode ? evaluationArgsForTool(call.name, args) : undefined,
+        });
         input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(execution.output) });
       } catch (error) {
         const message = error instanceof Error ? error.message : "tool_error";

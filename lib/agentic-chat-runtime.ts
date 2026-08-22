@@ -62,6 +62,26 @@ function persistedDeclarativeWidgets(actions: ActionResult) {
   return prepareWidgetsForMessage(actions.declarativeWidgets);
 }
 
+function evaluationTrace(result: AgenticResult) {
+  const rememberedSlots: Record<string, string> = {};
+  for (const trace of result.toolTrace) {
+    if (!trace.success || !trace.evaluationArgs) continue;
+    for (const [key, value] of Object.entries(trace.evaluationArgs)) {
+      const normalizedKey = key === "min_price" ? "minPrice"
+        : key === "max_price" ? "maxPrice"
+          : key === "available_only" ? "availableOnly"
+            : key === "product_id" ? "productId"
+              : key === "variant_id" ? "variantId"
+                : key;
+      rememberedSlots[normalizedKey] = String(value);
+    }
+  }
+  return {
+    tools: result.toolTrace.map((trace) => ({ name: trace.name, success: trace.success })),
+    rememberedSlots,
+  };
+}
+
 export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
   const agentResult = input.incomingPolicy.action === "allow"
     ? await orchestrateAgenticResponse({
@@ -263,6 +283,7 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
       declarativeWidgets,
       orderLookupForm: policyDecision.action === "allow" && (agentResult.orderLookupForm || visibleActions.orderLookupForm),
       orderStatusCard: policyDecision.action === "allow" ? agentResult.orderStatusCard : undefined,
+      ...(input.context.evaluationMode ? { evaluationTrace: evaluationTrace(agentResult) } : {}),
     },
   };
 }

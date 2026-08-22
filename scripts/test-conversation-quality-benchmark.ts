@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   conversationQualityRequestSchema,
   evaluateConversationQuality,
   summarizeConversationQuality,
 } from "../lib/conversation-quality-benchmark";
+import { buildConversationQualityObservation } from "../lib/evaluation-observation";
 
 const productDiscovery = evaluateConversationQuality({
   minimumAnswerScore: 0.75,
@@ -159,5 +161,39 @@ assert.equal(summary.passRate, 0.6);
 assert.equal(summary.cardViolationRate, 0.2);
 assert.equal(summary.productMrr, 0.75);
 assert.equal(summary.memoryRetention, 2 / 3);
+
+assert.deepEqual(buildConversationQualityObservation({
+  intent: { type: "inventory" },
+  decision: { sources: ["legacy_source"] },
+  evaluationTrace: {
+    tools: [
+      { name: "get_product", success: true },
+      { name: "check_inventory", success: true },
+      { name: "search_knowledge_base", success: false },
+    ],
+    rememberedSlots: { gender: "women", category: "shirt" },
+  },
+  productCards: [{ productId: "shirt-woman" }],
+}), {
+  intent: "inventory",
+  tools: ["get_product", "check_inventory"],
+  productIds: ["shirt-woman"],
+  cardsShown: 1,
+  rememberedSlots: { gender: "women", category: "shirt" },
+});
+
+const schemaSource = readFileSync("prisma/schema.prisma", "utf8");
+const migrationSource = readFileSync("prisma/migrations/20260822123000_add_conversation_quality_contract/migration.sql", "utf8");
+const evaluationsApiSource = readFileSync("app/api/evaluations/route.ts", "utf8");
+const evaluationsPageSource = readFileSync("app/evaluations/page.tsx", "utf8");
+const runtimeSource = readFileSync("lib/agentic-chat-runtime.ts", "utf8");
+
+assert.match(schemaSource, /conversationTurns\s+String\s+@default\("\[\]"\)/);
+assert.match(schemaSource, /qualityContract\s+String\?/);
+assert.match(migrationSource, /ADD COLUMN "conversationTurns" TEXT NOT NULL DEFAULT '\[\]'/);
+assert.match(evaluationsApiSource, /conversationQualityContractSchema\.nullable\(\)/);
+assert.match(evaluationsPageSource, /\[\.\.\.item\.conversationTurns, item\.question\]/);
+assert.match(evaluationsPageSource, /conversationQuality: qualityRequest\(item, result\.data\)/);
+assert.match(runtimeSource, /evaluationTrace: evaluationTrace\(agentResult\)/);
 
 console.log("Conversation quality benchmark: 5 scenari e-commerce superati");
