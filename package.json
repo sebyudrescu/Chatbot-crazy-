@@ -61,6 +61,7 @@
         "test:model-ab": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-model-ab-evaluation.ts",
         "test:public-agent-api": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-agent-public-api.ts",
         "test:client-operations": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-client-operations.ts",
+        "test:conversation-insights": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-conversation-insights.ts",
         "test:helpdesk": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-helpdesk-operations.ts",
         "test:recovery-safety": "node scripts/test-database-recovery-safety.mjs",
         "test:durable-ingestion-production": "node scripts/test-durable-ingestion-production.mjs",

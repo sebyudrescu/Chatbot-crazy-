@@ -163,8 +163,15 @@ export const AGENT_TOOLS = [
     parameters: {
       type: "object",
       additionalProperties: false,
-      required: ["query"],
-      properties: { query: { type: "string" } },
+      required: ["query", "topic"],
+      properties: {
+        query: { type: "string" },
+        topic: {
+          type: "string",
+          enum: ["business_identity", "services", "shipping", "returns", "payments", "product_information", "store_information", "policies", "other"],
+          description: "Categoria analitica generica. Non inserire testo libero o dati del cliente.",
+        },
+      },
     },
   },
   {
@@ -204,7 +211,10 @@ const PresentProductsArgs = z.object({
     variant_id: z.string().uuid().nullable(),
   })).min(1).max(5),
 });
-const KnowledgeArgs = z.object({ query: z.string().trim().min(1).max(1000) });
+const KnowledgeArgs = z.object({
+  query: z.string().trim().min(1).max(1000),
+  topic: z.enum(["business_identity", "services", "shipping", "returns", "payments", "product_information", "store_information", "policies", "other"]),
+});
 const OrderArgs = z.object({
   order_number: z.string().trim().max(80).nullable(),
   email: z.string().email().max(320).nullable(),

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "./db";
 import { assessCommerceEvaluationCoverage } from "./commerce-readiness-coverage";
+import { buildRecurringTopicInsights, buildRevisionOutcomeInsights } from "./conversation-insights";
 
 interface Candidate {
   key: string;
@@ -16,7 +17,7 @@ interface Candidate {
 
 export async function refreshSuggestions() {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const [agents, recentAssistantMessages, incompleteProducts, commerceCounts] = await Promise.all([
+  const [agents, recentAssistantMessages, incompleteProducts, commerceCounts, insightConversations, publishedRevisions] = await Promise.all([
     prisma.chatbot.findMany({
       include: {
         _count: { select: { knowledgeSources: true, conversations: true, workflows: true, actions: true, integrations: true, products: true } },
@@ -28,7 +29,7 @@ export async function refreshSuggestions() {
     }),
     prisma.message.findMany({
       where: { role: "assistant", createdAt: { gte: since } },
-      select: { sourcesUsed: true, conversation: { select: { botId: true } } },
+      select: { sourcesUsed: true, feedback: true, createdAt: true, conversation: { select: { botId: true } } },
       orderBy: { createdAt: "desc" },
       take: 2000,
     }),
@@ -41,6 +42,20 @@ export async function refreshSuggestions() {
       by: ["botId", "eventType"],
       where: { createdAt: { gte: since }, eventType: { in: ["impression", "click", "add_to_cart", "conversion"] } },
       _count: { _all: true },
+    }),
+    prisma.conversation.findMany({
+      where: { startedAt: { gte: since }, topicsDiscussed: { not: null } },
+      select: {
+        id: true, botId: true, channel: true, topicsDiscussed: true, needsHumanEscalation: true,
+        messages: { where: { role: "assistant" }, select: { feedback: true, sourcesUsed: true } },
+      },
+      orderBy: { startedAt: "desc" },
+      take: 10_000,
+    }),
+    prisma.responseRevision.findMany({
+      where: { status: "published", knowledgeSourceId: { not: null }, publishedAt: { not: null } },
+      select: { id: true, botId: true, question: true, knowledgeSourceId: true, publishedAt: true },
+      take: 2_000,
     }),
   ]);
 
@@ -55,6 +70,26 @@ export async function refreshSuggestions() {
   for (const product of incompleteProducts) incompleteByBot.set(product.botId, (incompleteByBot.get(product.botId) || 0) + 1);
   const commerceByBot = new Map<string, Record<string, number>>();
   for (const item of commerceCounts) commerceByBot.set(item.botId, { ...(commerceByBot.get(item.botId) || {}), [item.eventType]: item._count._all });
+  const recurringTopics = buildRecurringTopicInsights(insightConversations.map((conversation) => ({
+    id: conversation.id,
+    botId: conversation.botId,
+    channel: conversation.channel,
+    topicsDiscussed: conversation.topicsDiscussed,
+    needsHumanEscalation: conversation.needsHumanEscalation,
+    negativeFeedback: conversation.messages.filter((message) => message.feedback === "negative").length,
+    lowConfidenceAnswers: conversation.messages.filter((message) => {
+      try {
+        const confidence = JSON.parse(message.sourcesUsed || "{}")?.metadata?.confidence;
+        return typeof confidence === "number" && confidence < 0.55;
+      } catch { return false; }
+    }).length,
+  })));
+  const revisionOutcomes = buildRevisionOutcomeInsights(publishedRevisions, recentAssistantMessages.map((message) => ({
+    botId: message.conversation.botId,
+    createdAt: message.createdAt,
+    feedback: message.feedback,
+    sourcesUsed: message.sourcesUsed,
+  })));
 
   const candidates: Candidate[] = [];
   for (const agent of agents) {
@@ -94,6 +129,30 @@ export async function refreshSuggestions() {
     const commerce = commerceByBot.get(agent.id) || {};
     const impressions = commerce.impression || 0, clicks = commerce.click || 0, ctr = impressions ? clicks / impressions : 0;
     if (impressions >= 20 && ctr < 0.03) candidates.push({ key: `${agent.id}:low-product-ctr`, botId: agent.id, category: "commerce", title: "Migliora le raccomandazioni prodotto", description: "Le schede vengono visualizzate ma ricevono pochi click. Rivedi immagini, merchandising e pertinenza delle raccomandazioni.", impact: "medium", actionType: "open_commerce", evidence: { impressions, clicks, ctrPercent: Number((ctr * 100).toFixed(1)), periodDays: 30 } });
+    for (const topic of recurringTopics.filter((item) => item.botId === agent.id && (item.conversationCount >= 10 || item.negativeFeedback > 0 || item.handoffs > 0 || item.lowConfidenceAnswers > 0)).slice(0, 5)) {
+      candidates.push({
+        key: `${agent.id}:recurring-topic:${topic.key}`,
+        botId: agent.id,
+        category: "conversations",
+        title: `Domanda ricorrente: ${topic.label}`,
+        description: `${topic.conversationCount} conversazioni hanno riguardato questo tema. Verifica fonti, istruzioni e offerta prima di applicare modifiche.`,
+        impact: topic.negativeFeedback + topic.handoffs >= 3 ? "high" : "medium",
+        actionType: "open_negative_feedback",
+        evidence: { conversationCount: topic.conversationCount, negativeFeedback: topic.negativeFeedback, handoffs: topic.handoffs, lowConfidenceAnswers: topic.lowConfidenceAnswers, channels: topic.channels, periodDays: 30, aggregateOnly: true },
+      });
+    }
+    for (const outcome of revisionOutcomes.filter((item) => item.botId === agent.id && item.sampleReady && (item.negativeFeedback >= 2 || item.lowConfidenceAnswers >= 3)).slice(0, 5)) {
+      candidates.push({
+        key: `${agent.id}:revision-outcome:${outcome.revisionId}`,
+        botId: agent.id,
+        category: "quality",
+        title: "Ricontrolla una correzione pubblicata",
+        description: "Le risposte che hanno usato questa correzione mostrano ancora segnali di qualità insufficienti. Rivedi l’evidenza prima di pubblicare una nuova versione.",
+        impact: outcome.negativeFeedback >= 3 ? "high" : "medium",
+        actionType: "open_negative_feedback",
+        evidence: { revisionId: outcome.revisionId, exposures: outcome.exposureCount, positiveFeedback: outcome.positiveFeedback, negativeFeedback: outcome.negativeFeedback, negativeRatePercent: outcome.negativeRatePercent, lowConfidenceAnswers: outcome.lowConfidenceAnswers, periodDays: 30, aggregateOnly: true, causalClaim: false },
+      });
+    }
   }
 
   await Promise.all(candidates.map(candidate => prisma.improvementSuggestion.upsert({

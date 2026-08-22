@@ -20,11 +20,17 @@ import {
   shouldSuppressProductArtifacts,
   type ProductPresentationCandidate,
 } from "./product-presentation-policy";
+import { sanitizeConversationTopic } from "./conversation-insights";
 
 const openai = createLazyOpenAI();
 const MAX_AGENT_ROUNDS = 4;
 const MAX_TOOL_CALLS = 6;
 const MODEL_FALLBACK = "gpt-4.1-mini";
+const KNOWLEDGE_TOPIC_LABELS: Record<string, string> = {
+  business_identity: "identita aziendale", services: "servizi", shipping: "spedizioni",
+  returns: "resi", payments: "pagamenti", product_information: "informazioni prodotto",
+  store_information: "informazioni negozio", policies: "politiche aziendali", other: "altre informazioni",
+};
 
 export interface AgentToolTrace {
   name: AgentToolName | "run_configured_action";
@@ -33,6 +39,7 @@ export interface AgentToolTrace {
   resultCount?: number;
   error?: string;
   evaluationArgs?: Record<string, string | number | boolean>;
+  analyticsTopic?: string;
 }
 
 export interface AgenticResult {
@@ -93,7 +100,7 @@ Hai strumenti server-side verificati. Regole:
 2. Usa get_product e check_inventory quando il cliente domanda dettagli o disponibilità di un prodotto identificato. Questi tool consultano dati ma non mostrano automaticamente nuove card.
 2a. Usa present_products solo dopo aver scelto le opzioni finali e soltanto quando il cliente chiede di vedere prodotti. Passa le coppie product_id + variant_id esatte restituite dalla ricerca, nello stesso ordine dei prodotti citati nella risposta. Non usarlo per una domanda su taglia, colore, stock o dettagli se il cliente non chiede nuove immagini.
 2b. Per disponibilità attuale, taglie o colori disponibili chiama sempre check_inventory, anche se la conversazione li ha già menzionati. Il risultato contiene l'inventario completo: quando il cliente domanda "che taglie/colori ha", considera tutte le varianti pertinenti e non soltanto selected_reference.
-3. Usa search_knowledge_base per identità aziendale, servizi, FAQ, spedizioni, resi e fatti che richiedono fonti aziendali.
+3. Usa search_knowledge_base per identità aziendale, servizi, FAQ, spedizioni, resi e fatti che richiedono fonti aziendali. Seleziona topic soltanto dall'enum analitico previsto dal tool.
 4. Usa get_order_status per tracking ordini. Non ripetere né memorizzare email o credenziali nella risposta.
 5. Puoi usare più strumenti in sequenza. Usa i risultati precedenti per decidere il passo successivo.
 6. Se una ricerca verificata non trova nulla, dillo chiaramente e proponi un solo affinamento utile. Non sostituire il risultato con conoscenza generica.
@@ -263,7 +270,7 @@ export async function orchestrateAgenticResponse(
   // external model calls. Production never enters this branch.
   if (process.env.CI_MOCK_AI === "true") {
     const toolStartedAt = Date.now();
-    const execution = await executeAgentTool("search_knowledge_base", { query: context.query }, {
+    const execution = await executeAgentTool("search_knowledge_base", { query: context.query, topic: "other" }, {
       botId: context.botId,
       conversationId: context.conversationId,
       rateLimitScope: context.rateLimitScope,
@@ -442,6 +449,15 @@ export async function orchestrateAgenticResponse(
           success: true,
           resultCount,
           evaluationArgs: context.evaluationMode ? evaluationArgsForTool(call.name, args) : undefined,
+          analyticsTopic: sanitizeConversationTopic(call.name === "search_knowledge_base" && typeof args.topic === "string"
+            ? (KNOWLEDGE_TOPIC_LABELS[String(args.topic)] || "altre informazioni")
+            : call.name === "search_products" && typeof args.category === "string"
+              ? `prodotti ${args.category}`
+              : call.name === "get_order_status"
+                ? "stato ordine"
+                : call.name === "check_inventory" || call.name === "get_product"
+                  ? "dettagli prodotto"
+                  : undefined) || undefined,
         });
         input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(execution.output) });
       } catch (error) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { calculateHelpDeskSlaAnalytics } from '@/lib/helpdesk-operations'
+import { buildRecurringTopicInsights, buildRevisionOutcomeInsights } from '@/lib/conversation-insights'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +9,7 @@ export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')
   const days = Math.min(365, Math.max(1, Number(request.nextUrl.searchParams.get('days') || 30)))
   const since = new Date(Date.now() - days * 86_400_000)
-  const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows] = await Promise.all([
+  const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows, publishedRevisions, qualityMessages] = await Promise.all([
     prisma.conversation.findMany({
       where: { ...(botId ? { botId } : {}), startedAt: { gte: since } },
       include: { chatbot: { select: { id: true, companyName: true } }, _count: { select: { messages: true } } },
@@ -51,6 +52,17 @@ export async function GET(request: NextRequest) {
       },
       take: 10_000,
     }),
+    prisma.responseRevision.findMany({
+      where: { ...(botId ? { botId } : {}), status: 'published', knowledgeSourceId: { not: null }, publishedAt: { not: null } },
+      select: { id: true, botId: true, question: true, knowledgeSourceId: true, publishedAt: true },
+      take: 2_000,
+    }),
+    prisma.message.findMany({
+      where: { role: 'assistant', createdAt: { gte: since }, ...(botId ? { conversation: { botId } } : {}) },
+      select: { conversationId: true, feedback: true, sourcesUsed: true, createdAt: true, conversation: { select: { botId: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 10_000,
+    }),
   ])
   const ids = conversations.map((item) => item.id)
   const feedback = ids.length ? await prisma.message.findMany({ where: { conversationId: { in: ids }, feedback: { not: null } }, select: { id: true, conversationId: true, feedback: true, feedbackComment: true, content: true, createdAt: true } }) : []
@@ -82,6 +94,31 @@ export async function GET(request: NextRequest) {
   const aiCostUsd = Number(usageEvents.reduce((sum, event) => sum + event.estimatedCostUsd, 0).toFixed(6))
   const aiTokens = usageEvents.reduce((sum, event) => sum + event.totalTokens, 0)
   const now = new Date()
+  const qualityByConversation = qualityMessages.reduce((map, message) => {
+    const current = map.get(message.conversationId) || { negativeFeedback: 0, lowConfidenceAnswers: 0 }
+    if (message.feedback === 'negative') current.negativeFeedback++
+    try {
+      const confidence = JSON.parse(message.sourcesUsed || '{}')?.metadata?.confidence
+      if (typeof confidence === 'number' && confidence < 0.55) current.lowConfidenceAnswers++
+    } catch {}
+    map.set(message.conversationId, current)
+    return map
+  }, new Map<string, { negativeFeedback: number; lowConfidenceAnswers: number }>())
+  const recurringTopics = buildRecurringTopicInsights(conversations.map((conversation) => ({
+    id: conversation.id,
+    botId: conversation.botId,
+    channel: conversation.channel,
+    topicsDiscussed: conversation.topicsDiscussed,
+    needsHumanEscalation: conversation.needsHumanEscalation,
+    negativeFeedback: qualityByConversation.get(conversation.id)?.negativeFeedback || 0,
+    lowConfidenceAnswers: qualityByConversation.get(conversation.id)?.lowConfidenceAnswers || 0,
+  })))
+  const revisionOutcomes = buildRevisionOutcomeInsights(publishedRevisions, qualityMessages.map((message) => ({
+    botId: message.conversation.botId,
+    createdAt: message.createdAt,
+    feedback: message.feedback,
+    sourcesUsed: message.sourcesUsed,
+  })))
   const helpdesk = helpdeskRows.map((item) => ({ ...item, sla: calculateHelpDeskSlaAnalytics(item, now) }))
   const historicalCycles = reconstructHelpDeskCycles(helpdeskEvents)
   const firstResponseCompleted = historicalCycles.filter((cycle) => cycle.escalatedAt && cycle.escalatedAt >= since && cycle.firstHumanResponseAt && cycle.firstResponseDueAt)
@@ -96,6 +133,11 @@ export async function GET(request: NextRequest) {
     attention: conversations.filter((item) => item.needsHumanEscalation && !item.isResolved).slice(0, 10).map((item) => ({ id: item.id, name: item.userName || item.userEmail || `Visitatore ${item.userSessionId.slice(-6)}`, agent: item.chatbot.companyName, reason: item.escalationReason, lastInteraction: item.lastMessageAt || item.startedAt })),
     negativeFeedback: feedback.filter((item) => item.feedback === 'negative').slice(0, 10),
     pipeline: { stages, aiCostUsd, aiTokens, aiCalls: usageEvents.length },
+    quality: {
+      recurringTopics,
+      revisionOutcomes,
+      note: 'Risultati aggregati osservati; non dimostrano causalità e non applicano modifiche automatiche.',
+    },
     helpdesk: {
       backlog: helpdesk.filter((item) => item.needsHumanEscalation && !item.isResolved).length,
       overdueFirstResponse: helpdesk.filter((item) => item.sla.firstResponseStatus === 'breached' && !item.firstHumanResponseAt).length,

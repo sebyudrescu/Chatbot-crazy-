@@ -16,6 +16,7 @@ import { stringifyJSON } from "./utils";
 import type { ActionResult } from "./action-engine";
 import { prepareWidgetsForMessage } from "./widget-message-persistence";
 import { escalateHelpDeskConversation } from "./helpdesk-operations";
+import { sanitizeConversationTopic } from "./conversation-insights";
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
@@ -158,6 +159,10 @@ export async function runAgenticChatTurn(input: AgenticChatRuntimeInput) {
       lastMessageAt: new Date(),
       userIntent: agentResult.intent,
       sentiment: input.sentiment,
+      topicsDiscussed: stringifyJSON([...new Set([
+        ...(input.context.conversationMetadata.topics || []),
+        ...agentResult.toolTrace.map((trace) => sanitizeConversationTopic(trace.analyticsTopic)).filter((topic): topic is string => Boolean(topic)),
+      ])].slice(-12)),
     },
   });
   const handoffTransition = handoffRequested && !input.context.evaluationMode
