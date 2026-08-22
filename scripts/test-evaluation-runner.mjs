@@ -43,7 +43,7 @@ assert.match(runner, /api\/evaluations\/calibrate/)
 assert.match(runner, /summary\.failed \|\| summary\.calibrationFailures\.length/)
 assert.match(runner, /evaluationModel/)
 
-const requests = { chat: [], judge: null, run: null, calibrated: false, deleted: false }
+const requests = { authenticated: false, chat: [], judge: null, run: null, calibrated: false, deleted: false }
 const conversationId = '00000000-0000-4000-8000-000000000001'
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || '/', 'http://127.0.0.1')
@@ -56,6 +56,11 @@ const server = createServer(async (request, response) => {
   const send = value => {
     response.writeHead(200, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify(value))
+  }
+  if (url.pathname === '/api/auth/login') {
+    requests.authenticated = true
+    response.setHeader('Set-Cookie', 'litx_owner_session=test-session; Path=/; HttpOnly')
+    return send({ success: true })
   }
   if (url.pathname === '/api/evaluations') return send({ success: true, data: [{
     id: '00000000-0000-4000-8000-000000000002',
@@ -70,6 +75,9 @@ const server = createServer(async (request, response) => {
     isActive: true,
     chatbot: { companyName: 'Test commerce' },
   }] })
+  if (url.pathname === '/api/chatbots/00000000-0000-4000-8000-000000000003') {
+    return send({ success: true, data: { aiModel: 'gpt-5.6-terra' } })
+  }
   if (url.pathname.endsWith('/readiness')) return send({ success: true, data: { checks: [] } })
   if (url.pathname === '/api/chat') {
     requests.chat.push(body)
@@ -126,6 +134,7 @@ const execution = await new Promise(resolve => {
 server.close()
 
 assert.equal(execution.code, 0, execution.stderr || execution.stdout)
+assert.equal(requests.authenticated, Boolean(process.env.APP_ACCESS_PASSWORD))
 assert.equal(requests.chat.length, 3)
 assert.equal(new Set(requests.chat.map(item => item.userSessionId)).size, 1)
 assert.deepEqual(requests.chat.map(item => item.message), ['Cerco una camicia da donna', 'Elegante e nera', 'Quale mi consigli?'])
@@ -136,4 +145,4 @@ assert.equal(requests.run.metrics.evaluator, 'deterministic')
 assert.equal(requests.calibrated, true)
 assert.equal(requests.deleted, true)
 
-console.log('Evaluation runner: 18 controlli multi-turno superati')
+console.log('Evaluation runner: 19 controlli multi-turno superati')
