@@ -6,6 +6,7 @@ import { decryptConfigSecrets } from "@/lib/secret-config";
 import { verifyCommerceConversionSignature } from "@/lib/commerce-conversion-signatures";
 import { safeHttpsUrl } from "@/lib/commerce-types";
 import { checkRateLimit, requestClientIp } from "@/lib/rate-limit";
+import { resolveCommerceAttribution, sanitizeCommerceMetadata } from "@/lib/commerce-attribution";
 
 const schema = z.object({
   eventType: z.enum(["checkout", "conversion"]),
@@ -43,31 +44,33 @@ export async function POST(request: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message || "Evento non valido" }, { status: 400 });
   const input = parsed.data;
-  const [conversation, product] = await Promise.all([
-    input.conversationId ? prisma.conversation.findFirst({ where: { id: input.conversationId, botId: key.botId }, select: { id: true } }) : Promise.resolve(null),
+  const [attribution, product] = await Promise.all([
+    resolveCommerceAttribution({ botId: key.botId, conversationId: input.conversationId, sessionId: input.sessionId }),
     input.productExternalId ? prisma.product.findFirst({ where: { botId: key.botId, externalId: input.productExternalId }, select: { id: true } }) : Promise.resolve(null),
   ]);
-  if (input.conversationId && !conversation) return NextResponse.json({ success: false, error: "Conversazione non appartenente all'agente" }, { status: 400 });
+  if (attribution.status === "rejected") return NextResponse.json({ success: false, error: "Attribuzione conversazione/sessione non valida" }, { status: 400 });
+  if (input.productExternalId && !product) return NextResponse.json({ success: false, error: "Prodotto non trovato" }, { status: 400 });
   const variant = input.variantExternalId && product
     ? await prisma.productVariant.findFirst({ where: { productId: product.id, externalId: input.variantExternalId }, select: { id: true } })
     : null;
   if (input.variantExternalId && !variant) return NextResponse.json({ success: false, error: "Variante non trovata" }, { status: 400 });
   const pageUrl = input.pageUrl ? safeHttpsUrl(input.pageUrl) : undefined;
+  if (input.pageUrl && !pageUrl) return NextResponse.json({ success: false, error: "URL pagina non sicuro" }, { status: 400 });
   const externalEventId = `${key.id}:${input.externalEventId}`;
   try {
     const event = await prisma.commerceEvent.create({
       data: {
         botId: key.botId,
-        conversationId: conversation?.id,
+        conversationId: attribution.conversationId,
         productId: product?.id,
         variantId: variant?.id,
         eventType: input.eventType,
         externalEventId,
-        sessionId: input.sessionId,
+        sessionId: attribution.sessionId,
         pageUrl,
         value: input.value,
         currency: input.currency,
-        metadata: JSON.stringify({ ...input.metadata, verified: true, source: "server" }),
+        metadata: JSON.stringify({ ...sanitizeCommerceMetadata(input.metadata), verified: true, source: "server", attributionStatus: attribution.status }),
       },
       select: { id: true, eventType: true, createdAt: true },
     });

@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { createHmac } from "node:crypto";
 
 const baseUrl = process.env.SMOKE_BASE_URL || "http://localhost:3000";
 const prisma = new PrismaClient();
@@ -56,6 +57,13 @@ async function authenticate() {
 
 function assert(value, message) {
   if (!value) throw new Error(message);
+}
+
+function signedCommerceHeaders(rawBody, secret, timestamp = String(Math.floor(Date.now() / 1000))) {
+  return {
+    timestamp,
+    signature: createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex"),
+  };
 }
 
 async function waitForIngestionJob(jobId, timeoutMs = 120_000) {
@@ -578,6 +586,96 @@ try {
       detail.data.tags.includes("urgente"),
     "Inbox and public widget feedback flow failed",
   );
+  const trackingKey = await request("/api/commerce/tracking-key", {
+    method: "POST",
+    body: JSON.stringify({ botId }),
+  });
+  const verifiedConversionBody = JSON.stringify({
+    eventType: "conversion",
+    externalEventId: "smoke-conversion-attributed",
+    conversationId,
+    sessionId: "smoke_session",
+    pageUrl: "https://smoke.example/thank-you",
+    value: 49.9,
+    currency: "EUR",
+    metadata: { campaign: "smoke", email: "must-not-persist@example.com" },
+  });
+  const verifiedSignature = signedCommerceHeaders(verifiedConversionBody, trackingKey.data.secret);
+  const verifiedConversion = await fetch(`${baseUrl}/api/commerce/conversions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-LitX-Key-Id": trackingKey.data.keyId,
+      "X-LitX-Timestamp": verifiedSignature.timestamp,
+      "X-LitX-Signature": verifiedSignature.signature,
+    },
+    body: verifiedConversionBody,
+  });
+  assert(verifiedConversion.status === 201, "Verified commerce conversion was not recorded");
+  const storedConversion = await prisma.commerceEvent.findUnique({
+    where: { externalEventId: `${trackingKey.data.keyId}:smoke-conversion-attributed` },
+  });
+  const storedConversionMetadata = JSON.parse(storedConversion?.metadata || "{}");
+  assert(
+    storedConversion?.conversationId === conversationId &&
+      storedConversion.sessionId === "smoke_session" &&
+      storedConversionMetadata.verified === true &&
+      storedConversionMetadata.attributionStatus === "attributed" &&
+      storedConversionMetadata.campaign === "smoke" &&
+      !JSON.stringify(storedConversionMetadata).includes("must-not-persist"),
+    "Verified commerce attribution or metadata minimization failed",
+  );
+  const duplicateConversion = await fetch(`${baseUrl}/api/commerce/conversions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-LitX-Key-Id": trackingKey.data.keyId,
+      "X-LitX-Timestamp": verifiedSignature.timestamp,
+      "X-LitX-Signature": verifiedSignature.signature,
+    },
+    body: verifiedConversionBody,
+  });
+  assert(duplicateConversion.ok && (await duplicateConversion.json()).duplicate === true, "Commerce conversion idempotency failed");
+  const mismatchBody = JSON.stringify({
+    eventType: "conversion",
+    externalEventId: "smoke-conversion-mismatch",
+    conversationId,
+    sessionId: "wrong_session",
+    value: 49.9,
+    currency: "EUR",
+  });
+  const mismatchSignature = signedCommerceHeaders(mismatchBody, trackingKey.data.secret);
+  const mismatchConversion = await fetch(`${baseUrl}/api/commerce/conversions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-LitX-Key-Id": trackingKey.data.keyId,
+      "X-LitX-Timestamp": mismatchSignature.timestamp,
+      "X-LitX-Signature": mismatchSignature.signature,
+    },
+    body: mismatchBody,
+  });
+  assert(mismatchConversion.status === 400, "Mismatched commerce session was attributed");
+  const unknownProductBody = JSON.stringify({
+    eventType: "conversion",
+    externalEventId: "smoke-conversion-unknown-product",
+    conversationId,
+    productExternalId: "unknown-product",
+    value: 49.9,
+    currency: "EUR",
+  });
+  const unknownProductSignature = signedCommerceHeaders(unknownProductBody, trackingKey.data.secret);
+  const unknownProductConversion = await fetch(`${baseUrl}/api/commerce/conversions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-LitX-Key-Id": trackingKey.data.keyId,
+      "X-LitX-Timestamp": unknownProductSignature.timestamp,
+      "X-LitX-Signature": unknownProductSignature.signature,
+    },
+    body: unknownProductBody,
+  });
+  assert(unknownProductConversion.status === 400, "Unknown product was silently attributed");
   if (process.env.SMOKE_AI_ASSIST === "true") {
     const assist = await request(
       `/api/conversations/${conversationId}/assist`,

@@ -803,7 +803,7 @@ model CommerceEvent {
   messageId       String?
   productId       String?
   variantId       String?
-  eventType       String // "impression", "click", "compare", "add_to_cart", "checkout", "conversion"
+  eventType       String // "impression", "click", "compare", "add_to_cart", "checkout", "checkout_item", "conversion", "conversion_item"
   externalEventId String?  @unique
   sessionId       String?
   pageUrl         String?
