@@ -224,6 +224,29 @@ try {
       completedAt: new Date(),
     },
   });
+  await prisma.event.createMany({
+    data: Array.from({ length: 3 }, () => ({
+      botId,
+      eventType: "ai.model.fallback",
+      category: "generation",
+      severity: "warning",
+      success: true,
+      metadata: JSON.stringify({
+        requestedModel: "gpt-5.6-terra",
+        fallbackModel: "gpt-4.1-mini",
+        reasonCategory: "availability",
+        sensitiveDetailsStored: false,
+      }),
+    })),
+  });
+  await prisma.aIUsageEvent.createMany({
+    data: Array.from({ length: 3 }, () => ({
+      botId,
+      feature: "agentic_response",
+      model: "gpt-4.1-mini",
+      success: true,
+    })),
+  });
   const operationalNotifications = await request("/api/notifications?limit=100");
   const crawlerNotification = operationalNotifications.data.find(
     (item) => item.key === `ingestion:${notificationJob.id}`,
@@ -232,6 +255,15 @@ try {
     crawlerNotification?.type === "ingestion" &&
       crawlerNotification.href === `/chatbot/${botId}/jobs`,
     "Crawler failure notification is missing",
+  );
+  const modelFallbackNotification = operationalNotifications.data.find(
+    (item) => item.key.startsWith(`model-fallback:${botId}:`),
+  );
+  assert(
+    modelFallbackNotification?.severity === "critical" &&
+      modelFallbackNotification.href === "/evaluations" &&
+      !modelFallbackNotification.description.includes("permission"),
+    "Frequent model fallback notification is missing or exposes provider details",
   );
   assert(
     new Set(operationalNotifications.data.map((item) => item.key)).size ===

@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import {
   errorRateAlert,
   jobSloAlert,
+  modelFallbackAlert,
   operationalWindowKey,
   OPERATIONAL_MIN_EVENT_SAMPLE,
   OPERATIONAL_TOKEN_WARNING_MS,
@@ -15,6 +16,10 @@ assert.equal(errorRateAlert(OPERATIONAL_MIN_EVENT_SAMPLE - 1, 10), null)
 assert.equal(errorRateAlert(100, 9), null)
 assert.deepEqual(errorRateAlert(100, 10), { level: 'warning', rate: 0.1 })
 assert.deepEqual(errorRateAlert(100, 20), { level: 'critical', rate: 0.2 })
+assert.equal(modelFallbackAlert(100, 2), null)
+assert.deepEqual(modelFallbackAlert(100, 3), { level: 'warning', rate: 0.03 })
+assert.deepEqual(modelFallbackAlert(10, 5), { level: 'critical', rate: 0.5 })
+assert.deepEqual(modelFallbackAlert(100, 10), { level: 'critical', rate: 0.1 })
 
 const now = Date.UTC(2026, 7, 18, 12)
 assert.equal(tokenExpiryAlert(undefined, now), null)
@@ -46,6 +51,8 @@ assert.match(route, /commerceWebhookDelivery\.findMany/)
 assert.match(route, /tokenExpiryAlert/)
 assert.match(route, /errorRateAlert/)
 assert.match(route, /jobSloAlert/)
+assert.match(route, /modelFallbackAlert/)
+assert.match(route, /eventType: 'ai\.model\.fallback'/)
 assert.match(route, /overdueRetries/)
 assert.match(route, /redactOperationalText\(item\.errorMessage/)
 assert.match(route, /Consulta le tracce operative per il dettaglio redatto/)
@@ -55,4 +62,10 @@ assert.match(route, /status: 'running', startedAt: \{ lt: commerceStaleCutoff \}
 assert.match(route, /status: 'failed', updatedAt: \{ gte: recentIncidentCutoff \}/)
 assert.doesNotMatch(route, /accessTokenEncrypted.*description|refreshToken.*description|accessToken.*description/)
 
-console.log(JSON.stringify({ success: true, checks: 25 }))
+const orchestrator = readFileSync(resolve(process.cwd(), 'lib/agentic-orchestrator.ts'), 'utf8')
+assert.match(orchestrator, /eventType: "ai\.model\.fallback"/)
+assert.match(orchestrator, /reasonCategory: "availability"/)
+assert.match(orchestrator, /sensitiveDetailsStored: false/)
+assert.doesNotMatch(orchestrator, /ai\.model\.fallback[\s\S]{0,500}errorMessage/)
+
+console.log(JSON.stringify({ success: true, checks: 35 }))

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { parseMetaConnection } from '@/lib/meta-connections'
 import { parseShopifyConfig } from '@/lib/shopify-auth'
-import { COMMERCE_SLO_THRESHOLDS, errorRateAlert, INGESTION_SLO_THRESHOLDS, jobSloAlert, operationalWindowKey, tokenExpiryAlert } from '@/lib/operational-alert-policy'
+import { COMMERCE_SLO_THRESHOLDS, errorRateAlert, INGESTION_SLO_THRESHOLDS, jobSloAlert, modelFallbackAlert, operationalWindowKey, tokenExpiryAlert } from '@/lib/operational-alert-policy'
 import { redactOperationalText } from '@/lib/operational-error-safety'
 import { getOperationalJobSlos } from '@/lib/operational-health'
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const errorRateCutoff = new Date(now.getTime() - 60 * 60 * 1000)
   const recentIncidentCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
   const incidentCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-  const [handoffs, failedSources, failedRuns, failedActions, failedIntegrations, ingestionIncidents, commerceSyncIncidents, commerceWebhookFailures, expiringConnections, eventTotals, eventFailures, systemErrors, jobSlos] = await Promise.all([
+  const [handoffs, failedSources, failedRuns, failedActions, failedIntegrations, ingestionIncidents, commerceSyncIncidents, commerceWebhookFailures, expiringConnections, eventTotals, eventFailures, modelFallbacks, agenticCalls, systemErrors, jobSlos] = await Promise.all([
     prisma.conversation.findMany({ where: { needsHumanEscalation: true, isResolved: false }, include: { chatbot: { select: { companyName: true } } }, orderBy: { escalatedAt: 'desc' }, take: 30 }),
     prisma.knowledgeSource.findMany({ where: { status: 'failed' }, include: { chatbot: { select: { companyName: true } } }, orderBy: { createdAt: 'desc' }, take: 20 }),
     prisma.evaluationRun.findMany({ where: { passed: false }, include: { evaluationCase: { include: { chatbot: { select: { companyName: true } } } } }, orderBy: { createdAt: 'desc' }, take: 20 }),
@@ -64,6 +64,16 @@ export async function GET(request: NextRequest) {
       where: { botId: { not: null }, success: false, severity: { in: ['error', 'critical'] }, timestamp: { gte: errorRateCutoff } },
       _count: { _all: true },
     }),
+    prisma.event.groupBy({
+      by: ['botId'],
+      where: { botId: { not: null }, eventType: 'ai.model.fallback', timestamp: { gte: errorRateCutoff } },
+      _count: { _all: true },
+    }),
+    prisma.aIUsageEvent.groupBy({
+      by: ['botId'],
+      where: { botId: { not: null }, feature: 'agentic_response', createdAt: { gte: errorRateCutoff } },
+      _count: { _all: true },
+    }),
     prisma.event.findMany({
       where: {
         eventType: 'system.request.unhandled',
@@ -75,7 +85,7 @@ export async function GET(request: NextRequest) {
     }),
     getOperationalJobSlos(now),
   ])
-  const botIds = eventTotals.map(item => item.botId).filter((id): id is string => Boolean(id))
+  const botIds = [...new Set([...eventTotals, ...modelFallbacks].map(item => item.botId).filter((id): id is string => Boolean(id)))]
   const botNames = new Map((await prisma.chatbot.findMany({ where: { id: { in: botIds } }, select: { id: true, companyName: true } })).map(item => [item.id, item.companyName]))
   const failuresByBot = new Map(eventFailures.map(item => [item.botId, item._count._all]))
   const errorRateNotifications: Notification[] = eventTotals.flatMap(item => {
@@ -89,6 +99,22 @@ export async function GET(request: NextRequest) {
       title: alert.level === 'critical' ? 'Error rate critico' : 'Error rate elevato',
       description: `${botNames.get(item.botId) || 'Agente'}: ${(alert.rate * 100).toFixed(1)}% di eventi falliti nell’ultima ora su ${item._count._all} eventi`,
       href: '/dashboard/traces',
+      createdAt: now,
+    }]
+  })
+  const callsByBot = new Map(agenticCalls.map(item => [item.botId, item._count._all]))
+  const modelFallbackNotifications: Notification[] = modelFallbacks.flatMap(item => {
+    if (!item.botId) return []
+    const fallbacks = item._count._all
+    const alert = modelFallbackAlert(callsByBot.get(item.botId) || 0, fallbacks)
+    if (!alert) return []
+    return [{
+      key: operationalWindowKey('model-fallback', item.botId, now.getTime()),
+      type: 'system',
+      severity: alert.level,
+      title: alert.level === 'critical' ? 'Modello AI degradato' : 'Fallback modello AI frequente',
+      description: `${botNames.get(item.botId) || 'Agente'}: ${fallbacks} fallback nell’ultima ora (${(alert.rate * 100).toFixed(1)}% delle chiamate agentiche osservate)`,
+      href: '/evaluations',
       createdAt: now,
     }]
   })
@@ -201,6 +227,7 @@ export async function GET(request: NextRequest) {
     })),
     ...tokenNotifications,
     ...errorRateNotifications,
+    ...modelFallbackNotifications,
     ...sloNotifications,
     ...systemErrors.map(item => ({
       key: `system-error:${item.id}`,

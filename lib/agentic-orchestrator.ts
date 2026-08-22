@@ -320,7 +320,24 @@ export async function orchestrateAgenticResponse(
       });
     } catch (error) {
       if (!model.startsWith("gpt-5.6") || !isModelAvailabilityError(error)) throw error;
+      const requestedModel = model;
       model = MODEL_FALLBACK;
+      await prisma.event.create({
+        data: {
+          botId: context.botId,
+          conversationId: context.conversationId,
+          eventType: "ai.model.fallback",
+          category: "generation",
+          severity: "warning",
+          success: true,
+          metadata: JSON.stringify({
+            requestedModel,
+            fallbackModel: model,
+            reasonCategory: "availability",
+            sensitiveDetailsStored: false,
+          }),
+        },
+      }).catch(() => console.error("[Agentic Orchestrator] Unable to persist model fallback telemetry"));
       response = await createAgentResponse({
         model,
         instructions,

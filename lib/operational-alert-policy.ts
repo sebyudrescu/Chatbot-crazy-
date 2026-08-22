@@ -94,6 +94,16 @@ export function errorRateAlert(
   return null;
 }
 
+export function modelFallbackAlert(
+  totalAgenticCalls: number,
+  fallbacks: number,
+): { level: OperationalAlertLevel; rate: number } | null {
+  if (!Number.isInteger(totalAgenticCalls) || !Number.isInteger(fallbacks) || fallbacks < 3) return null;
+  const rate = totalAgenticCalls > 0 ? Math.min(1, fallbacks / totalAgenticCalls) : 1;
+  if (fallbacks >= 10 || rate >= 0.5) return { level: "critical", rate };
+  return { level: "warning", rate };
+}
+
 export function tokenExpiryAlert(
   expiresAt: string | null | undefined,
   now = Date.now(),
