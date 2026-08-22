@@ -192,6 +192,15 @@ export function needsProductDiscoveryClarification(message: string, query = pars
   return Boolean(query.category) || /\bdesign\w*\b/i.test(normalized) || GENERIC_RECOMMENDATION.test(normalized);
 }
 
+export function shouldClarifyProductDiscoveryTurn(
+  message: string,
+  hasPriorUserTurn: boolean,
+  query = parseCommerceQuery(message),
+) {
+  return needsProductDiscoveryClarification(message, query)
+    && (Boolean(query.category) || !hasPriorUserTurn);
+}
+
 /**
  * Carries product constraints across short natural follow-ups without turning
  * the whole conversation into a search query. The most recent verified

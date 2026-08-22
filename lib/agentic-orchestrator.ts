@@ -11,7 +11,7 @@ import { prisma } from "./db";
 import { runTriggeredActions, type ActionResult } from "./action-engine";
 import { decryptConfigSecrets } from "./secret-config";
 import { safeHttpsUrl } from "./integration-catalog";
-import { claimsCatalogNoResult, needsProductDiscoveryClarification, parseCommerceQuery } from "./commerce-query";
+import { claimsCatalogNoResult, parseCommerceQuery, shouldClarifyProductDiscoveryTurn } from "./commerce-query";
 import { productDiscoveryClarification } from "./conversation-guidance";
 import {
   normalizeProductSurfaceCopy,
@@ -466,13 +466,12 @@ export async function orchestrateAgenticResponse(
   // catalogue before allowing that claim. This guards data integrity; it is
   // not the primary intent router.
   const currentCommerceQuery = parseCommerceQuery(context.query);
-  const productDiscoveryAttempted = toolTrace.some(
-    (trace) => trace.name === "search_products" || trace.name === "present_products",
-  ) || actions.forceProductCards;
-  const genericDiscoveryNeedsClarification = needsProductDiscoveryClarification(
+  const hasPriorUserTurn = context.conversationHistory.some((message) => message.role === "user");
+  const genericDiscoveryNeedsClarification = shouldClarifyProductDiscoveryTurn(
     context.query,
+    hasPriorUserTurn,
     currentCommerceQuery,
-  ) && productDiscoveryAttempted;
+  );
   if (genericDiscoveryNeedsClarification) {
     finalText = productDiscoveryClarification(currentCommerceQuery.category);
     productCards = [];

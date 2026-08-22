@@ -8,6 +8,7 @@ import {
   classifyCommerceIntent,
   isGenericStyleAdviceRequest,
   needsProductDiscoveryClarification,
+  shouldClarifyProductDiscoveryTurn,
   matchesCommerceConstraints,
   parseCommerceQuery,
 } from "../lib/commerce-query";
@@ -122,6 +123,9 @@ assert.equal(needsProductDiscoveryClarification("Avete design?"), true);
 assert.equal(needsProductDiscoveryClarification("Sto cercando una camicia da donna"), true);
 assert.equal(needsProductDiscoveryClarification("Mi serve una camicia da donna"), true);
 assert.equal(needsProductDiscoveryClarification("Mostrami subito le camicie da donna"), false);
+assert.equal(shouldClarifyProductDiscoveryTurn("Cosa mi consigli?", false), true);
+assert.equal(shouldClarifyProductDiscoveryTurn("Cosa mi consigli?", true), false);
+assert.equal(shouldClarifyProductDiscoveryTurn("Sto cercando una camicia da donna", true), true);
 assert.match(productDiscoveryClarification("bag"), /zaini o borse/i);
 assert.match(productDiscoveryClarification("bag"), /che stile ti piace o per quale occasione/i);
 assert.match(productDiscoveryClarification("bag"), /colore preferito o una fascia di budget/i);
