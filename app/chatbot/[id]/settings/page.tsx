@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { Bot, Check, ChevronLeft, FlaskConical, GitCompare, History, Loader2, MessageSquare, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, UserRoundCheck, Wand2, X } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
 import { Button } from '@/components/ui/Button'
-import { AI_MODEL_CATALOG, DEFAULT_CHAT_MODEL, normalizeAIModel } from '@/lib/ai-models'
+import { AI_MODEL_CATALOG, DEFAULT_AGENTIC_MODEL, normalizeAgentAIModel } from '@/lib/ai-models'
 import { appendAgentInstructions } from '@/lib/agent-instructions'
 
 interface Template { id: string; name: string; description: string; category: string; systemPrompt: string }
@@ -31,7 +31,7 @@ const defaults: Required<Pick<AgentSettings, 'role' | 'objective' | 'personality
   role: '', objective: '', personality: '', rules: [], forbiddenTopics: [], forbiddenResponses: [], handoffTriggers: [], leadCollectionFields: [], language: 'Italiano', tone: 'Professionale ed empatico', responseLength: 'balanced',
   fallbackMessage: 'Non ho abbastanza informazioni per rispondere con precisione. Posso metterti in contatto con una persona del team?',
   handoffMessage: 'Questa richiesta richiede assistenza umana. Ho inoltrato la conversazione a un operatore, che potrà continuare da qui.',
-  aiModel: DEFAULT_CHAT_MODEL, temperature: 0.3, maxTokens: 500,
+  aiModel: DEFAULT_AGENTIC_MODEL, temperature: 0.3, maxTokens: 500,
   retrievalMinScore: 0.3, groundingThreshold: 0.7, rerankerEnabled: false,
   liveWebSearchEnabled: false, liveWebAllowedDomains: [],
 }
@@ -68,7 +68,7 @@ export default function ChatbotSettingsPage() {
         if (!botResult.success) throw new Error(botResult.error)
         const loaded = botResult.data as Chatbot
         setBot(loaded)
-        setSettings({ ...defaults, ...(loaded.settings || {}), aiModel: normalizeAIModel(loaded.settings?.aiModel) })
+        setSettings({ ...defaults, ...(loaded.settings || {}), aiModel: normalizeAgentAIModel(loaded.settings?.aiModel) })
         setSystemPrompt(loaded.systemPrompt || '')
         setTemplateId(loaded.promptTemplateId)
         setMode(loaded.systemPrompt ? 'custom' : 'template')
@@ -137,7 +137,7 @@ export default function ChatbotSettingsPage() {
     const response = await fetch(`/api/chatbots/${id}/prompt-versions/${version.id}/restore`, { method: 'POST' })
     const result = await response.json()
     if (response.ok) {
-      setBot(result.data); setSettings({ ...defaults, ...(result.data.settings || {}), aiModel: normalizeAIModel(result.data.settings?.aiModel) }); setSystemPrompt(result.data.systemPrompt || ''); setTemplateId(result.data.promptTemplateId); setMode(result.data.systemPrompt ? 'custom' : 'template')
+      setBot(result.data); setSettings({ ...defaults, ...(result.data.settings || {}), aiModel: normalizeAgentAIModel(result.data.settings?.aiModel) }); setSystemPrompt(result.data.systemPrompt || ''); setTemplateId(result.data.promptTemplateId); setMode(result.data.systemPrompt ? 'custom' : 'template')
       const history = await fetch(`/api/chatbots/${id}/prompt-versions`).then(r => r.json()); setVersions(history.data || []); setNotice({ type: 'success', text: `Versione ${version.version} ripristinata creando una nuova revisione.` })
     } else setNotice({ type: 'error', text: result.error || 'Ripristino non riuscito.' })
     setSaving(false)

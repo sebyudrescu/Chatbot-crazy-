@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getTemplateById } from '@/lib/prompt-templates'
-import { DEFAULT_CHAT_MODEL } from '@/lib/ai-models'
+import { DEFAULT_AGENTIC_MODEL } from '@/lib/ai-models'
 
 const Schema = z.object({ templateId: z.string(), companyName: z.string().trim().min(2).max(120), variables: z.record(z.string()).default({}) })
 
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       tone: template.category === 'sales' ? 'Persuasivo ma trasparente' : 'Professionale ed empatico',
       responseLength: 'balanced',
       fallbackMessage: 'Non ho abbastanza informazioni verificate. Posso raccogliere i tuoi dati o passarti a una persona.',
-      aiModel: DEFAULT_CHAT_MODEL,
+      aiModel: DEFAULT_AGENTIC_MODEL,
       temperature: template.category === 'technical' ? 0.2 : 0.4,
       maxTokens: 700,
       rules: ['Non inventare informazioni, prezzi o disponibilità', 'Usa soltanto le fonti autorizzate', 'Chiedi il consenso prima di raccogliere dati personali'],

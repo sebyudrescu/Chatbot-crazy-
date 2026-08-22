@@ -477,6 +477,10 @@ try {
     }),
   });
   isolationBotId = isolationBot.data.id;
+  assert(
+    isolationBot.data.settings.aiModel === "gpt-5.6-terra",
+    "New agents do not default to the recommended Responses model",
+  );
   const crossAgentConversation = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

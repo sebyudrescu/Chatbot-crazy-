@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CreateChatbotSchema } from "@/lib/types";
 import { stringifyJSON, parseJSON } from "@/lib/utils";
-import { DEFAULT_CHAT_MODEL, normalizeAgentSettings } from "@/lib/ai-models";
+import { DEFAULT_AGENTIC_MODEL, normalizeAgentSettings } from "@/lib/ai-models";
 
 // GET /api/chatbots - List all chatbots
 export async function GET(request: NextRequest) {
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       responseLength: "balanced",
       fallbackMessage:
         "Non ho abbastanza informazioni verificate. Posso passarti a una persona.",
-      aiModel: DEFAULT_CHAT_MODEL,
+      aiModel: DEFAULT_AGENTIC_MODEL,
       temperature: 0.4,
       maxTokens: 700,
       dataRetentionDays: 365,

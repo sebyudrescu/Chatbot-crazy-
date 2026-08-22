@@ -67,6 +67,16 @@ export function normalizeAIModel(value?: string | null): SupportedAIModel {
 }
 
 /**
+ * Agent settings default to the Responses-based recommended tier. Auxiliary
+ * Chat Completions workloads keep using DEFAULT_CHAT_MODEL independently.
+ */
+export function normalizeAgentAIModel(value?: string | null): SupportedAIModel {
+  if (!value) return DEFAULT_AGENTIC_MODEL
+  if (isSupportedAIModel(value)) return value
+  return legacyAliases[value.toLowerCase()] || DEFAULT_AGENTIC_MODEL
+}
+
+/**
  * Legacy Chat Completions paths still send parameters that are not shared by
  * every reasoning-model configuration. Keep those paths on their equivalent
  * proven model tier while the Responses-based agent uses GPT-5.6 directly.
@@ -82,6 +92,6 @@ export function normalizeAgentSettings(settings: unknown): Record<string, unknow
     : {}
   return {
     ...values,
-    aiModel: normalizeAIModel(typeof values.aiModel === 'string' ? values.aiModel : undefined),
+    aiModel: normalizeAgentAIModel(typeof values.aiModel === 'string' ? values.aiModel : undefined),
   }
 }
