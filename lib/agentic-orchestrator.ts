@@ -11,7 +11,8 @@ import { prisma } from "./db";
 import { runTriggeredActions, type ActionResult } from "./action-engine";
 import { decryptConfigSecrets } from "./secret-config";
 import { safeHttpsUrl } from "./integration-catalog";
-import { claimsCatalogNoResult, parseCommerceQuery } from "./commerce-query";
+import { claimsCatalogNoResult, needsProductDiscoveryClarification, parseCommerceQuery } from "./commerce-query";
+import { productDiscoveryClarification } from "./conversation-guidance";
 import {
   normalizeProductSurfaceCopy,
   selectMentionedProductsForPresentation,
@@ -465,10 +466,18 @@ export async function orchestrateAgenticResponse(
   // catalogue before allowing that claim. This guards data integrity; it is
   // not the primary intent router.
   const currentCommerceQuery = parseCommerceQuery(context.query);
+  const genericDiscoveryNeedsClarification = needsProductDiscoveryClarification(
+    context.query,
+    currentCommerceQuery,
+  ) && (searchedProducts.length > 0 || productCards.length > 0);
+  if (genericDiscoveryNeedsClarification) {
+    finalText = productDiscoveryClarification(currentCommerceQuery.category);
+    productCards = [];
+  }
   const latestProductSearch = [...toolTrace]
     .reverse()
     .find((trace) => trace.name === "search_products" && trace.success);
-  if (shouldRetryCatalogDiscovery({
+  if (!genericDiscoveryNeedsClarification && shouldRetryCatalogDiscovery({
     intent: currentCommerceQuery.intent,
     hasCategory: Boolean(currentCommerceQuery.category),
     latestSearchFound: Boolean(latestProductSearch && (latestProductSearch.resultCount || 0) > 0),
@@ -549,7 +558,7 @@ export async function orchestrateAgenticResponse(
       });
     }
   }
-  if (productCards.length === 0 && searchedProducts.length > 0) {
+  if (!genericDiscoveryNeedsClarification && productCards.length === 0 && searchedProducts.length > 0) {
     const selected = selectMentionedProductsForPresentation({
       response: finalText,
       intent: currentCommerceQuery.intent,
@@ -592,7 +601,7 @@ export async function orchestrateAgenticResponse(
       }
     }
   }
-  if (actions.forceProductCards && productCards.length === 0) {
+  if (!genericDiscoveryNeedsClarification && actions.forceProductCards && productCards.length === 0) {
     const toolContext = {
       botId: context.botId,
       conversationId: context.conversationId,
