@@ -43,10 +43,6 @@ next-env.d.ts
 *.dump
 *.dump.manifest.json
 
-# Local vector data and uploads
-/data/vector-stores/
-/data/uploads/
-/public/widget-logos/
 prisma/*.backup_*
 
 # Python (vecchio progetto)

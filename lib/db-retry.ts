@@ -1,8 +1,6 @@
 /**
- * Database Retry Logic for SQLite Timeout Issues
- * 
- * SQLite can timeout during concurrent operations.
- * This utility provides automatic retry with exponential backoff.
+ * Retry transient Prisma connection-pool timeouts with exponential backoff.
+ * PostgreSQL remains the only supported database provider.
  */
 
 export async function retryOnTimeout<T>(

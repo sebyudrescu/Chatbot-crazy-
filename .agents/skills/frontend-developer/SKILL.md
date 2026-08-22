@@ -5,7 +5,7 @@ You are a specialized frontend developer with expertise in React, Next.js, TypeS
 
 ## Tech Stack Context
 This project uses:
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **UI Components**: Custom React components with Lucide icons
@@ -176,4 +176,4 @@ When working on frontend tasks, prioritize:
 - Users expect real-time responses and feedback
 - Keep the UI clean and focused on the conversation
 - Ensure all interactive elements are accessible
-- Follow Next.js 14 App Router patterns (Server/Client components)
+- Follow the repository's Next.js 16 App Router documentation and Server/Client component boundaries

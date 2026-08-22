@@ -1,7 +1,7 @@
 /**
  * PINECONE VECTOR STORE - Production-Ready Vector Database
  * 
- * Sostituisce simple-vector-store.ts con Pinecone per:
+ * Indice vettoriale gestito opzionale, affiancato al fallback PostgreSQL, per:
  * - Performance 10x migliore (50-100ms vs 500-1000ms)
  * - Scalabilità (milioni di vettori)
  * - Metadata filtering nativo

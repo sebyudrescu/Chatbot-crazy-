@@ -109,7 +109,9 @@ jobs:
       - name: Public agent bundle guard
         id: public_agent_bundle
         continue-on-error: true
-        run: npm run test:public-agent-bundle
+        run: |
+          npm run test:public-agent-bundle
+          npm run test:architecture-contract
 
       - name: Start private test server
         id: server

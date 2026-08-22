@@ -51,7 +51,7 @@ You are an expert Design System Architect specializing in creating cohesive, sca
 ## Tech Stack Context
 
 ### Current Implementation
-- Framework: Next.js 14 + React + TypeScript
+- Framework: Next.js 16 + React 19 + TypeScript
 - Styling: Tailwind CSS (utility-first)
 - Icons: Lucide React
 - Fonts: System fonts (customizable)
