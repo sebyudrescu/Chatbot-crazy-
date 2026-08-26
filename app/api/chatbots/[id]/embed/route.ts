@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth';
 
 const OptionalHttpsUrlSchema = z.union([
   z.literal(''),
@@ -45,6 +46,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
   const params = await props.params;
   try {
     const { id } = params;
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, id, 'chatbot.read');
 
     const chatbot = await prisma.chatbot.findUnique({
       where: { id },
@@ -67,6 +70,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     });
 
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error('Error fetching embed settings:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -80,6 +85,8 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
   const params = await props.params;
   try {
     const { id } = params;
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, id, 'chatbot.write');
     const settings = EmbedSettingsSchema.parse(await request.json());
 
     // Update or create embed settings
@@ -143,6 +150,8 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
     return NextResponse.json(embedSettings);
 
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error('Error updating embed settings:', error);
     return NextResponse.json(
       { error: error instanceof z.ZodError ? 'Impostazioni widget non valide' : 'Internal server error' },

@@ -103,6 +103,17 @@ const protectedOperationalRoutes = [
   'app/api/conversations/export/route.ts',
   'app/api/contacts/export/route.ts',
 ].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedAgentOperations = [
+  'app/api/chatbots/[id]/embed/route.ts',
+  'app/api/chatbots/[id]/export/route.ts',
+  'app/api/chatbots/[id]/prompt-versions/route.ts',
+  'app/api/chatbots/[id]/prompt-versions/[versionId]/restore/route.ts',
+  'app/api/chatbots/[id]/readiness/route.ts',
+  'app/api/commerce/sync/route.ts',
+  'app/api/commerce/tracking-key/route.ts',
+  'app/api/ai-usage/route.ts',
+  'app/api/search/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
@@ -131,5 +142,9 @@ for (const route of protectedOperationalRoutes) {
   assert.match(route, /requireDashboardActor/)
   assert.match(route, /requireResourcePermission|requireBotPermission|accessibleBotIds/)
 }
+for (const route of protectedAgentOperations) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireBotPermission|accessibleBotIds|allowedWorkspaceIds/)
+}
 
-console.log('Workspace authorization: 107 controlli superati')
+console.log('Workspace authorization: 125 controlli superati')

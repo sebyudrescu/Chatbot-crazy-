@@ -8,6 +8,7 @@ import {
   serializeCommerceSyncJob,
 } from "@/lib/commerce-sync-queue";
 import { runCommerceSyncWorker } from "@/lib/commerce-sync-worker";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 const schema = z.object({ botId: z.string().uuid(), provider: z.enum(["shopify", "woocommerce"]) });
 const querySchema = z.union([
@@ -36,11 +37,15 @@ export async function POST(request: NextRequest) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ success: false, error: "Richiesta sync non valida" }, { status: 400 });
   try {
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, parsed.data.botId, "chatbot.write");
     await recoverStaleCommerceSyncJobs();
     const { job, reused } = await enqueueCommerceSync(parsed.data.botId, parsed.data.provider);
     schedule(job);
     return NextResponse.json({ success: true, data: serializeCommerceSyncJob(job), reused }, { status: 202 });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json({ success: false, error: publicSyncError(error) }, { status: 400 });
   }
 }
@@ -53,11 +58,14 @@ export async function GET(request: NextRequest) {
   });
   if (!parsed.success) return NextResponse.json({ success: false, error: "Richiesta stato sync non valida" }, { status: 400 });
   try {
+    const actor = await requireDashboardActor(request);
     await recoverStaleCommerceSyncJobs();
     let job;
     if (parsed.data.jobId) {
       job = await getCommerceSyncJob(parsed.data.jobId);
+      if (job) await requireBotPermission(actor, job.botId, "chatbot.read");
     } else if (parsed.data.botId && parsed.data.provider) {
+      await requireBotPermission(actor, parsed.data.botId, "chatbot.read");
       job = await getLatestCommerceSyncJob(parsed.data.botId, parsed.data.provider);
     } else {
       return NextResponse.json({ success: false, error: "Richiesta stato sync non valida" }, { status: 400 });
@@ -66,6 +74,8 @@ export async function GET(request: NextRequest) {
     schedule(job);
     return NextResponse.json({ success: true, data: serializeCommerceSyncJob(job) });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error("[Commerce sync status]", error);
     return NextResponse.json({ success: false, error: "Stato sincronizzazione temporaneamente non disponibile" }, { status: 500 });
   }

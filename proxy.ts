@@ -25,6 +25,9 @@ function isTenantReadyApi(request: NextRequest) {
   if (path === '/api/ingestion/status') return request.method === 'GET'
   if (path === '/api/evaluations/calibrate' || path === '/api/evaluations/judge' || path === '/api/evaluations/runs') return request.method === 'POST'
   if (path === '/api/conversations/export' || path === '/api/contacts/export') return request.method === 'GET'
+  if (path === '/api/ai-usage' || path === '/api/search') return request.method === 'GET'
+  if (path === '/api/commerce/sync') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/commerce/tracking-key') return request.method === 'GET' || request.method === 'POST'
   if (path === '/api/analytics') return request.method === 'GET'
   if (path === '/api/conversations') return request.method === 'GET'
   if (path === '/api/chatbots/import') return request.method === 'POST'
@@ -58,6 +61,11 @@ function isTenantReadyApi(request: NextRequest) {
   if (/^\/api\/chatbots\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/clone$/i.test(path)) {
     return request.method === 'POST'
   }
+  if (/^\/api\/chatbots\/[0-9a-f-]{36}\/(embed|export|prompt-versions|readiness)$/i.test(path)) {
+    if (path.endsWith('/embed')) return request.method === 'GET' || request.method === 'PUT'
+    return request.method === 'GET'
+  }
+  if (/^\/api\/chatbots\/[0-9a-f-]{36}\/prompt-versions\/[0-9a-f-]{36}\/restore$/i.test(path)) return request.method === 'POST'
   return /^\/api\/chatbots\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(path)
     && (request.method === 'GET' || request.method === 'PATCH' || request.method === 'DELETE')
 }

@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { accessibleBotIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
+  try {
+  const actor = await requireDashboardActor(request)
   const days = Math.min(365, Math.max(1, Number(request.nextUrl.searchParams.get('days') || 30)))
   const botId = request.nextUrl.searchParams.get('botId')
+  if (botId) await requireBotPermission(actor, botId, 'analytics.read')
+  const ids = botId ? null : await accessibleBotIds(actor, 'analytics.read')
   const since = new Date(Date.now() - days * 86400000)
-  const where = { createdAt: { gte: since }, ...(botId ? { botId } : {}) }
+  const where = { createdAt: { gte: since }, ...(botId ? { botId } : ids === null ? {} : { botId: { in: ids } }) }
   const [summary, byModel, byFeature, byBot, events] = await Promise.all([
     prisma.aIUsageEvent.aggregate({ where, _count: { id: true }, _sum: { inputTokens: true, cachedInputTokens: true, outputTokens: true, totalTokens: true, estimatedCostUsd: true, durationMs: true } }),
     prisma.aIUsageEvent.groupBy({ by: ['model'], where, _count: { id: true }, _sum: { totalTokens: true, estimatedCostUsd: true } }),
@@ -35,4 +40,5 @@ export async function GET(request: NextRequest) {
     daily,
     pricingUpdatedAt: '2026-08-09',
   } })
+  } catch (error) { const authResponse = dashboardAuthErrorResponse(error); if (authResponse) return authResponse; return NextResponse.json({ success: false, error: 'Utilizzo AI non disponibile' }, { status: 500 }) }
 }

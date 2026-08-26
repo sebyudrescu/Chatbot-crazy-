@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { parseJSON } from '@/lib/utils'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 const sensitive = /secret|password|token|api[_-]?key|authorization|private[_-]?key/i
 function redact(value: unknown): unknown {
@@ -9,8 +10,11 @@ function redact(value: unknown): unknown {
   return value
 }
 
-export async function GET(_: NextRequest, props: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  try {
   const { id } = await props.params
+  const actor = await requireDashboardActor(request)
+  await requireBotPermission(actor, id, 'chatbot.read')
   const agent = await prisma.chatbot.findUnique({ where: { id }, include: { embedSettings: true, workflows: true, evaluationCases: true, actions: true, integrations: true } })
   if (!agent) return NextResponse.json({ success: false, error: 'Agente non trovato' }, { status: 404 })
   const data = {
@@ -25,4 +29,9 @@ export async function GET(_: NextRequest, props: { params: Promise<{ id: string 
   }
   const filename = agent.companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agente'
   return new NextResponse(JSON.stringify(data, null, 2), { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="${filename}-backup.json"`, 'Cache-Control': 'private, no-store' } })
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
+    return NextResponse.json({ success: false, error: 'Esportazione non riuscita' }, { status: 500 })
+  }
 }
