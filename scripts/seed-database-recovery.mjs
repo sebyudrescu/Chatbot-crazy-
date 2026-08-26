@@ -9,7 +9,7 @@ const botId = "dr-evidence-bot";
 
 try {
   await prisma.$transaction(async tx => {
-    await tx.chatbot.create({ data: { id: botId, companyName: "LitX DR Evidence", kbStatus: "ready", kbTotalChunks: 1 } });
+    await tx.chatbot.create({ data: { id: botId, workspaceId: "00000000-0000-4000-8000-000000000001", companyName: "LitX DR Evidence", kbStatus: "ready", kbTotalChunks: 1 } });
     await tx.knowledgeSource.create({
       data: { id: "dr-source", botId, sourceType: "manual", contentText: "Recovery evidence", status: "completed", chunkCount: 1 },
     });

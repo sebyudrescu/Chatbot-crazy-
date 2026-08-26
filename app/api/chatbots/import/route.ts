@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { normalizeAgentSettings } from '@/lib/ai-models'
 import { conversationQualityContractSchema } from '@/lib/conversation-quality-benchmark'
+import { dashboardAuthErrorResponse, requireDashboardActor, workspaceForNewChatbot } from '@/lib/workspace-auth'
 
 const Text = z.string().max(30000)
 const Workflow = z.object({ name: z.string().min(1).max(160), description: z.string().max(1000).nullable().optional(), triggerType: z.string().max(80).default('new_message'), steps: z.string().max(200000), isActive: z.boolean().optional() })
@@ -39,11 +40,14 @@ const Backup = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
+    const workspaceId = await workspaceForNewChatbot(actor, request.nextUrl.searchParams.get('workspaceId') || undefined)
     const raw = await request.text()
     if (Buffer.byteLength(raw, 'utf8') > 2 * 1024 * 1024) return NextResponse.json({ success: false, error: 'Il backup supera il limite di 2 MB' }, { status: 413 })
     const backup = Backup.parse(JSON.parse(raw))
     const created = await prisma.$transaction(async tx => {
       const agent = await tx.chatbot.create({ data: {
+        workspaceId,
         companyName: `${backup.agent.companyName} — Ripristinato`,
         isActive: false,
         settings: JSON.stringify(normalizeAgentSettings(backup.agent.settings)),
@@ -68,6 +72,8 @@ export async function POST(request: NextRequest) {
     })
     return NextResponse.json({ success: true, data: created, imported: { workflows: backup.workflows.length, evaluations: backup.evaluations.length, actions: backup.actions.length, knowledgeSources: 0, integrations: 0 } }, { status: 201 })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Backup non valido' }, { status: 400 })
   }
 }

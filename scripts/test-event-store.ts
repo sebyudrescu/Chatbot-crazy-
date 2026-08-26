@@ -18,6 +18,7 @@ async function testEventStore() {
     console.log(`Creating test bot...`)
     bot = await prisma.chatbot.create({
       data: {
+        workspaceId: '00000000-0000-4000-8000-000000000001',
         companyName: 'Test Company',
         kbStatus: 'empty',
       },

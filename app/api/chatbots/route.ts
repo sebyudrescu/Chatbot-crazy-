@@ -3,15 +3,21 @@ import { prisma } from "@/lib/db";
 import { CreateChatbotSchema } from "@/lib/types";
 import { stringifyJSON, parseJSON } from "@/lib/utils";
 import { DEFAULT_AGENTIC_MODEL, normalizeAgentSettings } from "@/lib/ai-models";
+import { dashboardAuthErrorResponse, requireDashboardActor, workspaceForNewChatbot, workspaceWhere } from "@/lib/workspace-auth";
+import { z } from "zod";
 
 // GET /api/chatbots - List all chatbots
 export async function GET(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const searchParams = request.nextUrl.searchParams;
     const isActive = searchParams.get("isActive");
 
     const chatbots = await prisma.chatbot.findMany({
-      where: isActive !== null ? { isActive: isActive === "true" } : undefined,
+      where: {
+        ...workspaceWhere(actor, "chatbot.read"),
+        ...(isActive !== null ? { isActive: isActive === "true" } : {}),
+      },
       include: {
         embedSettings: true,
         conversations: {
@@ -37,6 +43,8 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error("Error fetching chatbots:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch chatbots" },
@@ -48,8 +56,11 @@ export async function GET(request: NextRequest) {
 // POST /api/chatbots - Create a new chatbot
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const body = await request.json();
     const validatedData = CreateChatbotSchema.parse(body);
+    const requestedWorkspaceId = z.string().uuid().optional().parse(body.workspaceId);
+    const workspaceId = await workspaceForNewChatbot(actor, requestedWorkspaceId);
 
     const defaultSettings = {
       role: `Assistente virtuale di ${validatedData.companyName}`,
@@ -74,6 +85,7 @@ export async function POST(request: NextRequest) {
     const chatbot = await prisma.$transaction(async (tx) => {
       const created = await tx.chatbot.create({
         data: {
+          workspaceId,
           companyName: validatedData.companyName,
           isActive: false,
           settings: stringifyJSON(
@@ -128,6 +140,8 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error("Error creating chatbot:", error);
     return NextResponse.json(
       {

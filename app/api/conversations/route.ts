@@ -6,6 +6,7 @@ import { parseJSON } from '@/lib/utils'
 import { syncCRMContactFromConversation } from '@/lib/crm-sync'
 import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
+import { allowedWorkspaceIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 const ConversationListQuerySchema = z.object({
   botId: z.string().uuid().optional(),
@@ -28,7 +29,10 @@ export async function OPTIONS() {
 // GET /api/conversations - List conversations
 export async function GET(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const query = ConversationListQuerySchema.parse(Object.fromEntries(request.nextUrl.searchParams.entries()))
+    if (query.botId) await requireBotPermission(actor, query.botId, 'conversation.read')
+    const workspaceIds = allowedWorkspaceIds(actor, 'conversation.read')
     const now = new Date()
     const dueSoon = new Date(now.getTime() + 30 * 60_000)
     const slaWhere: Prisma.ConversationWhereInput = query.sla === 'breached'
@@ -66,6 +70,7 @@ export async function GET(request: NextRequest) {
               { startedAt: cursor.startedAt, id: { lt: cursor.id } },
             ] }
     const where: Prisma.ConversationWhereInput = {
+      ...(workspaceIds === null ? {} : { chatbot: { workspaceId: { in: workspaceIds } } }),
       ...(query.botId ? { botId: query.botId } : {}),
       ...(query.userSessionId ? { userSessionId: query.userSessionId } : {}),
       ...(query.status === 'open' ? { isResolved: false } : {}),
@@ -119,6 +124,8 @@ export async function GET(request: NextRequest) {
       pagination: { nextCursor: hasMore ? encodeConversationCursor(page.at(-1)!) : null },
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error fetching conversations:', error)
     return NextResponse.json(
       { success: false, error: error instanceof z.ZodError ? 'Filtri conversazione non validi' : 'Failed to fetch conversations' },

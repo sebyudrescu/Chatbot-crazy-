@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 
 const baseUrl = process.env.SMOKE_BASE_URL || "http://localhost:3000";
 const prisma = new PrismaClient();
@@ -13,6 +13,8 @@ let actionId;
 let cloneId;
 let restoredId;
 let isolationBotId;
+const tenantWorkspaceIds = [];
+let tenantUserId;
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -59,11 +61,98 @@ function assert(value, message) {
   if (!value) throw new Error(message);
 }
 
+async function tenantRequest(path, token, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      Cookie: `litx_user_session=${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const text = await response.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = text;
+  }
+  return { response, body };
+}
+
 function signedCommerceHeaders(rawBody, secret, timestamp = String(Math.floor(Date.now() / 1000))) {
   return {
     timestamp,
     signature: createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex"),
   };
+}
+
+async function verifyWorkspaceIsolation() {
+  const suffix = `${Date.now()}-${randomBytes(4).toString("hex")}`;
+  const workspaceA = await prisma.workspace.create({
+    data: { name: "Smoke tenant A", slug: `smoke-tenant-a-${suffix}` },
+  });
+  tenantWorkspaceIds.push(workspaceA.id);
+  const workspaceB = await prisma.workspace.create({
+    data: { name: "Smoke tenant B", slug: `smoke-tenant-b-${suffix}` },
+  });
+  tenantWorkspaceIds.push(workspaceB.id);
+  const user = await prisma.user.create({
+    data: { email: `smoke-${suffix}@example.invalid`, displayName: "Smoke tenant viewer" },
+  });
+  tenantUserId = user.id;
+  await prisma.workspaceMembership.create({
+    data: { workspaceId: workspaceA.id, userId: user.id, role: "viewer" },
+  });
+  const token = randomBytes(48).toString("base64url");
+  await prisma.userSession.create({
+    data: {
+      userId: user.id,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      expiresAt: new Date(Date.now() + 10 * 60_000),
+    },
+  });
+  const [botA, botB] = await Promise.all([
+    prisma.chatbot.create({ data: { workspaceId: workspaceA.id, companyName: "Smoke tenant A agent", isActive: false } }),
+    prisma.chatbot.create({ data: { workspaceId: workspaceB.id, companyName: "Smoke tenant B agent", isActive: false } }),
+  ]);
+  const [conversationA, conversationB] = await Promise.all([
+    prisma.conversation.create({ data: { botId: botA.id, userSessionId: `tenant-a-${suffix}`, lastMessageAt: new Date() } }),
+    prisma.conversation.create({ data: { botId: botB.id, userSessionId: `tenant-b-${suffix}`, lastMessageAt: new Date() } }),
+  ]);
+
+  const list = await tenantRequest("/api/chatbots", token);
+  assert(list.response.status === 200, "Tenant viewer cannot list its own agents");
+  assert(list.body.data?.some((item) => item.id === botA.id), "Tenant viewer cannot see its own agent");
+  assert(!list.body.data?.some((item) => item.id === botB.id), "Tenant viewer can see another workspace agent");
+
+  const foreignAgent = await tenantRequest(`/api/chatbots/${botB.id}`, token);
+  assert(foreignAgent.response.status === 404, "Foreign agent lookup did not return a tenant-safe 404");
+  const forbiddenPatch = await tenantRequest(`/api/chatbots/${botA.id}`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ companyName: "Unauthorized update" }),
+  });
+  assert(forbiddenPatch.response.status === 404, "Viewer role modified an agent");
+  const forbiddenCreate = await tenantRequest("/api/chatbots", token, {
+    method: "POST",
+    body: JSON.stringify({ companyName: "Unauthorized agent" }),
+  });
+  assert(forbiddenCreate.response.status === 403, "Viewer role created an agent");
+
+  const conversations = await tenantRequest("/api/conversations?limit=100", token);
+  assert(conversations.response.status === 200, "Tenant viewer cannot list its conversations");
+  assert(conversations.body.data?.some((item) => item.id === conversationA.id), "Own tenant conversation is missing");
+  assert(!conversations.body.data?.some((item) => item.id === conversationB.id), "Foreign tenant conversation leaked");
+
+  const foreignAnalytics = await tenantRequest(`/api/analytics?botId=${botB.id}`, token);
+  assert(foreignAnalytics.response.status === 404, "Foreign tenant analytics did not return 404");
+  const analytics = await tenantRequest("/api/analytics?days=1", token);
+  assert(analytics.response.status === 200, "Tenant analytics are unavailable");
+  assert(analytics.body.data?.byAgent?.some((item) => item.id === botA.id), "Own tenant analytics are missing");
+  assert(!analytics.body.data?.byAgent?.some((item) => item.id === botB.id), "Foreign tenant analytics leaked");
+
+  const fakeSession = await tenantRequest("/api/chatbots", randomBytes(48).toString("base64url"));
+  assert(fakeSession.response.status === 401, "Unknown tenant session was accepted");
 }
 
 async function waitForIngestionJob(jobId, timeoutMs = 120_000) {
@@ -158,6 +247,8 @@ try {
       Array.isArray(systemStatus.data.deployment.missing),
     "Deployment readiness summary is missing",
   );
+
+  await verifyWorkspaceIsolation();
 
   const created = await request("/api/chatbots", {
     method: "POST",
@@ -1683,6 +1774,9 @@ try {
           "operational-health",
           "crawler-notifications",
           "deployment-readiness",
+          "workspace-tenant-isolation",
+          "workspace-role-enforcement",
+          "workspace-session-rejection",
         ],
       },
       null,
@@ -1726,6 +1820,15 @@ try {
     await request(`/api/chatbots/${botId}`, { method: "DELETE" }).catch(
       () => {},
     );
+  if (tenantWorkspaceIds.length) {
+    await prisma.chatbot.deleteMany({ where: { workspaceId: { in: tenantWorkspaceIds } } }).catch(() => {});
+  }
+  if (tenantUserId) {
+    await prisma.user.delete({ where: { id: tenantUserId } }).catch(() => {});
+  }
+  if (tenantWorkspaceIds.length) {
+    await prisma.workspace.deleteMany({ where: { id: { in: tenantWorkspaceIds } } }).catch(() => {});
+  }
   await prisma.$disconnect();
 }
 

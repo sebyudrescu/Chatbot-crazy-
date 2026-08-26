@@ -3,12 +3,15 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getTemplateById } from '@/lib/prompt-templates'
 import { DEFAULT_AGENTIC_MODEL } from '@/lib/ai-models'
+import { dashboardAuthErrorResponse, requireDashboardActor, workspaceForNewChatbot } from '@/lib/workspace-auth'
 
-const Schema = z.object({ templateId: z.string(), companyName: z.string().trim().min(2).max(120), variables: z.record(z.string()).default({}) })
+const Schema = z.object({ templateId: z.string(), companyName: z.string().trim().min(2).max(120), variables: z.record(z.string()).default({}), workspaceId: z.string().uuid().optional() })
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const input = Schema.parse(await request.json()), template = getTemplateById(input.templateId)
+    const workspaceId = await workspaceForNewChatbot(actor, input.workspaceId)
     if (!template) return NextResponse.json({ success: false, error: 'Template non trovato' }, { status: 404 })
     const variables: Record<string, string> = { COMPANY_NAME: input.companyName, ...input.variables }
     const missing = (template.placeholders || []).filter(key => !variables[key]?.trim())
@@ -26,7 +29,7 @@ export async function POST(request: NextRequest) {
       rules: ['Non inventare informazioni, prezzi o disponibilità', 'Usa soltanto le fonti autorizzate', 'Chiedi il consenso prima di raccogliere dati personali'],
     }
     const agent = await prisma.$transaction(async tx => {
-      const created = await tx.chatbot.create({ data: { companyName: input.companyName, promptTemplateId: template.id, promptVariables: JSON.stringify(variables), settings: JSON.stringify(settings) } })
+      const created = await tx.chatbot.create({ data: { workspaceId, companyName: input.companyName, promptTemplateId: template.id, promptVariables: JSON.stringify(variables), settings: JSON.stringify(settings) } })
       await tx.workflow.create({ data: { botId: created.id, name: 'Raccolta lead e handoff', description: 'Raccoglie email e trasferisce richieste esplicite a un operatore.', triggerType: 'new_message', isActive: true, steps: JSON.stringify([{ id: 'collect-email', type: 'collect', title: 'Raccogli email', config: { field: 'email' } }, { id: 'handoff-condition', type: 'condition', title: 'Richiesta operatore', config: { field: 'message', operator: 'contains', value: 'operatore' } }, { id: 'handoff', type: 'handoff', title: 'Passa a operatore', config: { reason: 'Richiesta esplicita dal cliente' } }]) } })
       await tx.evaluationCase.createMany({ data: [
         { botId: created.id, name: 'Identità e servizi', question: `Chi sei e come può aiutarmi ${input.companyName}?`, expectedKeywords: '[]', forbiddenKeywords: JSON.stringify(['inventato', 'garantisco']), minimumConfidence: 0.35 },
@@ -36,5 +39,9 @@ export async function POST(request: NextRequest) {
       return created
     })
     return NextResponse.json({ success: true, data: { id: agent.id, companyName: agent.companyName, checklist: ['Istruzioni iniziali applicate', 'Workflow lead e handoff creato', '3 valutazioni di sicurezza create'] } }, { status: 201 })
-  } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Creazione non riuscita' }, { status: 400 }) }
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Creazione non riuscita' }, { status: 400 })
+  }
 }

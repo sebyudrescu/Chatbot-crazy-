@@ -5,6 +5,7 @@ import { UpdateChatbotSchema } from "@/lib/types";
 import { normalizeAgentSettings } from "@/lib/ai-models";
 import { getAgentReadiness } from "@/lib/agent-readiness";
 import { deleteKnowledgeBase } from "@/lib/rag-pipeline";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 // GET /api/chatbots/[id] - Get a specific chatbot
 export async function GET(
@@ -13,6 +14,8 @@ export async function GET(
 ) {
   const params = await props.params;
   try {
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, params.id, "chatbot.read");
     const chatbot = await prisma.chatbot.findUnique({
       where: { id: params.id },
       include: {
@@ -45,6 +48,8 @@ export async function GET(
       },
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error("Error fetching chatbot:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch chatbot" },
@@ -60,6 +65,8 @@ export async function PATCH(
 ) {
   const params = await props.params;
   try {
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, params.id, "chatbot.write");
     const body = UpdateChatbotSchema.parse(await request.json());
     const current = await prisma.chatbot.findUnique({
       where: { id: params.id },
@@ -158,6 +165,8 @@ export async function PATCH(
       },
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error("Error updating chatbot:", error);
     return NextResponse.json(
       { success: false, error: "Failed to update chatbot" },
@@ -173,6 +182,8 @@ export async function DELETE(
 ) {
   const params = await props.params;
   try {
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, params.id, "chatbot.write");
     const chatbot = await prisma.chatbot.findUnique({
       where: { id: params.id },
       select: { id: true },
@@ -217,6 +228,8 @@ export async function DELETE(
       message: "Chatbot deleted successfully",
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error("Error deleting chatbot:", error);
     return NextResponse.json(
       { success: false, error: "Failed to delete chatbot" },

@@ -20,7 +20,7 @@ const {
 } = require("../lib/commerce-sync-queue.ts");
 
 async function main() {
-  const bot = await prisma.chatbot.create({ data: { companyName: "Commerce E2E Test", kbStatus: "ready" } });
+  const bot = await prisma.chatbot.create({ data: { workspaceId: "00000000-0000-4000-8000-000000000001", companyName: "Commerce E2E Test", kbStatus: "ready" } });
   try {
     const source = await prisma.productSource.create({
       data: { botId: bot.id, sourceType: "shopify", name: "Shopify test", baseUrl: "https://shop.example.com" },

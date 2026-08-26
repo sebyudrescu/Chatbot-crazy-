@@ -9,8 +9,76 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  kind      String   @default("client")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chatbots    Chatbot[]
+  memberships WorkspaceMembership[]
+
+  @@index([kind])
+  @@index([createdAt])
+  @@map("workspaces")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  displayName  String
+  passwordHash String?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships WorkspaceMembership[]
+  sessions    UserSession[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model WorkspaceMembership {
+  id          String   @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        String   @default("viewer")
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId, status])
+  @@index([workspaceId, role])
+  @@map("workspace_memberships")
+}
+
+model UserSession {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  lastUsedAt DateTime  @default(now())
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, revokedAt])
+  @@map("user_sessions")
+}
+
 model Chatbot {
   id           String    @id @default(uuid())
+  workspaceId  String
   companyName  String
   createdAt    DateTime  @default(now())
   trialEndDate DateTime?
@@ -55,7 +123,10 @@ model Chatbot {
   backstageDrafts           BackstageDraft[]
   responseRevisions         ResponseRevision[]
   apiKeys                   AgentApiKey[]
+  workspace                 Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, isActive])
   @@index([companyName])
   @@index([isActive])
   @@index([createdAt])
@@ -338,8 +409,8 @@ model EvaluationCase {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  chatbot Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
-  runs    EvaluationRun[]
+  chatbot          Chatbot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  runs             EvaluationRun[]
   responseRevision ResponseRevision?
 
   @@index([botId])
@@ -424,8 +495,8 @@ model KnowledgeSource {
   pageCount      Int? // For PDFs or crawled pages
   ingestionJobId String? // Link to async job
 
-  chatbot Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
-  chunks  KnowledgeChunk[]
+  chatbot          Chatbot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  chunks           KnowledgeChunk[]
   responseRevision ResponseRevision?
 
   @@index([botId])
@@ -541,10 +612,10 @@ model Conversation {
   resolvedAt           DateTime?
   reopenedAt           DateTime?
 
-  chatbot         Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
-  messages        Message[]
-  structuredFacts StructuredFact[] // Cognitive memory
-  events          Event[] // Event Store
+  chatbot           Chatbot            @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages          Message[]
+  structuredFacts   StructuredFact[] // Cognitive memory
+  events            Event[] // Event Store
   responseRevisions ResponseRevision[]
 
   @@unique([botId, channel, externalThreadId])
@@ -573,14 +644,14 @@ model Message {
   sourcesUsed       String? // JSON string for sources array
 
   // UX Enhancement Fields
-  feedback        String? // "positive", "negative", or null
-  feedbackComment String? // Optional user comment on feedback
-  ctaData         String? // JSON string for contextual CTAs
-  quickReplies    String? // JSON array of suggested questions
-  productCards    String? // JSON array of server-hydrated commerce cards
+  feedback         String? // "positive", "negative", or null
+  feedbackComment  String? // Optional user comment on feedback
+  ctaData          String? // JSON string for contextual CTAs
+  quickReplies     String? // JSON array of suggested questions
+  productCards     String? // JSON array of server-hydrated commerce cards
   operatorAuthored Boolean @default(false)
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation      Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   responseRevisions ResponseRevision[]
 
   @@index([conversationId])
@@ -609,31 +680,31 @@ model HelpDeskSavedView {
 // Owner-approved corrections converted into durable Q&A knowledge and
 // anti-regression evaluations. Historical assistant messages remain immutable.
 model ResponseRevision {
-  id                String    @id @default(uuid())
-  botId             String
-  conversationId    String
+  id                 String    @id @default(uuid())
+  botId              String
+  conversationId     String
   assistantMessageId String
-  version           Int
-  question          String
-  originalAnswer    String
-  revisedAnswer     String
-  rationale         String?
-  expectedKeywords  String    @default("[]")
-  forbiddenKeywords String    @default("[]")
-  status            String    @default("draft")
-  knowledgeSourceId String?   @unique
-  evaluationCaseId  String?   @unique
-  createdBy         String    @default("owner")
-  publishedAt       DateTime?
-  archivedAt        DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  version            Int
+  question           String
+  originalAnswer     String
+  revisedAnswer      String
+  rationale          String?
+  expectedKeywords   String    @default("[]")
+  forbiddenKeywords  String    @default("[]")
+  status             String    @default("draft")
+  knowledgeSourceId  String?   @unique
+  evaluationCaseId   String?   @unique
+  createdBy          String    @default("owner")
+  publishedAt        DateTime?
+  archivedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  chatbot         Chatbot         @relation(fields: [botId], references: [id], onDelete: Cascade)
-  conversation    Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  assistantMessage Message        @relation(fields: [assistantMessageId], references: [id], onDelete: Cascade)
-  knowledgeSource KnowledgeSource? @relation(fields: [knowledgeSourceId], references: [id], onDelete: SetNull)
-  evaluationCase  EvaluationCase?  @relation(fields: [evaluationCaseId], references: [id], onDelete: SetNull)
+  chatbot          Chatbot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation     Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  assistantMessage Message          @relation(fields: [assistantMessageId], references: [id], onDelete: Cascade)
+  knowledgeSource  KnowledgeSource? @relation(fields: [knowledgeSourceId], references: [id], onDelete: SetNull)
+  evaluationCase   EvaluationCase?  @relation(fields: [evaluationCaseId], references: [id], onDelete: SetNull)
 
   @@unique([assistantMessageId, version])
   @@index([botId, status, updatedAt])
@@ -1080,11 +1151,11 @@ model EmbedSettings {
   subtitle String?
 
   // Appearance
-  theme        String @default("light") // "light" | "dark"
-  position     String @default("bottom-right") // "bottom-right" | "bottom-left" | "top-right" | "top-left"
-  primaryColor String @default("#007bff")
-  secondaryColor String @default("#825cff")
-  launcherColor  String @default("#633cff")
+  theme          String  @default("light") // "light" | "dark"
+  position       String  @default("bottom-right") // "bottom-right" | "bottom-left" | "top-right" | "top-left"
+  primaryColor   String  @default("#007bff")
+  secondaryColor String  @default("#825cff")
+  launcherColor  String  @default("#633cff")
   brandLogoUrl   String?
 
   // Widget Shape & Icon
@@ -1099,8 +1170,8 @@ model EmbedSettings {
   gradient  Boolean @default(true) // gradient background
 
   // Behavior
-  autoOpen     Boolean @default(false)
-  showLauncher Boolean @default(true)
+  autoOpen                Boolean @default(false)
+  showLauncher            Boolean @default(true)
   launcherMessageEnabled  Boolean @default(false)
   launcherMessage         String?
   launcherMessageDelay    Int     @default(1500)

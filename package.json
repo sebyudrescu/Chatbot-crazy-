@@ -43,6 +43,7 @@
         "test:email": "node scripts/test-email-notifications.cjs",
         "test:memory": "node scripts/test-memory-retrieval.cjs",
         "test:auth": "node scripts/test-owner-session.cjs",
+        "test:workspace-auth": "node scripts/test-workspace-authorization.cjs",
         "test:prompt": "node scripts/test-agent-instructions.cjs",
         "test:evaluations": "node scripts/evaluate-agents.mjs",
         "test:evaluation-runner": "node scripts/test-evaluation-runner.mjs",

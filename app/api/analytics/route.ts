@@ -3,29 +3,41 @@ import { prisma } from '@/lib/db'
 import { calculateHelpDeskSlaAnalytics } from '@/lib/helpdesk-operations'
 import { buildRecurringTopicInsights, buildRevisionOutcomeInsights } from '@/lib/conversation-insights'
 import { buildActionPerformance, buildChannelPerformance, buildCommerceFunnelComparison, buildLeadPipeline, buildNoMatchComparison, comparePeriods } from '@/lib/commercial-analytics'
+import { allowedWorkspaceIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
+ try {
+  const actor = await requireDashboardActor(request)
   const botId = request.nextUrl.searchParams.get('botId')
+  if (botId) await requireBotPermission(actor, botId, 'analytics.read')
+  const workspaceIds = allowedWorkspaceIds(actor, 'analytics.read')
+  const accessibleBotIds = botId
+    ? [botId]
+    : workspaceIds === null
+      ? null
+      : (await prisma.chatbot.findMany({ where: { workspaceId: { in: workspaceIds } }, select: { id: true } })).map((bot) => bot.id)
+  const directBotWhere = accessibleBotIds === null ? {} : { botId: { in: accessibleBotIds } }
+  const conversationBotWhere = accessibleBotIds === null ? {} : { botId: { in: accessibleBotIds } }
   const days = Math.min(365, Math.max(1, Number(request.nextUrl.searchParams.get('days') || 30)))
   const currentEnd = new Date()
   const since = new Date(currentEnd.getTime() - days * 86_400_000)
   const previousSince = new Date(since.getTime() - days * 86_400_000)
   const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows, publishedRevisions, qualityMessages, previousConversationCount, previousMessageCount, commerceEvents, commercialMessages, crmContacts, actionExecutions] = await Promise.all([
     prisma.conversation.findMany({
-      where: { ...(botId ? { botId } : {}), startedAt: { gte: since } },
+      where: { ...directBotWhere, startedAt: { gte: since } },
       include: { chatbot: { select: { id: true, companyName: true } }, _count: { select: { messages: true } } },
       orderBy: { startedAt: 'desc' },
     }),
     prisma.event.findMany({
-      where: { ...(botId ? { botId } : {}), timestamp: { gte: since }, eventType: 'pipeline.stage.completed' },
+      where: { ...directBotWhere, timestamp: { gte: since }, eventType: 'pipeline.stage.completed' },
       select: { durationMs: true, success: true, metadata: true },
       take: 10_000,
     }),
     prisma.event.findMany({
       where: {
-        ...(botId ? { botId } : {}),
+        ...directBotWhere,
         eventType: { startsWith: 'helpdesk.' },
         timestamp: { gte: new Date(since.getTime() - 365 * 86_400_000) },
       },
@@ -34,14 +46,14 @@ export async function GET(request: NextRequest) {
       take: 50_000,
     }),
     prisma.aIUsageEvent.findMany({
-      where: { ...(botId ? { botId } : {}), createdAt: { gte: since } },
+      where: { ...directBotWhere, createdAt: { gte: since } },
       select: { feature: true, model: true, totalTokens: true, estimatedCostUsd: true, durationMs: true, success: true },
       take: 10_000,
     }),
-    prisma.cRMContact.count({ where: { ...(botId ? { botId } : {}), lastInteraction: { gte: since }, OR: [{ email: { not: null } }, { phone: { not: null } }] } }),
+    prisma.cRMContact.count({ where: { ...directBotWhere, lastInteraction: { gte: since }, OR: [{ email: { not: null } }, { phone: { not: null } }] } }),
     prisma.conversation.findMany({
       where: {
-        ...(botId ? { botId } : {}),
+        ...directBotWhere,
         OR: [
           { escalatedAt: { gte: since } },
           { resolvedAt: { gte: since } },
@@ -56,25 +68,25 @@ export async function GET(request: NextRequest) {
       take: 10_000,
     }),
     prisma.responseRevision.findMany({
-      where: { ...(botId ? { botId } : {}), status: 'published', knowledgeSourceId: { not: null }, publishedAt: { not: null } },
+      where: { ...directBotWhere, status: 'published', knowledgeSourceId: { not: null }, publishedAt: { not: null } },
       select: { id: true, botId: true, question: true, knowledgeSourceId: true, publishedAt: true },
       take: 2_000,
     }),
     prisma.message.findMany({
-      where: { role: 'assistant', createdAt: { gte: since }, ...(botId ? { conversation: { botId } } : {}) },
+      where: { role: 'assistant', createdAt: { gte: since }, conversation: conversationBotWhere },
       select: { conversationId: true, feedback: true, sourcesUsed: true, createdAt: true, conversation: { select: { botId: true } } },
       orderBy: { createdAt: 'desc' },
       take: 10_000,
     }),
     prisma.conversation.count({
-      where: { ...(botId ? { botId } : {}), startedAt: { gte: previousSince, lt: since } },
+      where: { ...directBotWhere, startedAt: { gte: previousSince, lt: since } },
     }),
     prisma.message.count({
-      where: { conversation: { ...(botId ? { botId } : {}), startedAt: { gte: previousSince, lt: since } } },
+      where: { conversation: { ...conversationBotWhere, startedAt: { gte: previousSince, lt: since } } },
     }),
     prisma.commerceEvent.findMany({
       where: {
-        ...(botId ? { botId } : {}),
+        ...directBotWhere,
         createdAt: { gte: previousSince, lt: currentEnd },
         eventType: { in: ['impression', 'click', 'add_to_cart', 'checkout', 'conversion'] },
       },
@@ -83,19 +95,19 @@ export async function GET(request: NextRequest) {
       take: 50_001,
     }),
     prisma.message.findMany({
-      where: { role: 'assistant', createdAt: { gte: previousSince, lt: currentEnd }, ...(botId ? { conversation: { botId } } : {}) },
+      where: { role: 'assistant', createdAt: { gte: previousSince, lt: currentEnd }, conversation: conversationBotWhere },
       select: { sourcesUsed: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
       take: 50_001,
     }),
     prisma.cRMContact.findMany({
-      where: { ...(botId ? { botId } : {}) },
+      where: directBotWhere,
       select: { stage: true, source: true, createdAt: true, lastInteraction: true },
       orderBy: { lastInteraction: 'desc' },
       take: 50_001,
     }),
     prisma.actionExecution.findMany({
-      where: { createdAt: { gte: since, lt: currentEnd }, ...(botId ? { action: { botId } } : {}) },
+      where: { createdAt: { gte: since, lt: currentEnd }, action: conversationBotWhere },
       select: {
         conversationId: true, success: true, status: true, durationMs: true, createdAt: true,
         action: { select: { id: true, botId: true, name: true, type: true } },
@@ -222,6 +234,12 @@ export async function GET(request: NextRequest) {
       byChannel: count(helpdesk.map((item) => item.channel)),
     },
   } })
+ } catch (error) {
+  const authResponse = dashboardAuthErrorResponse(error)
+  if (authResponse) return authResponse
+  console.error('Error fetching analytics:', error)
+  return NextResponse.json({ success: false, error: 'Failed to fetch analytics' }, { status: 500 })
+ }
 }
 
 interface HelpDeskCycleSnapshot {

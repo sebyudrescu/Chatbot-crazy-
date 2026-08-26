@@ -110,6 +110,7 @@ async function testAgentPublicationReadiness() {
   });
   const bot = await prisma.chatbot.create({
     data: {
+      workspaceId: "00000000-0000-4000-8000-000000000001",
       companyName: "Readiness test",
       systemPrompt: "Rispondi solo usando le fonti approvate.",
       settings: JSON.stringify({
@@ -453,6 +454,7 @@ async function testPersistentRateLimit() {
 async function testPartialKnowledgeAvailability() {
   const bot = await prisma.chatbot.create({
     data: {
+      workspaceId: "00000000-0000-4000-8000-000000000001",
       companyName: "Partial knowledge availability test",
       kbStatus: "indexing",
       kbTotalChunks: 0,
@@ -519,7 +521,7 @@ async function testPartialKnowledgeAvailability() {
 
 async function testDurableIngestionRecovery() {
   const bot = await prisma.chatbot.create({
-    data: { companyName: "Durable ingestion test" },
+    data: { workspaceId: "00000000-0000-4000-8000-000000000001", companyName: "Durable ingestion test" },
   });
   try {
     const completed = await prisma.ingestionJob.create({
@@ -686,7 +688,7 @@ async function main() {
   );
 
   const bot = await prisma.chatbot.create({
-    data: { companyName: "Automation engine test" },
+    data: { workspaceId: "00000000-0000-4000-8000-000000000001", companyName: "Automation engine test" },
   });
   try {
     const vectorSource = await prisma.knowledgeSource.create({
