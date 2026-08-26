@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { calculateHelpDeskSlaAnalytics } from '@/lib/helpdesk-operations'
 import { buildRecurringTopicInsights, buildRevisionOutcomeInsights } from '@/lib/conversation-insights'
-import { buildCommerceFunnelComparison, buildLeadPipeline, buildNoMatchComparison, comparePeriods } from '@/lib/commercial-analytics'
+import { buildActionPerformance, buildChannelPerformance, buildCommerceFunnelComparison, buildLeadPipeline, buildNoMatchComparison, comparePeriods } from '@/lib/commercial-analytics'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const currentEnd = new Date()
   const since = new Date(currentEnd.getTime() - days * 86_400_000)
   const previousSince = new Date(since.getTime() - days * 86_400_000)
-  const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows, publishedRevisions, qualityMessages, previousConversationCount, previousMessageCount, commerceEvents, commercialMessages, crmContacts] = await Promise.all([
+  const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows, publishedRevisions, qualityMessages, previousConversationCount, previousMessageCount, commerceEvents, commercialMessages, crmContacts, actionExecutions] = await Promise.all([
     prisma.conversation.findMany({
       where: { ...(botId ? { botId } : {}), startedAt: { gte: since } },
       include: { chatbot: { select: { id: true, companyName: true } }, _count: { select: { messages: true } } },
@@ -90,8 +90,17 @@ export async function GET(request: NextRequest) {
     }),
     prisma.cRMContact.findMany({
       where: { ...(botId ? { botId } : {}) },
-      select: { stage: true, createdAt: true, lastInteraction: true },
+      select: { stage: true, source: true, createdAt: true, lastInteraction: true },
       orderBy: { lastInteraction: 'desc' },
+      take: 50_001,
+    }),
+    prisma.actionExecution.findMany({
+      where: { createdAt: { gte: since, lt: currentEnd }, ...(botId ? { action: { botId } } : {}) },
+      select: {
+        conversationId: true, success: true, status: true, durationMs: true, createdAt: true,
+        action: { select: { id: true, botId: true, name: true, type: true } },
+      },
+      orderBy: { createdAt: 'asc' },
       take: 50_001,
     }),
   ])
@@ -160,10 +169,13 @@ export async function GET(request: NextRequest) {
     commerceEvents: commerceEvents.length > 50_000,
     assistantMessages: commercialMessages.length > 50_000,
     crmContacts: crmContacts.length > 50_000,
+    actionExecutions: actionExecutions.length > 50_000,
   }
   const commerceFunnel = buildCommerceFunnelComparison(commerceEvents.slice(0, 50_000), previousSince, since, currentEnd)
   const noMatch = buildNoMatchComparison(commercialMessages.slice(0, 50_000), previousSince, since, currentEnd)
   const leadPipeline = buildLeadPipeline(crmContacts.slice(0, 50_000), previousSince, since, currentEnd)
+  const channelPerformance = buildChannelPerformance(conversations, commerceEvents.slice(0, 50_000), crmContacts.slice(0, 50_000), since, currentEnd)
+  const actionPerformance = buildActionPerformance(actionExecutions.slice(0, 50_000), since, currentEnd)
   const conversions = commerceFunnel.stages.find((stage) => stage.stage === 'conversion')?.comparison || comparePeriods(0, 0)
 
   return NextResponse.json({ success: true, data: {
@@ -191,8 +203,10 @@ export async function GET(request: NextRequest) {
       funnel: commerceFunnel,
       leads: leadPipeline,
       noMatch,
+      channels: channelPerformance,
+      actions: actionPerformance,
       dataQuality: { complete: !Object.values(commercialLimits).some(Boolean), truncatedSources: Object.entries(commercialLimits).filter(([, truncated]) => truncated).map(([source]) => source) },
-      note: 'Funnel deduplicato per conversazione/sessione. Il fatturato include solo conversioni firmate e non gli item; le fasi lead sono aggregate e non espongono PII.',
+      note: 'Funnel deduplicato per conversazione/sessione. Il fatturato include solo conversioni firmate e non gli item; canali e fasi lead sono aggregati senza PII. Le azioni mostrano affidabilità operativa, non attribuzione delle vendite.',
     },
     helpdesk: {
       backlog: helpdesk.filter((item) => item.needsHumanEscalation && !item.isResolved).length,

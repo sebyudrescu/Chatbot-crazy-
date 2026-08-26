@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import {
+  buildActionPerformance,
+  buildChannelPerformance,
   buildCommerceFunnelComparison,
   buildLeadPipeline,
   buildNoMatchComparison,
@@ -57,4 +59,39 @@ assert.deepEqual(leads.created, { current: 2, previous: 1, changePercent: 100 })
 assert.deepEqual(comparePeriods(0, 0), { current: 0, previous: 0, changePercent: 0 });
 assert.deepEqual(comparePeriods(4, 0), { current: 4, previous: 0, changePercent: null });
 
-console.log(JSON.stringify({ success: true, checks: 18 }));
+const channels = buildChannelPerformance([
+  { id: "chat-1", botId: "bot-1", channel: "widget", startedAt: new Date("2026-07-02") },
+  { id: "chat-2", botId: "bot-1", channel: "whatsapp", startedAt: new Date("2026-07-03") },
+], [
+  event("channel-1", "click", "2026-07-04T10:00:00Z", "chat-1"),
+  event("channel-2", "conversion", "2026-07-04T10:01:00Z", "chat-1", 30),
+  event("channel-3", "add_to_cart", "2026-07-04T10:02:00Z", "chat-2"),
+  event("channel-4", "conversion", "2026-07-04T10:03:00Z", null, 20),
+], [
+  { source: "widget", stage: "qualified", createdAt: new Date("2026-07-02"), lastInteraction: new Date("2026-07-10") },
+  { source: "whatsapp", stage: "new", createdAt: new Date("2026-07-03"), lastInteraction: new Date("2026-07-11") },
+], currentStart, currentEnd);
+const widgetChannel = channels.find((row) => row.channel === "widget");
+const whatsappChannel = channels.find((row) => row.channel === "whatsapp");
+const unattributedChannel = channels.find((row) => row.channel === "unattributed");
+assert.deepEqual(widgetChannel, { channel: "widget", conversations: 1, engagedConversations: 1, leads: 1, conversions: 1, conversionRatePercent: 100 });
+assert.equal(whatsappChannel?.engagedConversations, 1);
+assert.equal(whatsappChannel?.conversions, 0);
+assert.equal(unattributedChannel?.conversions, 1, "Le conversioni senza conversazione restano esplicitamente non attribuite");
+assert.equal(unattributedChannel?.conversionRatePercent, null);
+
+const actions = buildActionPerformance([
+  { conversationId: "chat-1", success: true, status: "completed", durationMs: 100, createdAt: new Date("2026-07-02"), action: { id: "action-1", botId: "bot-1", name: "Raccogli lead", type: "collect_lead" } },
+  { conversationId: "chat-2", success: false, status: "failed", durationMs: 300, createdAt: new Date("2026-07-03"), action: { id: "action-1", botId: "bot-1", name: "Raccogli lead", type: "collect_lead" } },
+  { conversationId: null, success: false, status: "pending", durationMs: null, createdAt: new Date("2026-07-04"), action: { id: "action-1", botId: "bot-1", name: "Raccogli lead", type: "collect_lead" } },
+  { conversationId: "chat-1", success: true, status: "completed", durationMs: 50, createdAt: new Date("2026-07-04"), action: { id: "action-2", botId: "bot-1", name: "Apri booking", type: "booking_link" } },
+], currentStart, currentEnd);
+assert.deepEqual(actions[0], {
+  actionId: "action-1", botId: "bot-1", name: "Raccogli lead", type: "collect_lead",
+  executions: 3, successes: 1, failures: 1, pending: 1, conversations: 2,
+  successRatePercent: 50, averageLatencyMs: 200,
+});
+assert.equal(actions[1].successRatePercent, 100);
+assert.equal(actions[1].averageLatencyMs, 50);
+
+console.log(JSON.stringify({ success: true, checks: 30 }));

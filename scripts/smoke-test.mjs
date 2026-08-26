@@ -759,11 +759,15 @@ try {
   const commercial = analytics.data?.commercial;
   const conversionStage = commercial?.funnel?.stages?.find(item => item.stage === "conversion");
   const qualifiedStage = commercial?.leads?.stages?.find(item => item.stage === "qualified");
+  const widgetChannel = commercial?.channels?.find(item => item.channel === "widget");
   assert(
     commercial?.dataQuality?.complete === true &&
       conversionStage?.conversations >= 1 &&
       commercial.funnel.revenue.some(item => item.currency === "EUR" && item.value === 49.9) &&
       qualifiedStage?.contacts >= 1 &&
+      widgetChannel?.conversions >= 1 &&
+      widgetChannel?.leads >= 1 &&
+      Array.isArray(commercial.actions) &&
       commercial.comparison.conversions.current >= 1 &&
       !JSON.stringify(commercial).includes("smoke@example.com"),
     "Commercial analytics aggregation, attribution or privacy boundary failed",

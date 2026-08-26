@@ -32,10 +32,17 @@ assert.match(analyticsUi, /query\.set\('botId',botId\)/);
 assert.match(analyticsApi, /buildCommerceFunnelComparison/);
 assert.match(analyticsApi, /buildNoMatchComparison/);
 assert.match(analyticsApi, /buildLeadPipeline/);
+assert.match(analyticsApi, /buildChannelPerformance/);
+assert.match(analyticsApi, /buildActionPerformance/);
+assert.match(analyticsApi, /prisma\.actionExecution\.findMany/);
+assert.match(analyticsApi, /action: \{ select: \{ id: true, botId: true, name: true, type: true \} \}/);
 assert.match(analyticsApi, /eventType: \{ in: \['impression', 'click', 'add_to_cart', 'checkout', 'conversion'\] \}/);
 assert.match(analyticsUi, /Funnel commerciale verificato/);
 assert.match(analyticsUi, /Copertura catalogo/);
 assert.match(analyticsUi, /Pipeline lead/);
+assert.match(analyticsUi, /Performance per canale e azione/);
+assert.match(analyticsUi, /Gli ordini sono attribuiti al canale soltanto con una conversazione verificata/);
+assert.match(analyticsUi, /Le performance appariranno dopo l’esecuzione delle azioni/);
 
 assert.match(contactsUi, /Contatti e Pipeline/);
 assert.match(contactsUi, /view === 'kanban'/);
@@ -58,4 +65,4 @@ assert.match(importApi, /conversationQualityContractSchema\.safeParse/);
 assert.match(importApi, /conversationTurns: item\.conversationTurns/);
 assert.match(importApi, /qualityContract: item\.qualityContract/);
 
-console.log("Client operations: 39 controlli superati");
+console.log("Client operations: 46 controlli superati");

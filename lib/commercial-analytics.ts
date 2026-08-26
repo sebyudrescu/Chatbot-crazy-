@@ -26,8 +26,25 @@ interface AssistantMessageRow {
 
 interface CRMContactRow {
   stage: string;
+  source?: string;
   createdAt: Date;
   lastInteraction: Date;
+}
+
+interface ConversationChannelRow {
+  id: string;
+  botId: string;
+  channel: string;
+  startedAt: Date;
+}
+
+interface ActionExecutionRow {
+  conversationId: string | null;
+  success: boolean;
+  status: string;
+  durationMs: number | null;
+  createdAt: Date;
+  action: { id: string; botId: string; name: string; type: string };
 }
 
 export interface PeriodComparison {
@@ -184,4 +201,139 @@ export function buildLeadPipeline(
       .map(([stage, contacts]) => ({ stage, contacts }))
       .sort((left, right) => right.contacts - left.contacts || left.stage.localeCompare(right.stage)),
   };
+}
+
+function normalizedDimension(value: string | null | undefined, fallback: string) {
+  const normalized = value?.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || fallback;
+}
+
+export function buildChannelPerformance(
+  conversations: ConversationChannelRow[],
+  events: CommerceEventRow[],
+  contacts: CRMContactRow[],
+  currentStart: Date,
+  currentEnd: Date,
+) {
+  const channels = new Map<string, {
+    channel: string;
+    conversations: Set<string>;
+    engaged: Set<string>;
+    conversions: Set<string>;
+    leads: number;
+  }>();
+  const conversationChannels = new Map<string, string>();
+  const ensure = (channel: string) => {
+    const current = channels.get(channel) || {
+      channel,
+      conversations: new Set<string>(),
+      engaged: new Set<string>(),
+      conversions: new Set<string>(),
+      leads: 0,
+    };
+    channels.set(channel, current);
+    return current;
+  };
+
+  for (const conversation of conversations) {
+    const channel = normalizedDimension(conversation.channel, "unknown");
+    conversationChannels.set(conversation.id, channel);
+    if (inWindow(conversation.startedAt, currentStart, currentEnd)) {
+      ensure(channel).conversations.add(`${conversation.botId}:${conversation.id}`);
+    }
+  }
+  for (const event of events) {
+    if (!inWindow(event.createdAt, currentStart, currentEnd)) continue;
+    if (!["click", "add_to_cart", "checkout", "conversion"].includes(event.eventType)) continue;
+    const channel = event.conversationId
+      ? conversationChannels.get(event.conversationId) || "unattributed"
+      : "unattributed";
+    const row = ensure(channel);
+    const key = attributionKey(event);
+    row.engaged.add(key);
+    if (event.eventType === "conversion") row.conversions.add(key);
+  }
+  for (const contact of contacts) {
+    if (!inWindow(contact.createdAt, currentStart, currentEnd)) continue;
+    ensure(normalizedDimension(contact.source, "unknown")).leads++;
+  }
+
+  return [...channels.values()]
+    .map((row) => ({
+      channel: row.channel,
+      conversations: row.conversations.size,
+      engagedConversations: row.engaged.size,
+      leads: row.leads,
+      conversions: row.conversions.size,
+      conversionRatePercent: row.conversations.size > 0
+        ? Number(((row.conversions.size / row.conversations.size) * 100).toFixed(1))
+        : null,
+    }))
+    .sort((left, right) =>
+      right.conversions - left.conversions ||
+      right.engagedConversations - left.engagedConversations ||
+      right.conversations - left.conversations ||
+      left.channel.localeCompare(right.channel));
+}
+
+export function buildActionPerformance(
+  executions: ActionExecutionRow[],
+  currentStart: Date,
+  currentEnd: Date,
+) {
+  const grouped = new Map<string, {
+    actionId: string;
+    botId: string;
+    name: string;
+    type: string;
+    executions: number;
+    successes: number;
+    failures: number;
+    pending: number;
+    conversations: Set<string>;
+    durations: number[];
+  }>();
+  for (const execution of executions) {
+    if (!inWindow(execution.createdAt, currentStart, currentEnd)) continue;
+    const action = execution.action;
+    const row = grouped.get(action.id) || {
+      actionId: action.id,
+      botId: action.botId,
+      name: action.name,
+      type: action.type,
+      executions: 0,
+      successes: 0,
+      failures: 0,
+      pending: 0,
+      conversations: new Set<string>(),
+      durations: [],
+    };
+    row.executions++;
+    if (execution.status === "pending") row.pending++;
+    else if (execution.success) row.successes++;
+    else row.failures++;
+    if (execution.conversationId) row.conversations.add(execution.conversationId);
+    if (execution.durationMs !== null && execution.durationMs >= 0) row.durations.push(execution.durationMs);
+    grouped.set(action.id, row);
+  }
+  return [...grouped.values()]
+    .map((row) => {
+      const completed = row.successes + row.failures;
+      return {
+        actionId: row.actionId,
+        botId: row.botId,
+        name: row.name,
+        type: row.type,
+        executions: row.executions,
+        successes: row.successes,
+        failures: row.failures,
+        pending: row.pending,
+        conversations: row.conversations.size,
+        successRatePercent: completed > 0 ? Number(((row.successes / completed) * 100).toFixed(1)) : null,
+        averageLatencyMs: row.durations.length
+          ? Math.round(row.durations.reduce((sum, value) => sum + value, 0) / row.durations.length)
+          : null,
+      };
+    })
+    .sort((left, right) => right.executions - left.executions || left.name.localeCompare(right.name));
 }
