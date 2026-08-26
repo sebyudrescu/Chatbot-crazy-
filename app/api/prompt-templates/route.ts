@@ -6,6 +6,7 @@ import {
   getTemplateCategories,
   fillTemplatePlaceholders 
 } from '@/lib/prompt-templates'
+import { dashboardAuthErrorResponse, requireDashboardActor } from '@/lib/workspace-auth'
 
 /**
  * GET /api/prompt-templates - Get all available prompt templates
@@ -15,6 +16,7 @@ import {
  */
 export async function GET(request: NextRequest) {
   try {
+    await requireDashboardActor(request)
     const searchParams = request.nextUrl.searchParams
     const category = searchParams.get('category')
     const id = searchParams.get('id')
@@ -50,6 +52,8 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error fetching prompt templates:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to fetch prompt templates' },
@@ -64,6 +68,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    await requireDashboardActor(request)
     const body = await request.json()
     const { templateId, variables } = body
 
@@ -96,6 +101,8 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error previewing template:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to preview template' },

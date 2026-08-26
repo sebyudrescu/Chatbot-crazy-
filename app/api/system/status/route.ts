@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getOperationalHealth } from '@/lib/operational-health'
 import { getDeploymentReadiness } from '@/lib/deployment-readiness'
+import { dashboardAuthErrorResponse, requireLegacyOwner } from '@/lib/workspace-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,8 +21,9 @@ async function verifyOpenAIKey() {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    await requireLegacyOwner(request)
     const [agents, sources, conversations, operations, openAI] = await Promise.all([
       prisma.chatbot.count(),
       prisma.knowledgeSource.count(),
@@ -45,7 +47,9 @@ export async function GET() {
         deployment,
       },
     })
-  } catch {
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     return NextResponse.json({
       success: false,
       data: {

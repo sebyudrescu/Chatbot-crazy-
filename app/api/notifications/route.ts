@@ -5,9 +5,12 @@ import { parseShopifyConfig } from '@/lib/shopify-auth'
 import { COMMERCE_SLO_THRESHOLDS, errorRateAlert, INGESTION_SLO_THRESHOLDS, jobSloAlert, modelFallbackAlert, operationalWindowKey, tokenExpiryAlert } from '@/lib/operational-alert-policy'
 import { redactOperationalText } from '@/lib/operational-error-safety'
 import { getOperationalJobSlos } from '@/lib/operational-health'
+import { dashboardAuthErrorResponse, requireLegacyOwner } from '@/lib/workspace-auth'
 
 interface Notification { key: string; type: string; severity: 'critical' | 'warning' | 'info'; title: string; description: string; href: string; createdAt: Date }
 export async function GET(request: NextRequest) {
+  try {
+    await requireLegacyOwner(request)
   const now = new Date()
   const limit = Math.min(100, Number(request.nextUrl.searchParams.get('limit')) || 30)
   const staleCutoff = new Date(now.getTime() - 20 * 60 * 1000)
@@ -241,16 +244,28 @@ export async function GET(request: NextRequest) {
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit)
   const states = await prisma.notificationState.findMany({ where: { key: { in: notifications.map(item => item.key) } } }), stateMap = new Map(states.map(item => [item.key, item]))
   const data = notifications.filter(item => !stateMap.get(item.key)?.dismissed).map(item => ({ ...item, read: Boolean(stateMap.get(item.key)?.readAt) }))
-  return NextResponse.json({ success: true, data, unread: data.filter(item => !item.read).length })
+    return NextResponse.json({ success: true, data, unread: data.filter(item => !item.read).length })
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
+    return NextResponse.json({ success: false, error: 'Notifiche non disponibili' }, { status: 500 })
+  }
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json()
-  if (body.all === true && Array.isArray(body.keys)) {
-    await Promise.all(body.keys.slice(0, 200).map((key: string) => prisma.notificationState.upsert({ where: { key }, create: { key, readAt: new Date() }, update: { readAt: new Date() } })))
-    return NextResponse.json({ success: true })
+  try {
+    await requireLegacyOwner(request)
+    const body = await request.json()
+    if (body.all === true && Array.isArray(body.keys)) {
+      await Promise.all(body.keys.slice(0, 200).map((key: string) => prisma.notificationState.upsert({ where: { key }, create: { key, readAt: new Date() }, update: { readAt: new Date() } })))
+      return NextResponse.json({ success: true })
+    }
+    if (typeof body.key !== 'string') return NextResponse.json({ success: false, error: 'Chiave richiesta' }, { status: 400 })
+    const state = await prisma.notificationState.upsert({ where: { key: body.key }, create: { key: body.key, readAt: body.dismissed ? null : new Date(), dismissed: Boolean(body.dismissed) }, update: body.dismissed ? { dismissed: true } : { readAt: new Date() } })
+    return NextResponse.json({ success: true, data: state })
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
+    return NextResponse.json({ success: false, error: 'Notifica non aggiornata' }, { status: 400 })
   }
-  if (typeof body.key !== 'string') return NextResponse.json({ success: false, error: 'Chiave richiesta' }, { status: 400 })
-  const state = await prisma.notificationState.upsert({ where: { key: body.key }, create: { key: body.key, readAt: body.dismissed ? null : new Date(), dismissed: Boolean(body.dismissed) }, update: body.dismissed ? { dismissed: true } : { readAt: new Date() } })
-  return NextResponse.json({ success: true, data: state })
 }

@@ -41,6 +41,8 @@ function isTenantReadyApi(request: NextRequest) {
   if (path === '/api/meta/status' || path === '/api/meta/instagram/connect') return request.method === 'GET'
   if (path === '/api/meta/whatsapp/complete') return request.method === 'POST'
   if (path === '/api/meta/whatsapp/templates') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/meta/client-link') return request.method === 'POST'
+  if (path === '/api/prompt-templates') return request.method === 'GET' || request.method === 'POST'
   if (path === '/api/suggestions') return request.method === 'GET'
   if (/^\/api\/api-keys\/[0-9a-f-]{36}$/i.test(path)) return request.method === 'DELETE'
   if (/^\/api\/messages\/[0-9a-f-]{36}\/revisions$/i.test(path)) return request.method === 'GET' || request.method === 'POST'

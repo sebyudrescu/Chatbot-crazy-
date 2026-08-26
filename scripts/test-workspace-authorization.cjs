@@ -156,6 +156,14 @@ const protectedHelpDeskViews = [
   'app/api/helpdesk/views/route.ts',
   'app/api/helpdesk/views/[id]/route.ts',
 ].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedFinalDashboardTools = [
+  'app/api/meta/client-link/route.ts',
+  'app/api/prompt-templates/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const ownerOnlyOperations = [
+  'app/api/notifications/route.ts',
+  'app/api/system/status/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
@@ -208,5 +216,11 @@ for (const route of protectedHelpDeskViews) {
   assert.match(route, /requireDashboardActor/)
   assert.match(route, /workspaceId/)
 }
+for (const route of protectedFinalDashboardTools) {
+  assert.match(route, /requireDashboardActor/)
+}
+for (const route of ownerOnlyOperations) {
+  assert.match(route, /requireLegacyOwner/)
+}
 
-console.log('Workspace authorization: 189 controlli superati')
+console.log('Workspace authorization: 193 controlli superati')

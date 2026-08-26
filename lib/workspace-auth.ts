@@ -100,6 +100,12 @@ export async function requireDashboardActor(request: NextRequest) {
   return actor;
 }
 
+export async function requireLegacyOwner(request: NextRequest) {
+  const actor = await requireDashboardActor(request);
+  if (actor.kind !== "legacy_owner") throw new DashboardAuthError("Permessi insufficienti", 403);
+  return actor;
+}
+
 export async function requireBotPermission(
   actor: DashboardActor,
   botId: string,
