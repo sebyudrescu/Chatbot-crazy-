@@ -21,6 +21,7 @@ model Workspace {
   memberships        WorkspaceMembership[]
   invitations        WorkspaceInvitation[]
   helpDeskSavedViews HelpDeskSavedView[]
+  auditLogs          WorkspaceAuditLog[]
 
   @@index([kind])
   @@index([createdAt])
@@ -39,6 +40,7 @@ model User {
   memberships        WorkspaceMembership[]
   sessions           UserSession[]
   invitationsCreated WorkspaceInvitation[] @relation("WorkspaceInvitationCreator")
+  workspaceAuditLogs WorkspaceAuditLog[]
 
   @@index([status])
   @@index([createdAt])
@@ -98,6 +100,25 @@ model WorkspaceInvitation {
   @@index([email, expiresAt])
   @@index([expiresAt, acceptedAt, revokedAt])
   @@map("workspace_invitations")
+}
+
+model WorkspaceAuditLog {
+  id          String   @id @default(uuid())
+  workspaceId String
+  actorUserId String?
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("workspace_audit_logs")
 }
 
 model Chatbot {

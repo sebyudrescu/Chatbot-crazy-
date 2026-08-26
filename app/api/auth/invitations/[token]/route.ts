@@ -5,6 +5,7 @@ import { invitationTokenHash, isInvitationToken } from '@/lib/invitation-token'
 import { hashUserPassword, verifyUserPassword } from '@/lib/password-hash'
 import { issueUserSession, USER_SESSION_COOKIE, USER_SESSION_MAX_AGE_SECONDS } from '@/lib/workspace-auth'
 import { checkRateLimit, requestClientIp } from '@/lib/rate-limit'
+import { writeWorkspaceAudit } from '@/lib/workspace-audit'
 
 const AcceptSchema = z.object({ displayName: z.string().trim().min(2).max(120), password: z.string().min(10).max(256) })
 
@@ -51,10 +52,18 @@ export async function POST(request: NextRequest, props: { params: Promise<{ toke
       const account = existing
         ? await tx.user.update({ where: { id: existing.id }, data: { displayName: input.displayName, passwordHash } })
         : await tx.user.create({ data: { email: invitation!.email, displayName: input.displayName, passwordHash } })
-      await tx.workspaceMembership.upsert({
+      const membership = await tx.workspaceMembership.upsert({
         where: { workspaceId_userId: { workspaceId: invitation!.workspaceId, userId: account.id } },
         create: { workspaceId: invitation!.workspaceId, userId: account.id, role: invitation!.role, status: 'active' },
         update: { role: invitation!.role, status: 'active' },
+      })
+      await writeWorkspaceAudit(tx, {
+        workspaceId: invitation!.workspaceId,
+        actor: { kind: 'user', userId: account.id, grants: [] },
+        action: 'invitation.accepted',
+        targetType: 'workspace_membership',
+        targetId: membership.id,
+        metadata: { role: invitation!.role },
       })
       return account
     })

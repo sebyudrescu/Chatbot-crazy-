@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { DashboardAuthError, dashboardAuthErrorResponse, requireDashboardActor } from '@/lib/workspace-auth'
+import { writeWorkspaceAudit } from '@/lib/workspace-audit'
 
 const CreateWorkspaceSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -30,7 +31,11 @@ export async function POST(request: NextRequest) {
     if (actor.kind !== 'legacy_owner') throw new DashboardAuthError('Permessi insufficienti', 403)
     const input = CreateWorkspaceSchema.parse(await request.json())
     const baseSlug = input.slug || input.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    const workspace = await prisma.workspace.create({ data: { name: input.name, slug: baseSlug, kind: 'client' } })
+    const workspace = await prisma.$transaction(async tx => {
+      const created = await tx.workspace.create({ data: { name: input.name, slug: baseSlug, kind: 'client' } })
+      await writeWorkspaceAudit(tx, { workspaceId: created.id, actor, action: 'workspace.created', targetType: 'workspace', targetId: created.id })
+      return created
+    })
     return NextResponse.json({ success: true, data: workspace }, { status: 201 })
   } catch (error) {
     const authResponse = dashboardAuthErrorResponse(error)

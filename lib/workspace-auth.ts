@@ -33,7 +33,7 @@ export const USER_SESSION_COOKIE = "litx_user_session";
 export const USER_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
 
 export class DashboardAuthError extends Error {
-  constructor(message: string, public readonly status: 401 | 403 | 404) {
+  constructor(message: string, public readonly status: 401 | 403 | 404 | 409) {
     super(message);
   }
 }

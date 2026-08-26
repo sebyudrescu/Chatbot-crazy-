@@ -132,6 +132,37 @@ async function verifyWorkspaceIsolation() {
   assert(clientIdentity.response.status === 200 && clientIdentity.body.data?.mode === "client", "Client identity endpoint rejected its session");
   const clientPortal = await fetch(`${baseUrl}/portal`, { headers: { Cookie: `litx_user_session=${token}` } });
   assert(clientPortal.status === 200 && new URL(clientPortal.url).pathname === "/portal", "Client portal is unavailable");
+
+  const ownerMembers = await request(`/api/workspaces/${workspaceA.id}/members`);
+  const viewerMembership = ownerMembers.data?.find((membership) => membership.user?.id === user.id);
+  assert(viewerMembership?.role === "viewer", "Accepted invitation did not create the expected workspace membership");
+  const forbiddenTeamRead = await tenantRequest(`/api/workspaces/${workspaceA.id}/members`, token);
+  assert(forbiddenTeamRead.response.status === 404, "Viewer role could read workspace member administration");
+  const foreignTeamRead = await tenantRequest(`/api/workspaces/${workspaceB.id}/members`, token);
+  assert(foreignTeamRead.response.status === 404, "Tenant could read another workspace member administration");
+  const promotedMembership = await request(`/api/workspaces/${workspaceA.id}/members/${viewerMembership.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role: "operator" }),
+  });
+  assert(promotedMembership.data?.role === "operator", "Workspace member role was not updated");
+  await request(`/api/workspaces/${workspaceA.id}/members/${viewerMembership.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role: "viewer" }),
+  });
+  const pendingEmail = `pending-${suffix}@example.invalid`;
+  await request(`/api/workspaces/${workspaceA.id}/invitations`, {
+    method: "POST",
+    body: JSON.stringify({ email: pendingEmail, role: "operator", expiresInHours: 1 }),
+  });
+  const invitations = await request(`/api/workspaces/${workspaceA.id}/invitations`);
+  const pendingInvitation = invitations.data?.find((item) => item.email === pendingEmail && !item.revokedAt);
+  assert(pendingInvitation, "Pending invitation is missing from workspace administration");
+  await request(`/api/workspaces/${workspaceA.id}/invitations/${pendingInvitation.id}`, { method: "DELETE" });
+  const revokedInvitation = await prisma.workspaceInvitation.findUnique({ where: { id: pendingInvitation.id } });
+  assert(revokedInvitation?.revokedAt, "Workspace invitation was not revoked");
+  const auditActions = await prisma.workspaceAuditLog.findMany({ where: { workspaceId: workspaceA.id }, select: { action: true } });
+  assert(auditActions.some((event) => event.action === "membership.updated"), "Workspace membership update was not audited");
+  assert(auditActions.some((event) => event.action === "invitation.revoked"), "Workspace invitation revocation was not audited");
   const [botA, botB] = await Promise.all([
     prisma.chatbot.create({ data: { workspaceId: workspaceA.id, companyName: "Smoke tenant A agent", isActive: false } }),
     prisma.chatbot.create({ data: { workspaceId: workspaceB.id, companyName: "Smoke tenant B agent", isActive: false } }),

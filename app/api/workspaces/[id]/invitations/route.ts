@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { actorCanAccessWorkspace, DashboardAuthError, dashboardAuthErrorResponse, requireDashboardActor } from '@/lib/workspace-auth'
 import { createInvitationToken, invitationTokenHash } from '@/lib/invitation-token'
+import { writeWorkspaceAudit } from '@/lib/workspace-audit'
 
 const InviteSchema = z.object({
   email: z.string().trim().email().max(320),
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         where: { workspaceId: id, email, acceptedAt: null, revokedAt: null },
         data: { revokedAt: now },
       })
-      await tx.workspaceInvitation.create({
+      const invitation = await tx.workspaceInvitation.create({
         data: {
           workspaceId: id,
           email,
@@ -60,6 +61,14 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
           expiresAt: new Date(now.getTime() + input.expiresInHours * 60 * 60_000),
           createdByUserId: actor.kind === 'user' ? actor.userId : null,
         },
+      })
+      await writeWorkspaceAudit(tx, {
+        workspaceId: id,
+        actor,
+        action: 'invitation.created',
+        targetType: 'workspace_invitation',
+        targetId: invitation.id,
+        metadata: { role: input.role, expiresInHours: input.expiresInHours },
       })
     })
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
