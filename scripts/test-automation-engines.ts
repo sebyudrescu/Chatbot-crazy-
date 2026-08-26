@@ -519,6 +519,21 @@ async function testPartialKnowledgeAvailability() {
   }
 }
 
+const TEST_AGENCY_WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
+
+async function ensureTestAgencyWorkspace() {
+  await prisma.workspace.upsert({
+    where: { id: TEST_AGENCY_WORKSPACE_ID },
+    create: {
+      id: TEST_AGENCY_WORKSPACE_ID,
+      name: "LitX Agency Test",
+      slug: "litx-agency-test",
+      kind: "agency",
+    },
+    update: {},
+  });
+}
+
 async function testDurableIngestionRecovery() {
   const bot = await prisma.chatbot.create({
     data: { workspaceId: "00000000-0000-4000-8000-000000000001", companyName: "Durable ingestion test" },
@@ -602,6 +617,7 @@ async function testDurableIngestionRecovery() {
 }
 
 async function main() {
+  await ensureTestAgencyWorkspace();
   const databaseUrl = new URL(process.env.DATABASE_URL || "");
   assert(
     databaseUrl.searchParams.get("schema") === "codex_automation_test",

@@ -24,7 +24,8 @@ assert.match(channel, /syncCRMContactFromConversation\(conversation\.id\)/);
 assert.match(channel, /CRM sync failed after channel message/);
 
 assert.match(analyticsApi, /prisma\.cRMContact\.count/);
-assert.match(analyticsApi, /\.\.\.\(botId \? \{ botId \} : \{\}\)/);
+assert.match(analyticsApi, /allowedWorkspaceIds\(actor, 'analytics\.read'\)/);
+assert.match(analyticsApi, /const directBotWhere = accessibleBotIds === null \? \{\} : \{ botId: \{ in: accessibleBotIds \} \}/);
 assert.match(analyticsApi, /lastInteraction: \{ gte: since \}/);
 assert.match(analyticsApi, /OR: \[\{ email: \{ not: null \} \}, \{ phone: \{ not: null \} \}\]/);
 assert.match(analyticsUi, /Tutti i clienti/);
@@ -65,4 +66,4 @@ assert.match(importApi, /conversationQualityContractSchema\.safeParse/);
 assert.match(importApi, /conversationTurns: item\.conversationTurns/);
 assert.match(importApi, /qualityContract: item\.qualityContract/);
 
-console.log("Client operations: 46 controlli superati");
+console.log("Client operations: 47 controlli superati");

@@ -131,7 +131,7 @@ async function verifyWorkspaceIsolation() {
   const clientIdentity = await tenantRequest("/api/auth/me", token);
   assert(clientIdentity.response.status === 200 && clientIdentity.body.data?.mode === "client", "Client identity endpoint rejected its session");
   const clientPortal = await fetch(`${baseUrl}/portal`, { headers: { Cookie: `litx_user_session=${token}` } });
-  assert(clientPortal.status === 200 && (await clientPortal.text()).includes("Portale cliente"), "Client portal is unavailable");
+  assert(clientPortal.status === 200 && new URL(clientPortal.url).pathname === "/portal", "Client portal is unavailable");
   const [botA, botB] = await Promise.all([
     prisma.chatbot.create({ data: { workspaceId: workspaceA.id, companyName: "Smoke tenant A agent", isActive: false } }),
     prisma.chatbot.create({ data: { workspaceId: workspaceB.id, companyName: "Smoke tenant B agent", isActive: false } }),
