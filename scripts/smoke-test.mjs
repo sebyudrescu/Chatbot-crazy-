@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
 const baseUrl = process.env.SMOKE_BASE_URL || "http://localhost:3000";
 const prisma = new PrismaClient();
@@ -97,21 +97,37 @@ async function verifyWorkspaceIsolation() {
     data: { name: "Smoke tenant B", slug: `smoke-tenant-b-${suffix}` },
   });
   tenantWorkspaceIds.push(workspaceB.id);
-  const user = await prisma.user.create({
-    data: { email: `smoke-${suffix}@example.invalid`, displayName: "Smoke tenant viewer" },
+  const email = `smoke-${suffix}@example.invalid`;
+  const password = `Smoke-password-${suffix}!`;
+  const invitation = await request(`/api/workspaces/${workspaceA.id}/invitations`, {
+    method: "POST",
+    body: JSON.stringify({ email, role: "viewer", expiresInHours: 1 }),
   });
+  const invitationToken = new URL(invitation.data.acceptUrl).searchParams.get("token");
+  assert(invitationToken, "Workspace invitation did not return its one-time acceptance URL");
+  const invitationStatus = await fetch(`${baseUrl}/api/auth/invitations/${invitationToken}`);
+  assert(invitationStatus.status === 200, "Fresh workspace invitation is not readable");
+  const acceptance = await fetch(`${baseUrl}/api/auth/invitations/${invitationToken}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ displayName: "Smoke tenant viewer", password }),
+  });
+  assert(acceptance.status === 200, "Workspace invitation cannot be accepted");
+  const acceptedCookie = (acceptance.headers.get("set-cookie") || "").match(/litx_user_session=([^;]+)/)?.[1];
+  assert(acceptedCookie, "Invitation acceptance did not create a client session");
+  const reusedInvitation = await fetch(`${baseUrl}/api/auth/invitations/${invitationToken}`);
+  assert(reusedInvitation.status === 410, "Accepted invitation remained reusable");
+  const user = await prisma.user.findUnique({ where: { email } });
+  assert(user, "Invitation acceptance did not create the client account");
   tenantUserId = user.id;
-  await prisma.workspaceMembership.create({
-    data: { workspaceId: workspaceA.id, userId: user.id, role: "viewer" },
+  const clientLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
   });
-  const token = randomBytes(48).toString("base64url");
-  await prisma.userSession.create({
-    data: {
-      userId: user.id,
-      tokenHash: createHash("sha256").update(token).digest("hex"),
-      expiresAt: new Date(Date.now() + 10 * 60_000),
-    },
-  });
+  assert(clientLogin.status === 200, "Client cannot sign in with the accepted credentials");
+  const token = (clientLogin.headers.get("set-cookie") || "").match(/litx_user_session=([^;]+)/)?.[1];
+  assert(token, "Client login did not return a session cookie");
   const [botA, botB] = await Promise.all([
     prisma.chatbot.create({ data: { workspaceId: workspaceA.id, companyName: "Smoke tenant A agent", isActive: false } }),
     prisma.chatbot.create({ data: { workspaceId: workspaceB.id, companyName: "Smoke tenant B agent", isActive: false } }),
@@ -1777,6 +1793,8 @@ try {
           "workspace-tenant-isolation",
           "workspace-role-enforcement",
           "workspace-session-rejection",
+          "workspace-invitation-acceptance",
+          "workspace-client-login",
         ],
       },
       null,

@@ -181,6 +181,7 @@ jobs:
         run: |
           npm run test:auth
           npm run test:workspace-auth
+          npm run test:client-auth
           npm run test:prompt
           npm run test:memory
           npm run test:quality
