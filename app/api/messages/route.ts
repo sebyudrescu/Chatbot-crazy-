@@ -7,12 +7,15 @@ import { sendMetaText } from '@/lib/meta-messaging'
 import { whatsappServiceWindow } from '@/lib/meta-payloads'
 import { syncCRMContactFromConversation } from '@/lib/crm-sync'
 import { recordHelpDeskOperatorReply } from '@/lib/helpdesk-operations'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 // POST /api/messages - Create a message
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const validatedData = CreateMessageSchema.parse(body)
+    const actor = await requireDashboardActor(request)
+    await requireResourcePermission(actor, 'conversation', validatedData.conversationId, 'conversation.write')
     const conversation = await prisma.conversation.findUnique({
       where: { id: validatedData.conversationId },
       include: { messages: { where: { role: 'user' }, orderBy: { createdAt: 'desc' }, take: 1 } },
@@ -79,6 +82,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error creating message:', error)
     return NextResponse.json(
       {

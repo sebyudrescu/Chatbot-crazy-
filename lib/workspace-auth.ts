@@ -121,7 +121,7 @@ export async function accessibleBotIds(actor: DashboardActor, permission: Worksp
   })).map((bot) => bot.id);
 }
 
-export type DashboardResourceKind = "action" | "workflow" | "evaluation" | "integration" | "contact" | "conversation" | "product" | "ingestionJob";
+export type DashboardResourceKind = "action" | "workflow" | "evaluation" | "integration" | "contact" | "conversation" | "product" | "ingestionJob" | "apiKey" | "message" | "suggestion";
 
 export async function requireResourcePermission(
   actor: DashboardActor,
@@ -143,7 +143,15 @@ export async function requireResourcePermission(
               ? await prisma.conversation.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
               : kind === "product"
                 ? await prisma.product.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
-                : await prisma.ingestionJob.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } });
+                : kind === "ingestionJob"
+                  ? await prisma.ingestionJob.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+                  : kind === "apiKey"
+                    ? await prisma.agentApiKey.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+                    : kind === "message"
+                      ? await prisma.message.findUnique({ where: { id: resourceId }, select: { id: true, conversation: { select: { botId: true } } } })
+                        .then((message) => message ? { id: message.id, botId: message.conversation.botId } : null)
+                      : await prisma.improvementSuggestion.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+                        .then((suggestion) => suggestion?.botId ? { id: suggestion.id, botId: suggestion.botId } : null);
   if (!resource) throw new DashboardAuthError("Risorsa non trovata", 404);
   await requireBotPermission(actor, resource.botId, permission);
   return resource;

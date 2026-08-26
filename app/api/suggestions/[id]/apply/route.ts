@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { buildSuggestionAuditEvent } from '@/lib/suggestion-audit'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 const executableActions = new Set(['create_safety_tests', 'create_handoff_workflow'])
 
-export async function POST(_: NextRequest, props: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  try {
   const params = await props.params;
+  const actor = await requireDashboardActor(request)
+  await requireResourcePermission(actor, 'suggestion', params.id, 'chatbot.write')
   const suggestion = await prisma.improvementSuggestion.findUnique({ where: { id: params.id } })
   if (!suggestion || !suggestion.botId) return NextResponse.json({ success: false, error: 'Suggerimento non trovato' }, { status: 404 })
   if (!executableActions.has(suggestion.actionType)) {
@@ -34,4 +38,5 @@ export async function POST(_: NextRequest, props: { params: Promise<{ id: string
   if (result === 'missing') return NextResponse.json({ success: false, error: 'Suggerimento non trovato' }, { status: 404 })
   if (result === 'conflict') return NextResponse.json({ success: false, error: 'Suggerimento aggiornato da un’altra richiesta' }, { status: 409 })
   return NextResponse.json({ success: true, actionType: suggestion.actionType, applied: result === 'applied' })
+  } catch (error) { const authResponse = dashboardAuthErrorResponse(error); if (authResponse) return authResponse; return NextResponse.json({ success: false, error: 'Applicazione non riuscita' }, { status: 400 }) }
 }

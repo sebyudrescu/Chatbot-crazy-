@@ -114,6 +114,15 @@ const protectedAgentOperations = [
   'app/api/ai-usage/route.ts',
   'app/api/search/route.ts',
 ].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedClientTools = [
+  'app/api/api-keys/route.ts',
+  'app/api/api-keys/[id]/route.ts',
+  'app/api/messages/route.ts',
+  'app/api/messages/[id]/revisions/route.ts',
+  'app/api/suggestions/route.ts',
+  'app/api/suggestions/[id]/route.ts',
+  'app/api/suggestions/[id]/apply/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
@@ -146,5 +155,9 @@ for (const route of protectedAgentOperations) {
   assert.match(route, /requireDashboardActor/)
   assert.match(route, /requireBotPermission|accessibleBotIds|allowedWorkspaceIds/)
 }
+for (const route of protectedClientTools) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireResourcePermission|requireBotPermission|accessibleBotIds/)
+}
 
-console.log('Workspace authorization: 125 controlli superati')
+console.log('Workspace authorization: 139 controlli superati')
