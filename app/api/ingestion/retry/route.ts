@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { retryFailedIngestionJob } from "@/lib/operational-health";
 import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from "@/lib/workspace-auth";
 
 const RetrySchema = z.object({ jobId: z.string().uuid() });
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const { jobId } = RetrySchema.parse(await request.json());
+    await requireResourcePermission(actor, "ingestionJob", jobId, "chatbot.write");
     const job = await retryFailedIngestionJob(jobId);
     const workflow = await enqueueIngestionWorkflow(job.id);
     return NextResponse.json({
@@ -15,6 +18,8 @@ export async function POST(request: NextRequest) {
       data: { id: job.id, status: job.status, workflowRunId: workflow.runId },
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     if (error instanceof Error && error.message === "JOB_NOT_FOUND") {
       return NextResponse.json(
         { success: false, error: "Job non trovato" },

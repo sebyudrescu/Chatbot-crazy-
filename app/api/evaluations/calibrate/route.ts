@@ -3,12 +3,15 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { ChatbotSettingsSchema } from '@/lib/types'
 import { calibrateRagThresholds } from '@/lib/retrieval-metrics'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 const InputSchema = z.object({ botId: z.string().uuid() })
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const { botId } = InputSchema.parse(await request.json())
+    await requireBotPermission(actor, botId, 'chatbot.write')
     const [chatbot, runs] = await Promise.all([
       prisma.chatbot.findUnique({ where: { id: botId }, select: { settings: true } }),
       prisma.evaluationRun.findMany({
@@ -43,6 +46,8 @@ export async function POST(request: NextRequest) {
     await prisma.chatbot.update({ where: { id: botId }, data: { settings: JSON.stringify(settings) } })
     return NextResponse.json({ success: true, data: { ...calibrated, calibratedAt } })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Calibrazione non riuscita' }, { status: 400 })
   }
 }

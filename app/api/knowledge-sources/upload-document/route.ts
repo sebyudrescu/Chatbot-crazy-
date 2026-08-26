@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { extractTextFromDOCX, extractTextFromPDF, extractTextFromPlainFile, normalizeDocumentText } from '@/lib/document-processors'
 import { processAndStoreDocument } from '@/lib/rag-pipeline'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 const allowed = new Set(['pdf', 'docx', 'txt', 'csv'])
 function validateSignature(buffer: Buffer, extension: string) {
@@ -27,9 +28,11 @@ async function extract(buffer: Buffer, extension: string) {
 }
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const form = await request.formData(), file = form.get('file')
     const botId = String(form.get('botId') || ''), previewOnly = form.get('previewOnly') === 'true'
     if (!(file instanceof File) || !botId) return NextResponse.json({ success: false, error: 'File e agente sono obbligatori' }, { status: 400 })
+    await requireBotPermission(actor, botId, 'chatbot.write')
     const extension = file.name.split('.').pop()?.toLowerCase() || ''
     if (!allowed.has(extension)) return NextResponse.json({ success: false, error: 'Formato supportato: PDF, DOCX, TXT o CSV' }, { status: 400 })
     if (file.size > 15 * 1024 * 1024) return NextResponse.json({ success: false, error: 'Il file supera il limite di 15 MB' }, { status: 400 })
@@ -54,5 +57,5 @@ export async function POST(request: NextRequest) {
     const processed = await processAndStoreDocument(botId, source.id, extension, text)
     if (!processed.success) return NextResponse.json({ success: false, error: processed.error || 'Indicizzazione non riuscita', sourceId: source.id }, { status: 500 })
     return NextResponse.json({ success: true, data: { ...stats, sourceId: source.id, status: 'completed', chunks: processed.chunkCount } }, { status: 201 })
-  } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Importazione non riuscita' }, { status: 500 }) }
+  } catch (error) { const authResponse = dashboardAuthErrorResponse(error); if (authResponse) return authResponse; return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Importazione non riuscita' }, { status: 500 }) }
 }

@@ -5,9 +5,13 @@ import { deliverWebhook } from '@/lib/webhook-delivery'
 import { assertSafeRemoteUrl } from '@/lib/url-safety'
 import { decryptConfigSecrets } from '@/lib/secret-config'
 import { deliverEmailNotification } from '@/lib/email-notifications'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
-export async function POST(_: NextRequest, props: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  try {
   const params = await props.params;
+  const actor = await requireDashboardActor(request)
+  await requireResourcePermission(actor, 'integration', params.id, 'chatbot.write')
   const connection = await prisma.integrationConnection.findUnique({ where: { id: params.id } })
   if (!connection) return NextResponse.json({ success: false, error: 'Connessione non trovata' }, { status: 404 })
   const config = decryptConfigSecrets(JSON.parse(connection.config || '{}')) as Record<string, string>
@@ -49,4 +53,9 @@ export async function POST(_: NextRequest, props: { params: Promise<{ id: string
     return NextResponse.json({ success: ok, status: response.status, error: ok ? undefined : `Il servizio ha risposto HTTP ${response.status}` }, { status: ok ? 200 : 502 })
   } catch { await prisma.integrationConnection.update({ where: { id: params.id }, data: { status: 'error', lastTestedAt: new Date(), lastError: 'Servizio non raggiungibile' } }); return NextResponse.json({ success: false, error: 'Servizio non raggiungibile' }, { status: 502 }) }
   finally { clearTimeout(timer) }
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Test non riuscito' }, { status: 400 })
+  }
 }

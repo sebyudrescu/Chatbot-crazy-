@@ -121,7 +121,7 @@ export async function accessibleBotIds(actor: DashboardActor, permission: Worksp
   })).map((bot) => bot.id);
 }
 
-export type DashboardResourceKind = "action" | "workflow" | "evaluation" | "integration" | "contact" | "conversation" | "product";
+export type DashboardResourceKind = "action" | "workflow" | "evaluation" | "integration" | "contact" | "conversation" | "product" | "ingestionJob";
 
 export async function requireResourcePermission(
   actor: DashboardActor,
@@ -141,7 +141,9 @@ export async function requireResourcePermission(
             ? await prisma.cRMContact.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
             : kind === "conversation"
               ? await prisma.conversation.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
-              : await prisma.product.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } });
+              : kind === "product"
+                ? await prisma.product.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+                : await prisma.ingestionJob.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } });
   if (!resource) throw new DashboardAuthError("Risorsa non trovata", 404);
   await requireBotPermission(actor, resource.botId, permission);
   return resource;

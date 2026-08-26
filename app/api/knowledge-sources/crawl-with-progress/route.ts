@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { createIngestionJob, JobType } from "@/lib/ingestion-queue";
 import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 export const maxDuration = 300;
 
@@ -15,7 +16,9 @@ const CrawlSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const input = CrawlSchema.parse(await request.json());
+    await requireBotPermission(actor, input.botId, "chatbot.write");
     const chatbot = await prisma.chatbot.findUnique({
       where: { id: input.botId },
       select: { id: true },
@@ -50,6 +53,8 @@ export async function POST(request: NextRequest) {
       { status: 202 },
     );
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       {
         success: false,

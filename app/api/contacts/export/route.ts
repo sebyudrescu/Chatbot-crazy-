@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { accessibleBotIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 function safeCell(value: unknown) {
   let text = String(value ?? "").replace(/\r?\n/g, " ");
@@ -17,9 +18,13 @@ function parseList(value: string) {
 }
 
 export async function GET(request: NextRequest) {
+  try {
+  const actor = await requireDashboardActor(request);
   const botId = request.nextUrl.searchParams.get("botId");
+  if (botId && botId !== "all") await requireBotPermission(actor, botId, "chatbot.read");
+  const accessibleIds = botId && botId !== "all" ? null : await accessibleBotIds(actor, "chatbot.read");
   const contacts = await prisma.cRMContact.findMany({
-    where: botId && botId !== "all" ? { botId } : undefined,
+    where: botId && botId !== "all" ? { botId } : accessibleIds === null ? undefined : { botId: { in: accessibleIds } },
     include: { chatbot: { select: { companyName: true } } },
     orderBy: { lastInteraction: "desc" },
     take: 50_000,
@@ -54,4 +59,9 @@ export async function GET(request: NextRequest) {
       "Cache-Control": "private, no-store",
     },
   });
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ success: false, error: "Esportazione non riuscita" }, { status: 500 });
+  }
 }

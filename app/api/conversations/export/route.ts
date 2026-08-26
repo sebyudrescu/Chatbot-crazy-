@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { parseJSON } from '@/lib/utils'
+import { accessibleBotIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 const cell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`
 
 export async function GET(request: NextRequest) {
+  try {
+  const actor = await requireDashboardActor(request)
   const botId = request.nextUrl.searchParams.get('botId')
+  if (botId && botId !== 'all') await requireBotPermission(actor, botId, 'conversation.read')
+  const accessibleIds = botId && botId !== 'all' ? null : await accessibleBotIds(actor, 'conversation.read')
   const status = request.nextUrl.searchParams.get('status')
   const priority = request.nextUrl.searchParams.get('priority')
   const channel = request.nextUrl.searchParams.get('channel')
@@ -22,7 +27,7 @@ export async function GET(request: NextRequest) {
         : {}
   const conversations = await prisma.conversation.findMany({
     where: {
-      ...(botId && botId !== 'all' ? { botId } : {}),
+      ...(botId && botId !== 'all' ? { botId } : accessibleIds === null ? {} : { botId: { in: accessibleIds } }),
       ...(status === 'open' ? { isResolved: false } : {}),
       ...(status === 'resolved' ? { isResolved: true } : {}),
       ...(status === 'escalated' ? { needsHumanEscalation: true } : {}),
@@ -70,4 +75,9 @@ export async function GET(request: NextRequest) {
       'Cache-Control': 'private, no-store',
     },
   })
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
+    return NextResponse.json({ success: false, error: 'Esportazione non riuscita' }, { status: 500 })
+  }
 }

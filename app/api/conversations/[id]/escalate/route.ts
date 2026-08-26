@@ -2,6 +2,7 @@ import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { emitIntegrationWebhook } from '@/lib/integration-webhooks'
 import { escalateHelpDeskConversation, returnHelpDeskConversationToBot } from '@/lib/helpdesk-operations'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 /**
  * POST /api/conversations/[id]/escalate
@@ -10,6 +11,8 @@ import { escalateHelpDeskConversation, returnHelpDeskConversationToBot } from '@
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const actor = await requireDashboardActor(request)
+    await requireResourcePermission(actor, 'conversation', params.id, 'conversation.write')
     const { reason, assignedAgent } = await request.json()
     const conversationId = params.id
 
@@ -42,6 +45,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       message: 'Conversation escalated successfully. A human agent will assist you shortly.',
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error escalating conversation:', error)
     return NextResponse.json(
       { error: 'Failed to escalate conversation' },
@@ -57,6 +62,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const actor = await requireDashboardActor(request)
+    await requireResourcePermission(actor, 'conversation', params.id, 'conversation.write')
     const conversationId = params.id
 
     const current = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { botId: true } })
@@ -69,6 +76,8 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
       conversation: updatedConversation,
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error removing escalation:', error)
     return NextResponse.json(
       { error: 'Failed to remove escalation' },

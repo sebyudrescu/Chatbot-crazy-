@@ -6,6 +6,7 @@ import {
   WidgetFunctionAlreadyFailedError,
   WidgetFunctionInProgressError,
 } from "@/lib/widget-function-runtime";
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from "@/lib/workspace-auth";
 
 const PayloadSchema = z.object({
   invocationId: z.string().uuid().optional(),
@@ -26,6 +27,8 @@ export async function POST(
   }
   const { id, functionId } = await route.params;
   try {
+    const actor = await requireDashboardActor(request);
+    await requireResourcePermission(actor, "action", id, "chatbot.write");
     const payload = PayloadSchema.parse(await request.json());
     const rate = await checkRateLimit(
       `owner-widget-function:${id}:${functionId}:${requestClientIp(request.headers)}`,
@@ -41,6 +44,8 @@ export async function POST(
     });
     return NextResponse.json({ success: true, data });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     const status = error instanceof WidgetFunctionInProgressError
       ? 409
       : error instanceof WidgetFunctionAlreadyFailedError

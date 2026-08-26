@@ -7,6 +7,24 @@ const publicPrefixes = ['/agent/', '/api/auth/', '/api/embed/', '/api/v1/', '/ap
 
 function isTenantReadyApi(request: NextRequest) {
   const path = request.nextUrl.pathname
+  const knowledgeMutationRoutes = new Set([
+    '/api/knowledge-sources/add-url',
+    '/api/knowledge-sources/crawl-site',
+    '/api/knowledge-sources/crawl-with-progress',
+    '/api/knowledge-sources/manual',
+    '/api/knowledge-sources/upload-document',
+    '/api/knowledge-sources/upload-pdf',
+    '/api/ingestion/add-url',
+    '/api/ingestion/cancel',
+    '/api/ingestion/crawl',
+    '/api/ingestion/retry',
+    '/api/ingestion/upload-pdf',
+  ])
+  if (knowledgeMutationRoutes.has(path)) return request.method === 'POST'
+  if (path === '/api/knowledge-sources/sync') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/ingestion/status') return request.method === 'GET'
+  if (path === '/api/evaluations/calibrate' || path === '/api/evaluations/judge' || path === '/api/evaluations/runs') return request.method === 'POST'
+  if (path === '/api/conversations/export' || path === '/api/contacts/export') return request.method === 'GET'
   if (path === '/api/analytics') return request.method === 'GET'
   if (path === '/api/conversations') return request.method === 'GET'
   if (path === '/api/chatbots/import') return request.method === 'POST'
@@ -21,6 +39,17 @@ function isTenantReadyApi(request: NextRequest) {
   if (path === '/api/knowledge-sources') return request.method === 'GET' || request.method === 'POST' || request.method === 'DELETE'
   if (/^\/api\/(actions|workflows|evaluations|integrations|contacts|commerce|conversations)\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(path)) {
     return request.method === 'GET' || request.method === 'PATCH' || request.method === 'DELETE'
+  }
+  if (/^\/api\/actions\/[0-9a-f-]{36}\/simulate$/i.test(path)) return request.method === 'POST'
+  if (/^\/api\/actions\/[0-9a-f-]{36}\/widget-functions\/[0-9a-f-]{36}$/i.test(path)) return request.method === 'POST'
+  if (/^\/api\/actions\/[0-9a-f-]{36}\/widget-versions$/i.test(path)) return request.method === 'GET'
+  if (/^\/api\/actions\/[0-9a-f-]{36}\/widget-versions\/\d+\/restore$/i.test(path)) return request.method === 'POST'
+  if (/^\/api\/workflows\/[0-9a-f-]{36}\/simulate$/i.test(path)) return request.method === 'POST'
+  if (/^\/api\/integrations\/[0-9a-f-]{36}\/(deliveries|test)$/i.test(path)) return request.method === (path.endsWith('/test') ? 'POST' : 'GET')
+  if (/^\/api\/conversations\/[0-9a-f-]{36}\/(assist|escalate|trace)$/i.test(path)) {
+    if (path.endsWith('/trace')) return request.method === 'GET'
+    if (path.endsWith('/assist')) return request.method === 'POST'
+    return request.method === 'POST' || request.method === 'DELETE'
   }
   if (/^\/api\/workspaces\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/invitations$/i.test(path)) {
     return request.method === 'GET' || request.method === 'POST'

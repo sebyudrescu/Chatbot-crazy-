@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { createIngestionJob, JobType } from "@/lib/ingestion-queue";
 import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
 import { assertSafeRemoteUrl } from "@/lib/url-safety";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 export const maxDuration = 300;
 
@@ -14,7 +15,9 @@ const AddURLSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const input = AddURLSchema.parse(await request.json());
+    await requireBotPermission(actor, input.botId, "chatbot.write");
     const safeUrl = await assertSafeRemoteUrl(input.url);
     const url = safeUrl.toString();
     const bot = await prisma.chatbot.findUnique({
@@ -68,6 +71,8 @@ export async function POST(request: NextRequest) {
       { status: 202 },
     );
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       {
         success: false,

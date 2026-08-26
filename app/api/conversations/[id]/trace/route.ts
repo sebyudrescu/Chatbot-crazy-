@@ -9,11 +9,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildDecisionTrace } from '@/lib/decision-tracer'
 import { prisma } from '@/lib/db'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
     const { id: conversationId } = params
+    const actor = await requireDashboardActor(request)
+    await requireResourcePermission(actor, 'conversation', conversationId, 'conversation.read')
 
     // Get all assistant messages in conversation
     const messages = await prisma.message.findMany({
@@ -47,6 +50,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       traces: validTraces
     })
   } catch (error: any) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('[ConversationTrace] Error:', error)
     return NextResponse.json(
       { error: 'Failed to build conversation traces', details: error.message },

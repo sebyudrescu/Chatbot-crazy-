@@ -8,9 +8,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createIngestionJob, JobType } from '@/lib/ingestion-queue'
 import { enqueueIngestionWorkflow } from '@/lib/enqueue-ingestion-workflow'
+import { assertSafeRemoteUrl } from '@/lib/url-safety'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const body = await request.json()
     const { botId, url, priority = 5 } = body
 
@@ -20,10 +23,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    await requireBotPermission(actor, botId, 'chatbot.write')
 
     // Validate URL
     try {
-      new URL(url)
+      await assertSafeRemoteUrl(url)
     } catch {
       return NextResponse.json(
         { success: false, error: 'Invalid URL format' },
@@ -53,6 +57,8 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('[API] Add URL error:', error)
     return NextResponse.json(
       { success: false, error: error.message },

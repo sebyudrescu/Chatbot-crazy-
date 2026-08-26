@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
   decryptConfigSecrets,
@@ -11,12 +11,16 @@ import {
   widgetRemoteUrls,
 } from "@/lib/widget-definition";
 import { assertSafeHttpsRemoteUrl } from "@/lib/url-safety";
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from "@/lib/workspace-auth";
 
 export async function POST(
-  _: Request,
+  request: NextRequest,
   context: { params: Promise<{ id: string; version: string }> },
 ) {
+  try {
   const { id, version: rawVersion } = await context.params;
+  const actor = await requireDashboardActor(request);
+  await requireResourcePermission(actor, "action", id, "chatbot.write");
   const version = Number(rawVersion);
   if (!Number.isInteger(version) || version < 1) {
     return NextResponse.json({ success: false, error: "Versione non valida" }, { status: 400 });
@@ -56,4 +60,9 @@ export async function POST(
     return next;
   });
   return NextResponse.json({ success: true, data: { id: updated.id, restoredVersion: version } });
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Ripristino non riuscito" }, { status: 400 });
+  }
 }

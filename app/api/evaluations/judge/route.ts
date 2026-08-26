@@ -15,6 +15,7 @@ import {
   conversationQualityRequestSchema,
   evaluateConversationQuality,
 } from "@/lib/conversation-quality-benchmark";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 const InputSchema = z.object({
   botId: z.string().uuid(),
@@ -72,7 +73,9 @@ function retrievalBenchmark(candidateIds: string[], relevantIndexes: number[], a
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const input = InputSchema.parse(await request.json());
+    await requireBotPermission(actor, input.botId, "chatbot.read");
     const benchmarkType = inferEvaluationBenchmarkType(input.expectedKeywords, input.forbiddenKeywords);
     const retrievalApplicable = benchmarkType === "grounded" && !matchesIdentityQuestion(input.question);
     const candidates = await retrieveBenchmarkCandidates({ botId: input.botId, query: input.question, topK: 20 });
@@ -235,6 +238,8 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : "Valutazione non riuscita",

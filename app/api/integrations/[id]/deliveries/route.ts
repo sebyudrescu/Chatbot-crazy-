@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from "@/lib/workspace-auth";
 
 const parse = (value: string | null) => {
   try {
@@ -10,10 +11,13 @@ const parse = (value: string | null) => {
 };
 
 export async function GET(
-  _: NextRequest,
+  request: NextRequest,
   props: { params: Promise<{ id: string }> },
 ) {
+  try {
   const { id } = await props.params;
+  const actor = await requireDashboardActor(request);
+  await requireResourcePermission(actor, "integration", id, "chatbot.read");
   const connection = await prisma.integrationConnection.findUnique({
     where: { id },
     select: { id: true, botId: true, provider: true },
@@ -49,4 +53,9 @@ export async function GET(
       createdAt: event.timestamp,
     }));
   return NextResponse.json({ success: true, data: deliveries });
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ success: false, error: "Consegne non disponibili" }, { status: 500 });
+  }
 }

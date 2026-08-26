@@ -4,12 +4,15 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { parseJSON } from '@/lib/utils'
 import { recordAIUsage } from '@/lib/ai-usage'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 const Schema = z.object({ mode: z.enum(['summary', 'reply']).default('reply') })
 
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await props.params
+    const actor = await requireDashboardActor(request)
+    await requireResourcePermission(actor, 'conversation', id, 'conversation.read')
     const { mode } = Schema.parse(await request.json())
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ success: false, error: 'OpenAI non configurato sul server' }, { status: 503 })
@@ -94,6 +97,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
     return NextResponse.json({ success: true, data })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Assistenza AI non riuscita' }, { status: 400 })
   }
 }

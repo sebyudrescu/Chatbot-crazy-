@@ -74,9 +74,40 @@ const protectedItems = [
   'app/api/commerce/[productId]/route.ts',
   'app/api/conversations/[id]/route.ts',
 ].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedKnowledgeOperations = [
+  'app/api/knowledge-sources/add-url/route.ts',
+  'app/api/knowledge-sources/crawl-with-progress/route.ts',
+  'app/api/knowledge-sources/manual/route.ts',
+  'app/api/knowledge-sources/sync/route.ts',
+  'app/api/knowledge-sources/upload-document/route.ts',
+  'app/api/ingestion/add-url/route.ts',
+  'app/api/ingestion/cancel/route.ts',
+  'app/api/ingestion/crawl/route.ts',
+  'app/api/ingestion/retry/route.ts',
+  'app/api/ingestion/status/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedOperationalRoutes = [
+  'app/api/actions/[id]/simulate/route.ts',
+  'app/api/actions/[id]/widget-functions/[functionId]/route.ts',
+  'app/api/actions/[id]/widget-versions/route.ts',
+  'app/api/actions/[id]/widget-versions/[version]/restore/route.ts',
+  'app/api/workflows/[id]/simulate/route.ts',
+  'app/api/evaluations/calibrate/route.ts',
+  'app/api/evaluations/judge/route.ts',
+  'app/api/evaluations/runs/route.ts',
+  'app/api/integrations/[id]/deliveries/route.ts',
+  'app/api/integrations/[id]/test/route.ts',
+  'app/api/conversations/[id]/assist/route.ts',
+  'app/api/conversations/[id]/escalate/route.ts',
+  'app/api/conversations/[id]/trace/route.ts',
+  'app/api/conversations/export/route.ts',
+  'app/api/contacts/export/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
+assert.match(proxy, /knowledgeMutationRoutes/)
+assert.match(proxy, /\/api\/ingestion\/status/)
 assert.match(chatbots, /workspaceWhere\(actor, "chatbot\.read"\)/)
 assert.match(chatbots, /workspaceForNewChatbot/)
 assert.match(chatbot, /requireBotPermission\(actor, params\.id, "chatbot\.read"\)/)
@@ -92,5 +123,13 @@ for (const route of protectedItems) {
   assert.match(route, /requireDashboardActor/)
   assert.match(route, /requireResourcePermission|requireBotPermission/)
 }
+for (const route of protectedKnowledgeOperations) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireResourcePermission|requireBotPermission/)
+}
+for (const route of protectedOperationalRoutes) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireResourcePermission|requireBotPermission|accessibleBotIds/)
+}
 
-console.log('Workspace authorization: 55 controlli superati')
+console.log('Workspace authorization: 107 controlli superati')

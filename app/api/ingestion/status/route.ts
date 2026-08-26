@@ -6,16 +6,19 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getJobStatus, getBotJobs } from '@/lib/ingestion-queue'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const searchParams = request.nextUrl.searchParams
     const jobId = searchParams.get('jobId')
     const botId = searchParams.get('botId')
 
     if (jobId) {
+      await requireResourcePermission(actor, 'ingestionJob', jobId, 'chatbot.read')
       // Get specific job status
       const job = await getJobStatus(jobId)
 
@@ -47,6 +50,7 @@ export async function GET(request: NextRequest) {
       })
 
     } else if (botId) {
+      await requireBotPermission(actor, botId, 'chatbot.read')
       // Get all jobs for bot
       const jobs = await getBotJobs(botId)
 
@@ -78,6 +82,8 @@ export async function GET(request: NextRequest) {
     }
 
   } catch (error: any) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('[API] Status check error:', error)
     return NextResponse.json(
       { success: false, error: error.message },

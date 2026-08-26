@@ -5,6 +5,7 @@ import {
   scheduleKnowledgeSync,
 } from "@/lib/knowledge-sync";
 import { enqueueIngestionWorkflow } from "@/lib/enqueue-ingestion-workflow";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 const ScheduleSchema = z.object({
   botId: z.string().uuid(),
@@ -19,21 +20,27 @@ const noStore = (body: unknown, status = 200) =>
 
 export async function GET(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const botId = request.nextUrl.searchParams.get("botId") || undefined;
     if (botId) z.string().uuid().parse(botId);
+    if (botId) await requireBotPermission(actor, botId, "chatbot.read");
     return noStore({
       success: true,
       data: await getKnowledgeSyncPreview(botId),
       automationConfigured: false,
     });
-  } catch {
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return noStore({ success: false, error: "Agente non valido" }, 400);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const input = ScheduleSchema.parse(await request.json());
+    await requireBotPermission(actor, input.botId, "chatbot.write");
     const scheduled = await scheduleKnowledgeSync(input);
     const workflows = await Promise.all(
       scheduled.jobs
@@ -48,6 +55,8 @@ export async function POST(request: NextRequest) {
       data: { ...scheduled, workflows },
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return noStore(
       {
         success: false,

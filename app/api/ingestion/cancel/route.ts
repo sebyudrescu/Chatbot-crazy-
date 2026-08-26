@@ -7,9 +7,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const body = await request.json()
     const { botId } = body
 
@@ -19,6 +21,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    await requireBotPermission(actor, botId, 'chatbot.write')
 
     console.log(`[Cancel] Cancelling all jobs for bot ${botId}`)
 
@@ -55,6 +58,8 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('[Cancel] Error:', error)
     return NextResponse.json(
       { success: false, error: error.message },

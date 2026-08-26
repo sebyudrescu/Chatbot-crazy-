@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { WorkflowStepSchema } from "@/lib/workflow-schema";
 import { simulateWorkflow } from "@/lib/workflow-simulator";
 import { decryptConfigSecrets } from "@/lib/secret-config";
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from "@/lib/workspace-auth";
 
 const RequestSchema = z.object({
   message: z.string().trim().min(1).max(4000),
@@ -21,6 +22,8 @@ export async function POST(
 ) {
   try {
     const { id } = await props.params;
+    const actor = await requireDashboardActor(request);
+    await requireResourcePermission(actor, "workflow", id, "chatbot.read");
     const input = RequestSchema.parse(await request.json());
     const workflow = await prisma.workflow.findUnique({ where: { id } });
     if (!workflow) {
@@ -47,6 +50,8 @@ export async function POST(
     });
     return NextResponse.json({ success: true, data });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       {
         success: false,
