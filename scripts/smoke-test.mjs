@@ -755,6 +755,19 @@ try {
       crmExportCsv.includes("qualified"),
     "CRM CSV export failed",
   );
+  const analytics = await request(`/api/analytics?botId=${botId}&days=30`);
+  const commercial = analytics.data?.commercial;
+  const conversionStage = commercial?.funnel?.stages?.find(item => item.stage === "conversion");
+  const qualifiedStage = commercial?.leads?.stages?.find(item => item.stage === "qualified");
+  assert(
+    commercial?.dataQuality?.complete === true &&
+      conversionStage?.conversations >= 1 &&
+      commercial.funnel.revenue.some(item => item.currency === "EUR" && item.value === 49.9) &&
+      qualifiedStage?.contacts >= 1 &&
+      commercial.comparison.conversions.current >= 1 &&
+      !JSON.stringify(commercial).includes("smoke@example.com"),
+    "Commercial analytics aggregation, attribution or privacy boundary failed",
+  );
 
   const flow = await request("/api/workflows", {
     method: "POST",
@@ -1636,6 +1649,7 @@ try {
             ? ["helpdesk-ai", "ai-usage-costs"]
             : []),
           "crm",
+          "commercial-analytics",
           "workflow",
           "evaluations",
           "agent-readiness",

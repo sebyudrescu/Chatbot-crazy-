@@ -29,6 +29,13 @@ assert.match(analyticsApi, /lastInteraction: \{ gte: since \}/);
 assert.match(analyticsApi, /OR: \[\{ email: \{ not: null \} \}, \{ phone: \{ not: null \} \}\]/);
 assert.match(analyticsUi, /Tutti i clienti/);
 assert.match(analyticsUi, /query\.set\('botId',botId\)/);
+assert.match(analyticsApi, /buildCommerceFunnelComparison/);
+assert.match(analyticsApi, /buildNoMatchComparison/);
+assert.match(analyticsApi, /buildLeadPipeline/);
+assert.match(analyticsApi, /eventType: \{ in: \['impression', 'click', 'add_to_cart', 'checkout', 'conversion'\] \}/);
+assert.match(analyticsUi, /Funnel commerciale verificato/);
+assert.match(analyticsUi, /Copertura catalogo/);
+assert.match(analyticsUi, /Pipeline lead/);
 
 assert.match(contactsUi, /Contatti e Pipeline/);
 assert.match(contactsUi, /view === 'kanban'/);
@@ -51,4 +58,4 @@ assert.match(importApi, /conversationQualityContractSchema\.safeParse/);
 assert.match(importApi, /conversationTurns: item\.conversationTurns/);
 assert.match(importApi, /qualityContract: item\.qualityContract/);
 
-console.log("Client operations: 32 controlli superati");
+console.log("Client operations: 39 controlli superati");

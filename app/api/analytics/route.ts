@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { calculateHelpDeskSlaAnalytics } from '@/lib/helpdesk-operations'
 import { buildRecurringTopicInsights, buildRevisionOutcomeInsights } from '@/lib/conversation-insights'
+import { buildCommerceFunnelComparison, buildLeadPipeline, buildNoMatchComparison, comparePeriods } from '@/lib/commercial-analytics'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   const botId = request.nextUrl.searchParams.get('botId')
   const days = Math.min(365, Math.max(1, Number(request.nextUrl.searchParams.get('days') || 30)))
-  const since = new Date(Date.now() - days * 86_400_000)
-  const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows, publishedRevisions, qualityMessages] = await Promise.all([
+  const currentEnd = new Date()
+  const since = new Date(currentEnd.getTime() - days * 86_400_000)
+  const previousSince = new Date(since.getTime() - days * 86_400_000)
+  const [conversations, pipelineEvents, helpdeskEvents, usageEvents, identifiedContacts, helpdeskRows, publishedRevisions, qualityMessages, previousConversationCount, previousMessageCount, commerceEvents, commercialMessages, crmContacts] = await Promise.all([
     prisma.conversation.findMany({
       where: { ...(botId ? { botId } : {}), startedAt: { gte: since } },
       include: { chatbot: { select: { id: true, companyName: true } }, _count: { select: { messages: true } } },
@@ -62,6 +65,34 @@ export async function GET(request: NextRequest) {
       select: { conversationId: true, feedback: true, sourcesUsed: true, createdAt: true, conversation: { select: { botId: true } } },
       orderBy: { createdAt: 'desc' },
       take: 10_000,
+    }),
+    prisma.conversation.count({
+      where: { ...(botId ? { botId } : {}), startedAt: { gte: previousSince, lt: since } },
+    }),
+    prisma.message.count({
+      where: { conversation: { ...(botId ? { botId } : {}), startedAt: { gte: previousSince, lt: since } } },
+    }),
+    prisma.commerceEvent.findMany({
+      where: {
+        ...(botId ? { botId } : {}),
+        createdAt: { gte: previousSince, lt: currentEnd },
+        eventType: { in: ['impression', 'click', 'add_to_cart', 'checkout', 'conversion'] },
+      },
+      select: { id: true, botId: true, conversationId: true, sessionId: true, eventType: true, value: true, currency: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+      take: 50_001,
+    }),
+    prisma.message.findMany({
+      where: { role: 'assistant', createdAt: { gte: previousSince, lt: currentEnd }, ...(botId ? { conversation: { botId } } : {}) },
+      select: { sourcesUsed: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+      take: 50_001,
+    }),
+    prisma.cRMContact.findMany({
+      where: { ...(botId ? { botId } : {}) },
+      select: { stage: true, createdAt: true, lastInteraction: true },
+      orderBy: { lastInteraction: 'desc' },
+      take: 50_001,
     }),
   ])
   const ids = conversations.map((item) => item.id)
@@ -125,6 +156,15 @@ export async function GET(request: NextRequest) {
   const resolutionCompleted = historicalCycles.filter((cycle) => cycle.resolvedAt && cycle.resolvedAt >= since && cycle.resolutionDueAt)
   const firstResponseSamples = firstResponseCompleted.map((cycle) => Math.max(0, cycle.firstHumanResponseAt!.getTime() - cycle.escalatedAt!.getTime()))
   const resolutionSamples = resolutionCompleted.map((cycle) => Math.max(0, cycle.resolvedAt!.getTime() - cycle.escalatedAt!.getTime()))
+  const commercialLimits = {
+    commerceEvents: commerceEvents.length > 50_000,
+    assistantMessages: commercialMessages.length > 50_000,
+    crmContacts: crmContacts.length > 50_000,
+  }
+  const commerceFunnel = buildCommerceFunnelComparison(commerceEvents.slice(0, 50_000), previousSince, since, currentEnd)
+  const noMatch = buildNoMatchComparison(commercialMessages.slice(0, 50_000), previousSince, since, currentEnd)
+  const leadPipeline = buildLeadPipeline(crmContacts.slice(0, 50_000), previousSince, since, currentEnd)
+  const conversions = commerceFunnel.stages.find((stage) => stage.stage === 'conversion')?.comparison || comparePeriods(0, 0)
 
   return NextResponse.json({ success: true, data: {
     periodDays: days,
@@ -137,6 +177,22 @@ export async function GET(request: NextRequest) {
       recurringTopics,
       revisionOutcomes,
       note: 'Risultati aggregati osservati; non dimostrano causalità e non applicano modifiche automatiche.',
+    },
+    commercial: {
+      period: { currentStart: since, currentEnd, previousStart: previousSince },
+      comparison: {
+        conversations: comparePeriods(conversations.length, previousConversationCount),
+        messages: comparePeriods(totalMessages, previousMessageCount),
+        newContacts: leadPipeline.created,
+        productSearches: comparePeriods(noMatch.searches, noMatch.previous.searches),
+        noMatches: comparePeriods(noMatch.noMatches, noMatch.previous.noMatches),
+        conversions,
+      },
+      funnel: commerceFunnel,
+      leads: leadPipeline,
+      noMatch,
+      dataQuality: { complete: !Object.values(commercialLimits).some(Boolean), truncatedSources: Object.entries(commercialLimits).filter(([, truncated]) => truncated).map(([source]) => source) },
+      note: 'Funnel deduplicato per conversazione/sessione. Il fatturato include solo conversioni firmate e non gli item; le fasi lead sono aggregate e non espongono PII.',
     },
     helpdesk: {
       backlog: helpdesk.filter((item) => item.needsHumanEscalation && !item.isResolved).length,

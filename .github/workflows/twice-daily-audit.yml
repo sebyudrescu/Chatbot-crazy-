@@ -205,6 +205,7 @@ jobs:
           npm run test:model-ab
           npm run test:public-agent-api
           npm run test:client-operations
+          npm run test:commercial-analytics
           npm run test:conversation-insights
           npm run test:helpdesk
 
