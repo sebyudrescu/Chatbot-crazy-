@@ -65,6 +65,15 @@ const protectedCollections = [
   'app/api/commerce/route.ts',
   'app/api/knowledge-sources/route.ts',
 ].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedItems = [
+  'app/api/actions/[id]/route.ts',
+  'app/api/workflows/[id]/route.ts',
+  'app/api/evaluations/[id]/route.ts',
+  'app/api/integrations/[id]/route.ts',
+  'app/api/contacts/[id]/route.ts',
+  'app/api/commerce/[productId]/route.ts',
+  'app/api/conversations/[id]/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
@@ -79,5 +88,9 @@ for (const route of protectedCollections) {
   assert.match(route, /requireDashboardActor/)
   assert.match(route, /requireBotPermission|accessibleBotIds/)
 }
+for (const route of protectedItems) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireResourcePermission|requireBotPermission/)
+}
 
-console.log('Workspace authorization: 41 controlli superati')
+console.log('Workspace authorization: 55 controlli superati')

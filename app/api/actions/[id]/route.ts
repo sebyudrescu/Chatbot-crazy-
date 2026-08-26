@@ -13,6 +13,7 @@ import {
   widgetDefinitionFromConfig,
   widgetRemoteUrls,
 } from "@/lib/widget-definition";
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from "@/lib/workspace-auth";
 
 const UpdateSchema = ActionFieldsSchema.omit({
   botId: true,
@@ -31,6 +32,8 @@ export async function PATCH(
 ) {
   const { id } = await props.params;
   try {
+    const actor = await requireDashboardActor(request);
+    await requireResourcePermission(actor, "action", id, "chatbot.write");
     const input = UpdateSchema.parse(await request.json());
     const current = await prisma.agentAction.findUnique({ where: { id } });
     if (!current) {
@@ -100,6 +103,8 @@ export async function PATCH(
       },
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       {
         success: false,
@@ -112,10 +117,18 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _: NextRequest,
+  request: NextRequest,
   props: { params: Promise<{ id: string }> },
 ) {
   const { id } = await props.params;
-  await prisma.agentAction.delete({ where: { id } });
-  return NextResponse.json({ success: true });
+  try {
+    const actor = await requireDashboardActor(request);
+    await requireResourcePermission(actor, "action", id, "chatbot.write");
+    await prisma.agentAction.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ success: false, error: "Eliminazione non riuscita" }, { status: 400 });
+  }
 }

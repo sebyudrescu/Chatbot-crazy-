@@ -14,6 +14,7 @@ import {
   returnHelpDeskConversationToBot,
   setHelpDeskPriority,
 } from '@/lib/helpdesk-operations'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 const ConversationUpdateSchema = z.object({
   isResolved: z.boolean().optional(),
@@ -34,6 +35,7 @@ const ConversationUpdateSchema = z.object({
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const actor=await requireDashboardActor(request);await requireResourcePermission(actor,'conversation',params.id,'conversation.read')
     const conversation = await prisma.conversation.findUnique({
       where: { id: params.id },
       include: {
@@ -81,6 +83,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       },
     })
   } catch (error) {
+    const authResponse=dashboardAuthErrorResponse(error);if(authResponse)return authResponse
     console.error('Error fetching conversation:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to fetch conversation' },
@@ -93,6 +96,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const actor=await requireDashboardActor(request);await requireResourcePermission(actor,'conversation',params.id,'conversation.write')
     const data = ConversationUpdateSchema.parse(await request.json())
     if (data.isResolved === true && data.needsHumanEscalation === true) {
       return NextResponse.json({ success: false, error: 'Una conversazione risolta non può essere in handoff' }, { status: 400 })
@@ -154,6 +158,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     }
     return NextResponse.json({ success: true, data: { ...conversation, tags: parseJSON<string[]>(conversation.tags) || [] } })
   } catch (error) {
+    const authResponse=dashboardAuthErrorResponse(error);if(authResponse)return authResponse
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Update failed' }, { status: 400 })
   }
 }
@@ -162,6 +167,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
 export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const actor=await requireDashboardActor(request);await requireResourcePermission(actor,'conversation',params.id,'conversation.write')
     await prisma.conversation.delete({
       where: { id: params.id },
     })
@@ -171,6 +177,7 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
       message: 'Conversation deleted successfully',
     })
   } catch (error) {
+    const authResponse=dashboardAuthErrorResponse(error);if(authResponse)return authResponse
     console.error('Error deleting conversation:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to delete conversation' },

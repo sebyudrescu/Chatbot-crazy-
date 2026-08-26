@@ -121,6 +121,32 @@ export async function accessibleBotIds(actor: DashboardActor, permission: Worksp
   })).map((bot) => bot.id);
 }
 
+export type DashboardResourceKind = "action" | "workflow" | "evaluation" | "integration" | "contact" | "conversation" | "product";
+
+export async function requireResourcePermission(
+  actor: DashboardActor,
+  kind: DashboardResourceKind,
+  resourceId: string,
+  permission: WorkspacePermission,
+) {
+  const resource = kind === "action"
+    ? await prisma.agentAction.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+    : kind === "workflow"
+      ? await prisma.workflow.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+      : kind === "evaluation"
+        ? await prisma.evaluationCase.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+        : kind === "integration"
+          ? await prisma.integrationConnection.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+          : kind === "contact"
+            ? await prisma.cRMContact.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+            : kind === "conversation"
+              ? await prisma.conversation.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+              : await prisma.product.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } });
+  if (!resource) throw new DashboardAuthError("Risorsa non trovata", 404);
+  await requireBotPermission(actor, resource.botId, permission);
+  return resource;
+}
+
 export async function workspaceForNewChatbot(actor: DashboardActor, requestedWorkspaceId?: string) {
   if (actor.kind === "legacy_owner") {
     const workspaceId = requestedWorkspaceId || DEFAULT_AGENCY_WORKSPACE_ID;

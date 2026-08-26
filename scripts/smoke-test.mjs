@@ -136,6 +136,14 @@ async function verifyWorkspaceIsolation() {
     prisma.conversation.create({ data: { botId: botA.id, userSessionId: `tenant-a-${suffix}`, lastMessageAt: new Date() } }),
     prisma.conversation.create({ data: { botId: botB.id, userSessionId: `tenant-b-${suffix}`, lastMessageAt: new Date() } }),
   ]);
+  const [actionB, workflowB, evaluationB, integrationB, contactB, productB] = await Promise.all([
+    prisma.agentAction.create({ data: { botId: botB.id, name: "Foreign action", type: "lead_capture" } }),
+    prisma.workflow.create({ data: { botId: botB.id, name: "Foreign workflow" } }),
+    prisma.evaluationCase.create({ data: { botId: botB.id, name: "Foreign evaluation", question: "Foreign question" } }),
+    prisma.integrationConnection.create({ data: { botId: botB.id, provider: `smoke-${suffix}`, category: "test", displayName: "Foreign integration" } }),
+    prisma.cRMContact.create({ data: { botId: botB.id, identityKey: `foreign-${suffix}` } }),
+    prisma.product.create({ data: { botId: botB.id, identityKey: `foreign-${suffix}`, canonicalUrl: `https://example.invalid/products/${suffix}`, title: "Foreign product" } }),
+  ]);
 
   const list = await tenantRequest("/api/chatbots", token);
   assert(list.response.status === 200, "Tenant viewer cannot list its own agents");
@@ -166,6 +174,19 @@ async function verifyWorkspaceIsolation() {
   assert(analytics.response.status === 200, "Tenant analytics are unavailable");
   assert(analytics.body.data?.byAgent?.some((item) => item.id === botA.id), "Own tenant analytics are missing");
   assert(!analytics.body.data?.byAgent?.some((item) => item.id === botB.id), "Foreign tenant analytics leaked");
+
+  const foreignItemChecks = [
+    tenantRequest(`/api/actions/${actionB.id}`, token, { method: "PATCH", body: JSON.stringify({}) }),
+    tenantRequest(`/api/workflows/${workflowB.id}`, token),
+    tenantRequest(`/api/evaluations/${evaluationB.id}`, token, { method: "PATCH", body: JSON.stringify({}) }),
+    tenantRequest(`/api/integrations/${integrationB.id}`, token, { method: "PATCH", body: JSON.stringify({ enabled: false }) }),
+    tenantRequest(`/api/contacts/${contactB.id}`, token, { method: "PATCH", body: JSON.stringify({}) }),
+    tenantRequest(`/api/commerce/${productB.id}`, token, { method: "PATCH", body: JSON.stringify({ botId: botB.id, rankingBoost: 1 }) }),
+    tenantRequest(`/api/conversations/${conversationB.id}`, token),
+  ];
+  for (const result of await Promise.all(foreignItemChecks)) {
+    assert(result.response.status === 404, "Foreign tenant item did not return a tenant-safe 404");
+  }
 
   for (const route of ["actions", "workflows", "evaluations", "integrations", "contacts", "commerce", "knowledge-sources"]) {
     const ownCollection = await tenantRequest(`/api/${route}?botId=${botA.id}`, token);
@@ -1803,6 +1824,7 @@ try {
           "workspace-invitation-acceptance",
           "workspace-client-login",
           "workspace-operational-collections",
+          "workspace-operational-items",
         ],
       },
       null,

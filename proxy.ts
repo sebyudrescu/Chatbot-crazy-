@@ -19,6 +19,9 @@ function isTenantReadyApi(request: NextRequest) {
   if (path === '/api/contacts') return request.method === 'GET'
   if (path === '/api/commerce') return request.method === 'GET'
   if (path === '/api/knowledge-sources') return request.method === 'GET' || request.method === 'POST' || request.method === 'DELETE'
+  if (/^\/api\/(actions|workflows|evaluations|integrations|contacts|commerce|conversations)\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(path)) {
+    return request.method === 'GET' || request.method === 'PATCH' || request.method === 'DELETE'
+  }
   if (/^\/api\/workspaces\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/invitations$/i.test(path)) {
     return request.method === 'GET' || request.method === 'POST'
   }
