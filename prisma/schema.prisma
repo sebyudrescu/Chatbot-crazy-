@@ -17,9 +17,10 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  chatbots    Chatbot[]
-  memberships WorkspaceMembership[]
-  invitations WorkspaceInvitation[]
+  chatbots           Chatbot[]
+  memberships        WorkspaceMembership[]
+  invitations        WorkspaceInvitation[]
+  helpDeskSavedViews HelpDeskSavedView[]
 
   @@index([kind])
   @@index([createdAt])
@@ -688,14 +689,19 @@ model Message {
 // structured filter JSON only; free-text search and visitor PII are excluded
 // by the service layer that will expose them.
 model HelpDeskSavedView {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  filters   String   @default("{}")
-  sort      String   @default("recent")
-  isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  filters     String   @default("{}")
+  sort        String   @default("recent")
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, isDefault, updatedAt])
   @@index([isDefault, updatedAt])
   @@map("helpdesk_saved_views")
 }

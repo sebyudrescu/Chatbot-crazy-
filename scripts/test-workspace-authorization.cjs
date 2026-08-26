@@ -152,6 +152,10 @@ const protectedMetaTools = [
   'app/api/meta/whatsapp/complete/route.ts',
   'app/api/meta/whatsapp/templates/route.ts',
 ].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedHelpDeskViews = [
+  'app/api/helpdesk/views/route.ts',
+  'app/api/helpdesk/views/[id]/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
@@ -200,5 +204,9 @@ for (const route of protectedMetaTools) {
   assert.match(route, /requireDashboardActor/)
   assert.match(route, /requireResourcePermission|requireBotPermission/)
 }
+for (const route of protectedHelpDeskViews) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /workspaceId/)
+}
 
-console.log('Workspace authorization: 185 controlli superati')
+console.log('Workspace authorization: 189 controlli superati')
