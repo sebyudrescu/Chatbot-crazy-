@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { buildDecisionTrace } from '@/lib/decision-tracer'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,8 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+    const actor = await requireDashboardActor(request)
+    await requireBotPermission(actor, botId, 'analytics.read')
 
     // Get recent assistant messages
     const messages = await prisma.message.findMany({
@@ -97,6 +100,8 @@ export async function GET(request: NextRequest) {
       traces: validTraces.slice(0, limit)
     })
   } catch (error: any) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('[DashboardTraces] Error:', error)
     return NextResponse.json(
       { error: 'Failed to fetch traces', details: error.message },

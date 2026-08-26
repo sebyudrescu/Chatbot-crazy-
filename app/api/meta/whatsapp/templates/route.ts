@@ -6,6 +6,7 @@ import { listWhatsAppTemplates, sendWhatsAppTemplate } from "@/lib/meta-messagin
 import { renderWhatsAppTemplate, templateBody, templateHasUnsupportedVariables, templateParameterCount } from "@/lib/meta-payloads";
 import { stringifyJSON } from "@/lib/utils";
 import { recordHelpDeskOperatorReply } from "@/lib/helpdesk-operations";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor, requireResourcePermission } from "@/lib/workspace-auth";
 
 const SendSchema = z.object({
   conversationId: z.string().uuid(),
@@ -17,6 +18,8 @@ const SendSchema = z.object({
 export async function GET(request: NextRequest) {
   try {
     const botId = z.string().uuid().parse(request.nextUrl.searchParams.get("botId"));
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, botId, "conversation.read");
     const found = await getMetaConnectionForBot(botId, "whatsapp");
     if (!found) return NextResponse.json({ success: false, error: "WhatsApp non collegato" }, { status: 409 });
     const templates = await listWhatsAppTemplates(found.config);
@@ -30,6 +33,8 @@ export async function GET(request: NextRequest) {
       supported: !templateHasUnsupportedVariables(template),
     })) });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Lettura template non riuscita" }, { status: 400 });
   }
 }
@@ -37,6 +42,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const input = SendSchema.parse(await request.json());
+    const actor = await requireDashboardActor(request);
+    await requireResourcePermission(actor, "conversation", input.conversationId, "conversation.write");
     const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
     if (!conversation || conversation.channel !== "whatsapp" || !conversation.externalThreadId) {
       return NextResponse.json({ success: false, error: "Conversazione WhatsApp non valida" }, { status: 409 });
@@ -69,6 +76,8 @@ export async function POST(request: NextRequest) {
     await recordHelpDeskOperatorReply({ botId: conversation.botId, conversationId: conversation.id, at: message.createdAt });
     return NextResponse.json({ success: true, data: { ...message, deliveryStatus: "sent" } }, { status: 201 });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Invio template non riuscito" }, { status: 400 });
   }
 }

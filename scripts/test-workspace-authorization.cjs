@@ -123,6 +123,35 @@ const protectedClientTools = [
   'app/api/suggestions/[id]/route.ts',
   'app/api/suggestions/[id]/apply/route.ts',
 ].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedDecisionAndIntegrationTools = [
+  'app/api/messages/[id]/feedback/route.ts',
+  'app/api/response-revisions/[id]/route.ts',
+  'app/api/response-revisions/[id]/archive/route.ts',
+  'app/api/response-revisions/[id]/publish/route.ts',
+  'app/api/decisions/[messageId]/trace/route.ts',
+  'app/api/dashboard/traces/route.ts',
+  'app/api/prompt-improve/route.ts',
+  'app/api/widgets/generate/route.ts',
+  'app/api/shopify/oauth/start/route.ts',
+  'app/api/shopify/status/route.ts',
+  'app/api/woocommerce/oauth/start/route.ts',
+  'app/api/woocommerce/status/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedBackstageAndPrivacyTools = [
+  'app/api/backstage/chat/route.ts',
+  'app/api/backstage/sessions/route.ts',
+  'app/api/backstage/sessions/[id]/route.ts',
+  'app/api/backstage/drafts/[id]/route.ts',
+  'app/api/backstage/drafts/[id]/[operation]/route.ts',
+  'app/api/privacy/retention/route.ts',
+  'app/api/privacy/visitor-data/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+const protectedMetaTools = [
+  'app/api/meta/status/route.ts',
+  'app/api/meta/instagram/connect/route.ts',
+  'app/api/meta/whatsapp/complete/route.ts',
+  'app/api/meta/whatsapp/templates/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
@@ -159,5 +188,17 @@ for (const route of protectedClientTools) {
   assert.match(route, /requireDashboardActor/)
   assert.match(route, /requireResourcePermission|requireBotPermission|accessibleBotIds/)
 }
+for (const route of protectedDecisionAndIntegrationTools) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireResourcePermission|requireBotPermission/)
+}
+for (const route of protectedBackstageAndPrivacyTools) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireResourcePermission|requireBotPermission/)
+}
+for (const route of protectedMetaTools) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireResourcePermission|requireBotPermission/)
+}
 
-console.log('Workspace authorization: 139 controlli superati')
+console.log('Workspace authorization: 185 controlli superati')

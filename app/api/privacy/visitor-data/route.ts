@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { parseJSON } from "@/lib/utils";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 const SearchSchema = z.object({
   botId: z.string().uuid(),
@@ -139,6 +140,8 @@ export async function GET(request: NextRequest) {
       matchBy: request.nextUrl.searchParams.get("matchBy"),
       query: request.nextUrl.searchParams.get("query"),
     });
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, input.botId, "conversation.read");
     const data = await findVisitorData(input);
     if (!data) return noStoreJson({ success: false, error: "Agente non trovato" }, 404);
 
@@ -154,6 +157,8 @@ export async function GET(request: NextRequest) {
     }
     return noStoreJson({ success: true, data });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return noStoreJson(
       {
         success: false,
@@ -169,6 +174,8 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const input = DeleteSchema.parse(await request.json());
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, input.botId, "conversation.write");
     const data = await findVisitorData(input);
     if (!data) return noStoreJson({ success: false, error: "Agente non trovato" }, 404);
     const conversationIds = data.conversations.map((item) => item.id);
@@ -189,6 +196,8 @@ export async function DELETE(request: NextRequest) {
       },
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return noStoreJson(
       {
         success: false,

@@ -121,7 +121,7 @@ export async function accessibleBotIds(actor: DashboardActor, permission: Worksp
   })).map((bot) => bot.id);
 }
 
-export type DashboardResourceKind = "action" | "workflow" | "evaluation" | "integration" | "contact" | "conversation" | "product" | "ingestionJob" | "apiKey" | "message" | "suggestion";
+export type DashboardResourceKind = "action" | "workflow" | "evaluation" | "integration" | "contact" | "conversation" | "product" | "ingestionJob" | "apiKey" | "message" | "responseRevision" | "suggestion" | "backstageSession" | "backstageDraft";
 
 export async function requireResourcePermission(
   actor: DashboardActor,
@@ -150,8 +150,14 @@ export async function requireResourcePermission(
                     : kind === "message"
                       ? await prisma.message.findUnique({ where: { id: resourceId }, select: { id: true, conversation: { select: { botId: true } } } })
                         .then((message) => message ? { id: message.id, botId: message.conversation.botId } : null)
-                      : await prisma.improvementSuggestion.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
-                        .then((suggestion) => suggestion?.botId ? { id: suggestion.id, botId: suggestion.botId } : null);
+                      : kind === "responseRevision"
+                        ? await prisma.responseRevision.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+                        : kind === "suggestion"
+                          ? await prisma.improvementSuggestion.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+                            .then((suggestion) => suggestion?.botId ? { id: suggestion.id, botId: suggestion.botId } : null)
+                          : kind === "backstageSession"
+                            ? await prisma.backstageSession.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } })
+                            : await prisma.backstageDraft.findUnique({ where: { id: resourceId }, select: { id: true, botId: true } });
   if (!resource) throw new DashboardAuthError("Risorsa non trovata", 404);
   await requireBotPermission(actor, resource.botId, permission);
   return resource;

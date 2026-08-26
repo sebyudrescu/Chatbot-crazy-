@@ -124,7 +124,7 @@ export default function ChatbotSettingsPage() {
     if (renderedPrompt.trim().length < 20) return setNotice({ type: 'error', text: 'Inserisci prima istruzioni sufficienti da migliorare.' })
     setImproving(true); setNotice(null)
     try {
-      const response = await fetch('/api/prompt-improve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyName: bot?.companyName, prompt: renderedPrompt, role: settings.role, objective: settings.objective, rules: settings.rules || [], language: settings.language, tone: settings.tone }) })
+      const response = await fetch('/api/prompt-improve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId: id, companyName: bot?.companyName, prompt: renderedPrompt, role: settings.role, objective: settings.objective, rules: settings.rules || [], language: settings.language, tone: settings.tone }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error)
       setImprovement(result.data)

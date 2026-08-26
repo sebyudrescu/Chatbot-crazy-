@@ -3,10 +3,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { parseShopifyConfig, shopifyEnvironment } from "@/lib/shopify-auth";
 import { shopifyThemeEditorUrl } from "@/lib/shopify-widget";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 export async function GET(request: NextRequest) {
-  const botId = request.nextUrl.searchParams.get("botId") || "";
-  if (!z.string().uuid().safeParse(botId).success) return NextResponse.json({ success: false, error: "Agente non valido" }, { status: 400 });
+  try {
+    const botId = request.nextUrl.searchParams.get("botId") || "";
+    if (!z.string().uuid().safeParse(botId).success) return NextResponse.json({ success: false, error: "Agente non valido" }, { status: 400 });
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, botId, "chatbot.read");
   const [environment, connection] = await Promise.all([
     Promise.resolve(shopifyEnvironment()),
     prisma.integrationConnection.findUnique({ where: { botId_provider: { botId, provider: "shopify" } }, select: { enabled: true, status: true, externalAccountId: true, lastError: true, lastTestedAt: true, config: true } }),
@@ -21,7 +25,7 @@ export async function GET(request: NextRequest) {
     } catch {}
   }
   if (connection?.lastError?.includes("Protected Customer Data")) pcdStatus = "required";
-  return NextResponse.json({
+    return NextResponse.json({
     success: true,
     data: {
       configured: environment.ready,
@@ -41,5 +45,10 @@ export async function GET(request: NextRequest) {
         pcdStatus: grantedScopes.has("read_orders") ? pcdStatus : "scope_required",
       },
     },
-  });
+    });
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Stato Shopify non disponibile" }, { status: 400 });
+  }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 /**
  * POST /api/messages/[id]/feedback
@@ -10,6 +11,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
   try {
     const { feedback, feedbackComment } = await request.json()
     const messageId = params.id
+    const actor = await requireDashboardActor(request)
+    await requireResourcePermission(actor, 'message', messageId, 'conversation.write')
 
     if (!feedback || !['positive', 'negative'].includes(feedback)) {
       return NextResponse.json(
@@ -32,6 +35,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       message: updatedMessage,
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error adding feedback:', error)
     return NextResponse.json(
       { error: 'Failed to add feedback' },

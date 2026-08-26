@@ -9,11 +9,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildDecisionTrace } from '@/lib/decision-tracer'
 import { prisma } from '@/lib/db'
+import { dashboardAuthErrorResponse, requireDashboardActor, requireResourcePermission } from '@/lib/workspace-auth'
 
 export async function GET(request: NextRequest, props: { params: Promise<{ messageId: string }> }) {
   const params = await props.params;
   try {
     const { messageId } = params
+    const actor = await requireDashboardActor(request)
+    await requireResourcePermission(actor, 'message', messageId, 'analytics.read')
 
     // Get message to find conversation
     const message = await prisma.message.findUnique({
@@ -40,6 +43,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ messa
 
     return NextResponse.json(trace)
   } catch (error: any) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('[DecisionTrace] Error:', error)
     return NextResponse.json(
       { error: 'Failed to build decision trace', details: error.message },

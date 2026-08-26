@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createMetaOAuthState } from "@/lib/meta-oauth-state";
 import { metaConfiguration, metaReadiness } from "@/lib/meta-config";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 export async function GET(request: NextRequest) {
-  const botId = z.string().uuid().safeParse(request.nextUrl.searchParams.get("botId"));
-  if (!botId.success) return NextResponse.json({ success: false, error: "Agente non valido" }, { status: 400 });
+  try {
+    const botId = z.string().uuid().safeParse(request.nextUrl.searchParams.get("botId"));
+    if (!botId.success) return NextResponse.json({ success: false, error: "Agente non valido" }, { status: 400 });
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, botId.data, "chatbot.write");
   if (!metaReadiness("instagram")) return NextResponse.json({ success: false, error: "Completa prima la configurazione Meta nelle variabili server." }, { status: 503 });
   const meta = metaConfiguration();
   const redirectUri = `${meta.appUrl}/api/meta/instagram/callback`;
@@ -17,5 +21,10 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "instagram_business_basic,instagram_business_manage_messages");
   url.searchParams.set("state", createMetaOAuthState(botId.data, "instagram"));
-  return NextResponse.json({ success: true, data: { url: url.toString() } });
+    return NextResponse.json({ success: true, data: { url: url.toString() } });
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ success: false, error: "Connessione Instagram non riuscita" }, { status: 400 });
+  }
 }

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { recordAIUsage } from "@/lib/ai-usage";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai-models";
 import { checkRateLimit, requestClientIp } from "@/lib/rate-limit";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 import {
   WidgetDefinitionSchema,
   widgetDefinitionDiff,
@@ -37,6 +38,8 @@ const GeneratedSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const input = InputSchema.parse(await request.json());
+    const actor = await requireDashboardActor(request);
+    await requireBotPermission(actor, input.botId, "chatbot.write");
     const rate = await checkRateLimit(
       `widget-ai-builder:${input.botId}:${requestClientIp(request.headers)}`,
       12,
@@ -110,6 +113,8 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       {
         success: false,
