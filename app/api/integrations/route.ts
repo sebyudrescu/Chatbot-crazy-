@@ -5,14 +5,17 @@ import { findIntegration, INTEGRATION_CATALOG, safeHttpsUrl } from '@/lib/integr
 import { decryptConfigSecrets, encryptConfigSecrets, redactSecrets, restoreMaskedSecrets } from '@/lib/secret-config'
 import { assertSafeRemoteUrl } from '@/lib/url-safety'
 import { metaTokenExpired, parseMetaConnection } from '@/lib/meta-connections'
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 const Schema = z.object({ botId: z.string().uuid(), provider: z.string(), config: z.record(z.string()).default({}), enabled: z.boolean().default(true) })
 const parse = (value: string) => { try { return JSON.parse(value) } catch { return {} } }
 const CALENDLY_ACTION_NAME = 'Prenotazione Calendly (automatica)'
 
 export async function GET(request: NextRequest) {
+ try { const actor = await requireDashboardActor(request)
   const botId = request.nextUrl.searchParams.get('botId')
   if (!botId) return NextResponse.json({ success: true, data: INTEGRATION_CATALOG.map(definition => ({ ...definition, connection: null })) })
+  await requireBotPermission(actor, botId, 'chatbot.read')
   const connections = await prisma.integrationConnection.findMany({ where: { botId } })
   return NextResponse.json({ success: true, data: INTEGRATION_CATALOG.map(definition => {
     const connection = connections.find(item => item.provider === definition.provider)
@@ -25,12 +28,14 @@ export async function GET(request: NextRequest) {
         ? Boolean(config.accessTokenEncrypted && config.instagramAccountId && metaConfig && !metaTokenExpired(metaConfig))
         : true
     return { ...definition, connection: { ...connection, enabled: connection.enabled && validMetaConnection, status: validMetaConnection ? connection.status : 'disconnected', config: redactSecrets(config) } }
-  }) })
+  }) }) } catch(error) { const authResponse=dashboardAuthErrorResponse(error); if(authResponse)return authResponse; return NextResponse.json({success:false,error:'Impossibile caricare le integrazioni'},{status:500}) }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const input = Schema.parse(await request.json()), definition = findIntegration(input.provider)
+    await requireBotPermission(actor, input.botId, 'chatbot.write')
     if (!definition || definition.mode === 'planned') return NextResponse.json({ success: false, error: 'Questa integrazione richiede ancora il connettore ufficiale.' }, { status: 409 })
     if (input.provider === 'whatsapp' || input.provider === 'instagram') return NextResponse.json({ success: false, error: 'Usa il collegamento ufficiale Meta dalla schermata Canali.' }, { status: 409 })
     if (input.provider === 'shopify') return NextResponse.json({ success: false, error: 'Usa il collegamento ufficiale Shopify dalla schermata Integrazioni.' }, { status: 409 })
@@ -63,5 +68,5 @@ export async function POST(request: NextRequest) {
       return saved
     })
     return NextResponse.json({ success: true, data: { ...connection, config: redactSecrets(config) } })
-  } catch (error) { return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Configurazione non valida' }, { status: 400 }) }
+  } catch (error) { const authResponse=dashboardAuthErrorResponse(error); if(authResponse)return authResponse; return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Configurazione non valida' }, { status: 400 }) }
 }

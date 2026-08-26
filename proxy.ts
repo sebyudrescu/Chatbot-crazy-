@@ -12,6 +12,13 @@ function isTenantReadyApi(request: NextRequest) {
   if (path === '/api/chatbots/import') return request.method === 'POST'
   if (path === '/api/templates/instantiate') return request.method === 'POST'
   if (path === '/api/workspaces') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/actions') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/workflows') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/evaluations') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/integrations') return request.method === 'GET' || request.method === 'POST'
+  if (path === '/api/contacts') return request.method === 'GET'
+  if (path === '/api/commerce') return request.method === 'GET'
+  if (path === '/api/knowledge-sources') return request.method === 'GET' || request.method === 'POST' || request.method === 'DELETE'
   if (/^\/api\/workspaces\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/invitations$/i.test(path)) {
     return request.method === 'GET' || request.method === 'POST'
   }

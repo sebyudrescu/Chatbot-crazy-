@@ -167,6 +167,13 @@ async function verifyWorkspaceIsolation() {
   assert(analytics.body.data?.byAgent?.some((item) => item.id === botA.id), "Own tenant analytics are missing");
   assert(!analytics.body.data?.byAgent?.some((item) => item.id === botB.id), "Foreign tenant analytics leaked");
 
+  for (const route of ["actions", "workflows", "evaluations", "integrations", "contacts", "commerce", "knowledge-sources"]) {
+    const ownCollection = await tenantRequest(`/api/${route}?botId=${botA.id}`, token);
+    assert(ownCollection.response.status === 200, `Tenant cannot read its ${route} collection`);
+    const foreignCollection = await tenantRequest(`/api/${route}?botId=${botB.id}`, token);
+    assert(foreignCollection.response.status === 404, `Foreign tenant ${route} collection did not return 404`);
+  }
+
   const fakeSession = await tenantRequest("/api/chatbots", randomBytes(48).toString("base64url"));
   assert(fakeSession.response.status === 401, "Unknown tenant session was accepted");
 }
@@ -1795,6 +1802,7 @@ try {
           "workspace-session-rejection",
           "workspace-invitation-acceptance",
           "workspace-client-login",
+          "workspace-operational-collections",
         ],
       },
       null,

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyOwnerSessionToken } from "@/lib/auth-token";
 import {
+  allowedWorkspaceIds,
   actorCanAccessWorkspace,
   isWorkspaceRole,
   roleHasPermission,
@@ -109,6 +110,15 @@ export async function requireBotPermission(
     throw new DashboardAuthError("Risorsa non trovata", 404);
   }
   return bot;
+}
+
+export async function accessibleBotIds(actor: DashboardActor, permission: WorkspacePermission) {
+  const workspaceIds = allowedWorkspaceIds(actor, permission);
+  if (workspaceIds === null) return null;
+  return (await prisma.chatbot.findMany({
+    where: { workspaceId: { in: workspaceIds } },
+    select: { id: true },
+  })).map((bot) => bot.id);
 }
 
 export async function workspaceForNewChatbot(actor: DashboardActor, requestedWorkspaceId?: string) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 const querySchema = z.object({
   botId: z.string().uuid(),
@@ -16,6 +17,7 @@ function jsonArray(value: string) {
 }
 
 export async function GET(request: NextRequest) {
+ try { const actor = await requireDashboardActor(request);
   const parsed = querySchema.safeParse({
     botId: request.nextUrl.searchParams.get("botId"),
     search: request.nextUrl.searchParams.get("search") || undefined,
@@ -27,6 +29,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Parametri catalogo non validi" }, { status: 400 });
   }
   const { botId, search, recommendationStatus, page, pageSize } = parsed.data;
+  await requireBotPermission(actor, botId, "chatbot.read");
   const where = {
     botId,
     status: "active",
@@ -95,5 +98,5 @@ export async function GET(request: NextRequest) {
         totalPages: Math.max(1, Math.ceil(filteredTotal / pageSize)),
       },
     },
-  });
+  }); } catch (error) { const authResponse = dashboardAuthErrorResponse(error); if (authResponse) return authResponse; return NextResponse.json({ success: false, error: "Impossibile caricare il catalogo" }, { status: 500 }); }
 }

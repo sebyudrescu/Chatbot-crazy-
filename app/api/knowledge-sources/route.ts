@@ -2,17 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { CreateKnowledgeSourceSchema, SourceStatus } from '@/lib/types'
 import { processAndStoreDocument } from '@/lib/rag-pipeline'
+import { accessibleBotIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
 // GET /api/knowledge-sources - List knowledge sources
 export async function GET(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const searchParams = request.nextUrl.searchParams
     const botId = searchParams.get('botId')
+    if (botId) await requireBotPermission(actor, botId, 'chatbot.read')
+    const ids = botId ? null : await accessibleBotIds(actor, 'chatbot.read')
     const status = searchParams.get('status')
     
     const sources = await prisma.knowledgeSource.findMany({
       where: {
-        ...(botId && { botId }),
+        ...(botId ? { botId } : ids === null ? {} : { botId: { in: ids } }),
         ...(status && { status }),
       },
       orderBy: { createdAt: 'desc' },
@@ -23,6 +27,8 @@ export async function GET(request: NextRequest) {
       data: sources,
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error fetching knowledge sources:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to fetch knowledge sources' },
@@ -34,6 +40,7 @@ export async function GET(request: NextRequest) {
 // DELETE /api/knowledge-sources?sourceId=xxx&botId=xxx - Delete a knowledge source
 export async function DELETE(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const searchParams = request.nextUrl.searchParams
     const sourceId = searchParams.get('sourceId')
     const botId = searchParams.get('botId')
@@ -49,6 +56,7 @@ export async function DELETE(request: NextRequest) {
     if (!source) {
       return NextResponse.json({ success: false, error: 'Knowledge source not found' }, { status: 404 })
     }
+    await requireBotPermission(actor, botId, 'chatbot.write')
     if (source.sourceType === 'qa') {
       return NextResponse.json(
         { success: false, error: 'Le Q&A verificate vanno archiviate dai Chat Logs per mantenere allineati test, versioni e audit.' },
@@ -85,6 +93,8 @@ export async function DELETE(request: NextRequest) {
       message: 'Knowledge source deleted successfully',
     })
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error deleting knowledge source:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to delete knowledge source' },
@@ -96,18 +106,10 @@ export async function DELETE(request: NextRequest) {
 // POST /api/knowledge-sources - Create a knowledge source
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request)
     const body = await request.json()
     const validatedData = CreateKnowledgeSourceSchema.parse(body)
-    const bot = await prisma.chatbot.findUnique({
-      where: { id: validatedData.botId },
-      select: { id: true },
-    })
-    if (!bot) {
-      return NextResponse.json(
-        { success: false, error: 'Agente non trovato' },
-        { status: 404 },
-      )
-    }
+    await requireBotPermission(actor, validatedData.botId, 'chatbot.write')
     if (validatedData.contentText.trim().length < 50) {
       return NextResponse.json(
         { success: false, error: 'La fonte deve contenere almeno 50 caratteri' },
@@ -151,6 +153,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error)
+    if (authResponse) return authResponse
     console.error('Error creating knowledge source:', error)
     return NextResponse.json(
       {

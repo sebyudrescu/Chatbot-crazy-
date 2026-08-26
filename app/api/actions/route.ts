@@ -12,6 +12,7 @@ import {
   widgetDefinitionFromConfig,
   widgetRemoteUrls,
 } from "@/lib/widget-definition";
+import { accessibleBotIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 const parse = <T>(value: string, fallback: T): T => {
   try {
@@ -27,21 +28,32 @@ const serialize = (item: any) => ({
 });
 
 export async function GET(request: NextRequest) {
-  const botId = request.nextUrl.searchParams.get("botId");
-  const actions = await prisma.agentAction.findMany({
-    where: botId ? { botId } : undefined,
-    include: {
-      chatbot: { select: { companyName: true } },
-      executions: { orderBy: { createdAt: "desc" }, take: 10 },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
-  return NextResponse.json({ success: true, data: actions.map(serialize) });
+  try {
+    const actor = await requireDashboardActor(request);
+    const botId = request.nextUrl.searchParams.get("botId");
+    if (botId) await requireBotPermission(actor, botId, "chatbot.read");
+    const allowedBotIds = botId ? null : await accessibleBotIds(actor, "chatbot.read");
+    const actions = await prisma.agentAction.findMany({
+      where: botId ? { botId } : allowedBotIds === null ? undefined : { botId: { in: allowedBotIds } },
+      include: {
+        chatbot: { select: { companyName: true } },
+        executions: { orderBy: { createdAt: "desc" }, take: 10 },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    return NextResponse.json({ success: true, data: actions.map(serialize) });
+  } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
+    return NextResponse.json({ success: false, error: "Impossibile caricare le azioni" }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const parsedInput = ActionFieldsSchema.parse(await request.json());
+    await requireBotPermission(actor, parsedInput.botId, "chatbot.write");
     const definition =
       parsedInput.type === "show_widget"
         ? widgetDefinitionFromConfig(parsedInput.config)
@@ -84,6 +96,8 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     return NextResponse.json(
       {
         success: false,

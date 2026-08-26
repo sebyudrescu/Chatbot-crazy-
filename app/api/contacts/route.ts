@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { normalizeCRMEmail, normalizeCRMPhone } from "@/lib/crm-sync";
+import { accessibleBotIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from "@/lib/workspace-auth";
 
 const parse = (value: string) => {
   try {
@@ -13,8 +14,11 @@ const parse = (value: string) => {
 
 export async function GET(request: NextRequest) {
   try {
+    const actor = await requireDashboardActor(request);
     const botId = request.nextUrl.searchParams.get("botId");
-    const where = botId ? { botId } : undefined;
+    if (botId) await requireBotPermission(actor, botId, "chatbot.read");
+    const ids = botId ? null : await accessibleBotIds(actor, "chatbot.read");
+    const where = botId ? { botId } : ids === null ? undefined : { botId: { in: ids } };
     const [contacts, conversations] = await Promise.all([
       prisma.cRMContact.findMany({
         where,
@@ -93,6 +97,8 @@ export async function GET(request: NextRequest) {
       }),
     });
   } catch (error) {
+    const authResponse = dashboardAuthErrorResponse(error);
+    if (authResponse) return authResponse;
     console.error("Error fetching CRM contacts:", error);
     return NextResponse.json(
       { success: false, error: "Impossibile caricare i contatti CRM" },

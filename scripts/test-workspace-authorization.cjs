@@ -56,6 +56,15 @@ const chatbots = fs.readFileSync(path.join(root, 'app/api/chatbots/route.ts'), '
 const chatbot = fs.readFileSync(path.join(root, 'app/api/chatbots/[id]/route.ts'), 'utf8')
 const conversations = fs.readFileSync(path.join(root, 'app/api/conversations/route.ts'), 'utf8')
 const analytics = fs.readFileSync(path.join(root, 'app/api/analytics/route.ts'), 'utf8')
+const protectedCollections = [
+  'app/api/actions/route.ts',
+  'app/api/workflows/route.ts',
+  'app/api/evaluations/route.ts',
+  'app/api/integrations/route.ts',
+  'app/api/contacts/route.ts',
+  'app/api/commerce/route.ts',
+  'app/api/knowledge-sources/route.ts',
+].map(file => fs.readFileSync(path.join(root, file), 'utf8'))
 
 assert.match(proxy, /isTenantReadyApi/)
 assert.match(proxy, /litx_user_session/)
@@ -66,5 +75,9 @@ assert.match(chatbot, /requireBotPermission\(actor, params\.id, "chatbot\.write"
 assert.match(conversations, /allowedWorkspaceIds\(actor, 'conversation\.read'\)/)
 assert.match(analytics, /allowedWorkspaceIds\(actor, 'analytics\.read'\)/)
 assert.match(analytics, /accessibleBotIds/)
+for (const route of protectedCollections) {
+  assert.match(route, /requireDashboardActor/)
+  assert.match(route, /requireBotPermission|accessibleBotIds/)
+}
 
-console.log('Workspace authorization: 27 controlli superati')
+console.log('Workspace authorization: 41 controlli superati')
