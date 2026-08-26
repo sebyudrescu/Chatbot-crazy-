@@ -128,6 +128,10 @@ async function verifyWorkspaceIsolation() {
   assert(clientLogin.status === 200, "Client cannot sign in with the accepted credentials");
   const token = (clientLogin.headers.get("set-cookie") || "").match(/litx_user_session=([^;]+)/)?.[1];
   assert(token, "Client login did not return a session cookie");
+  const clientIdentity = await tenantRequest("/api/auth/me", token);
+  assert(clientIdentity.response.status === 200 && clientIdentity.body.data?.mode === "client", "Client identity endpoint rejected its session");
+  const clientPortal = await fetch(`${baseUrl}/portal`, { headers: { Cookie: `litx_user_session=${token}` } });
+  assert(clientPortal.status === 200 && (await clientPortal.text()).includes("Portale cliente"), "Client portal is unavailable");
   const [botA, botB] = await Promise.all([
     prisma.chatbot.create({ data: { workspaceId: workspaceA.id, companyName: "Smoke tenant A agent", isActive: false } }),
     prisma.chatbot.create({ data: { workspaceId: workspaceB.id, companyName: "Smoke tenant B agent", isActive: false } }),
@@ -1823,6 +1827,7 @@ try {
           "workspace-session-rejection",
           "workspace-invitation-acceptance",
           "workspace-client-login",
+          "workspace-client-portal",
           "workspace-operational-collections",
           "workspace-operational-items",
         ],

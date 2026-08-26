@@ -37,6 +37,10 @@ async function main() {
   const logout = fs.readFileSync(path.join(root, 'app/api/auth/logout/route.ts'), 'utf8')
   const invitations = fs.readFileSync(path.join(root, 'app/api/workspaces/[id]/invitations/route.ts'), 'utf8')
   const accept = fs.readFileSync(path.join(root, 'app/api/auth/invitations/[token]/route.ts'), 'utf8')
+  const me = fs.readFileSync(path.join(root, 'app/api/auth/me/route.ts'), 'utf8')
+  const loginPage = fs.readFileSync(path.join(root, 'app/login/page.tsx'), 'utf8')
+  const invitePage = fs.readFileSync(path.join(root, 'app/accept-invite/page.tsx'), 'utf8')
+  const portalPage = fs.readFileSync(path.join(root, 'app/portal/page.tsx'), 'utf8')
   assert.match(login, /verifyUserPassword/)
   assert.match(login, /checkRateLimit/)
   assert.match(login, /issueUserSession/)
@@ -48,8 +52,13 @@ async function main() {
   assert.match(accept, /acceptedAt: null/)
   assert.match(accept, /USER_SESSION_COOKIE/)
   assert.match(accept, /checkRateLimit/)
+  assert.match(me, /requireDashboardActor/)
+  assert.match(loginPage, /'client'/)
+  assert.match(loginPage, /\/portal/)
+  assert.match(invitePage, /Attiva il mio account/)
+  assert.match(portalPage, /Dati isolati per azienda/)
 
-  console.log('Client authentication: 21 controlli superati')
+  console.log('Client authentication: 26 controlli superati')
 }
 
 main().catch(error => {

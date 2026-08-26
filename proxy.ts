@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyOwnerSessionToken } from '@/lib/auth-token'
 import { httpSecurityHeaders } from '@/lib/http-security'
 
-const publicPaths = ['/', '/login', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/api/internal/commerce-sync', '/api/shopify/widget.js', '/chatbot-widget.js']
+const publicPaths = ['/', '/login', '/accept-invite', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/api/internal/commerce-sync', '/api/shopify/widget.js', '/chatbot-widget.js']
 const publicPrefixes = ['/agent/', '/api/auth/', '/api/embed/', '/api/v1/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions', '/api/commerce/click']
 
 function isTenantReadyApi(request: NextRequest) {
@@ -38,6 +38,9 @@ export async function proxy(request: NextRequest) {
   const isPublic = publicPaths.includes(request.nextUrl.pathname) || publicPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix))
   if (isPublic) return withSecurityHeaders(NextResponse.next(), request)
   const userSession = request.cookies.get('litx_user_session')?.value
+  if (request.nextUrl.pathname === '/portal' && userSession && /^[A-Za-z0-9_-]{43,128}$/.test(userSession)) {
+    return withSecurityHeaders(NextResponse.next(), request)
+  }
   if (isTenantReadyApi(request) && userSession && /^[A-Za-z0-9_-]{43,128}$/.test(userSession)) {
     return withSecurityHeaders(NextResponse.next(), request)
   }
