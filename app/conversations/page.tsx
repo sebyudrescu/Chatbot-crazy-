@@ -169,6 +169,11 @@ export default function ConversationsPage() {
   const selectedRef = useRef<Conversation | null>(null);
 
   useEffect(() => {
+    const requestedBotId = new URLSearchParams(window.location.search).get("botId");
+    if (requestedBotId) setBot(requestedBotId);
+  }, []);
+
+  useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
 
@@ -254,7 +259,8 @@ export default function ConversationsPage() {
       const views = (result.data || []) as SavedView[];
       setSavedViews(views);
       const defaultView = views.find((view) => view.isDefault);
-      if (defaultView) {
+      const requestedBotId = new URLSearchParams(window.location.search).get("botId");
+      if (defaultView && !requestedBotId) {
         setBot(defaultView.filters.botId || "all");
         setStatus(defaultView.filters.status === "handoff" ? "escalated" : defaultView.filters.status);
         setPriority(defaultView.filters.priority || "all");

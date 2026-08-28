@@ -110,12 +110,18 @@ function isTenantReadyApi(request: NextRequest) {
     && (request.method === 'GET' || request.method === 'PATCH' || request.method === 'DELETE')
 }
 
+function isTenantReadyPage(request: NextRequest) {
+  const path = request.nextUrl.pathname
+  if (path === '/portal' || path === '/analytics' || path === '/conversations' || path === '/contacts' || path === '/knowledge') return true
+  return /^\/chatbot\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/settings$/i.test(path)
+}
+
 export async function proxy(request: NextRequest) {
   const password = process.env.APP_ACCESS_PASSWORD
   const isPublic = publicPaths.includes(request.nextUrl.pathname) || publicPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix))
   if (isPublic) return withSecurityHeaders(NextResponse.next(), request)
   const userSession = request.cookies.get('litx_user_session')?.value
-  if (request.nextUrl.pathname === '/portal' && userSession && /^[A-Za-z0-9_-]{43,128}$/.test(userSession)) {
+  if (isTenantReadyPage(request) && userSession && /^[A-Za-z0-9_-]{43,128}$/.test(userSession)) {
     return withSecurityHeaders(NextResponse.next(), request)
   }
   if (isTenantReadyApi(request) && userSession && /^[A-Za-z0-9_-]{43,128}$/.test(userSession)) {

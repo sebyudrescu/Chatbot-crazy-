@@ -46,6 +46,8 @@ async function main() {
   const loginPage = fs.readFileSync(path.join(root, 'app/login/page.tsx'), 'utf8')
   const invitePage = fs.readFileSync(path.join(root, 'app/accept-invite/page.tsx'), 'utf8')
   const portalPage = fs.readFileSync(path.join(root, 'app/portal/page.tsx'), 'utf8')
+  const dashboardLayout = fs.readFileSync(path.join(root, 'components/DashboardLayout.tsx'), 'utf8')
+  const proxy = fs.readFileSync(path.join(root, 'proxy.ts'), 'utf8')
   assert.match(login, /verifyUserPassword/)
   assert.match(login, /checkRateLimit/)
   assert.match(login, /issueUserSession/)
@@ -76,8 +78,15 @@ async function main() {
   assert.match(portalPage, /Dati isolati per azienda/)
   assert.match(portalPage, /Team e accessi/)
   assert.match(portalPage, /Crea invito/)
+  assert.match(portalPage, /Chat e Help Desk/)
+  assert.match(portalPage, /\/analytics\?botId=/)
+  assert.match(portalPage, /\/knowledge\?botId=/)
+  assert.match(dashboardLayout, /ClientNavigation/)
+  assert.match(dashboardLayout, /clientCanConfigure/)
+  assert.match(proxy, /isTenantReadyPage/)
+  assert.match(proxy, /path === '\/analytics'/)
 
-  console.log('Client authentication: 41 controlli superati')
+  console.log('Client authentication: 49 controlli superati')
 }
 
 main().catch(error => {
