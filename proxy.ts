@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyOwnerSessionToken } from '@/lib/auth-token'
 import { httpSecurityHeaders } from '@/lib/http-security'
 
-const publicPaths = ['/', '/login', '/accept-invite', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/api/internal/commerce-sync', '/api/shopify/widget.js', '/chatbot-widget.js']
+const publicPaths = ['/', '/login', '/forgot-password', '/reset-password', '/accept-invite', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/api/internal/commerce-sync', '/api/shopify/widget.js', '/chatbot-widget.js']
 const publicPrefixes = ['/agent/', '/api/auth/', '/api/embed/', '/api/v1/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions', '/api/commerce/click']
 
 function isTenantReadyApi(request: NextRequest) {
@@ -112,7 +112,7 @@ function isTenantReadyApi(request: NextRequest) {
 
 function isTenantReadyPage(request: NextRequest) {
   const path = request.nextUrl.pathname
-  if (path === '/portal' || path === '/analytics' || path === '/conversations' || path === '/contacts' || path === '/knowledge') return true
+  if (path === '/portal' || path === '/analytics' || path === '/conversations' || path === '/contacts' || path === '/knowledge' || path === '/account/security') return true
   return /^\/chatbot\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/settings$/i.test(path)
 }
 

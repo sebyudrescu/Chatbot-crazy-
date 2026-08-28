@@ -59,7 +59,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ toke
       })
       await writeWorkspaceAudit(tx, {
         workspaceId: invitation!.workspaceId,
-        actor: { kind: 'user', userId: account.id, grants: [] },
+        actor: { kind: 'user', userId: account.id, sessionId: null, grants: [] },
         action: 'invitation.accepted',
         targetType: 'workspace_membership',
         targetId: membership.id,
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ toke
       })
       return account
     })
-    const session = await issueUserSession(user.id)
+    const session = await issueUserSession(user.id, { headers: request.headers })
     const response = NextResponse.json({ success: true, data: { workspaceId: invitation!.workspaceId, workspaceName: invitation!.workspace.name } })
     response.cookies.set(USER_SESSION_COOKIE, session.token, { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: USER_SESSION_MAX_AGE_SECONDS, priority: 'high' })
     response.cookies.set('litx_owner', '', { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 0, priority: 'high' })

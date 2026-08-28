@@ -13,6 +13,7 @@ import {
   type WorkspacePermission,
   type WorkspaceRole,
 } from "@/lib/workspace-permissions";
+import { deviceLabel, requestIpHash } from "@/lib/account-security";
 
 export {
   actorCanAccessWorkspace,
@@ -42,11 +43,19 @@ function userSessionHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function issueUserSession(userId: string, now = new Date()) {
+export async function issueUserSession(userId: string, context?: { headers?: Headers; now?: Date }) {
+  const now = context?.now || new Date();
   const token = randomBytes(48).toString("base64url");
   const expiresAt = new Date(now.getTime() + USER_SESSION_MAX_AGE_SECONDS * 1000);
   await prisma.userSession.create({
-    data: { userId, tokenHash: userSessionHash(token), expiresAt, lastUsedAt: now },
+    data: {
+      userId,
+      tokenHash: userSessionHash(token),
+      deviceLabel: context?.headers ? deviceLabel(context.headers.get("user-agent")) : null,
+      ipHash: context?.headers ? requestIpHash(context.headers) : null,
+      expiresAt,
+      lastUsedAt: now,
+    },
   });
   return { token, expiresAt };
 }
@@ -88,6 +97,7 @@ export async function authenticateDashboardRequest(request: NextRequest): Promis
   return {
     kind: "user",
     userId: session.userId,
+    sessionId: session.id,
     grants: session.user.memberships
       .filter((membership): membership is { workspaceId: string; role: WorkspaceRole } => isWorkspaceRole(membership.role))
       .map((membership) => ({ workspaceId: membership.workspaceId, role: membership.role })),

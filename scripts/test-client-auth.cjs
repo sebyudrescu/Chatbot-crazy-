@@ -14,6 +14,18 @@ require('ts-node/register/transpile-only')
 
 const { hashUserPassword, verifyUserPassword } = require('../lib/password-hash.ts')
 const { createInvitationToken, invitationTokenHash, isInvitationToken } = require('../lib/invitation-token.ts')
+const {
+  createOpaqueToken,
+  createRecoveryCodes,
+  createTotpCode,
+  createTotpSecret,
+  decryptAccountSecret,
+  deviceLabel,
+  encryptAccountSecret,
+  opaqueTokenHash,
+  recoveryCodeHash,
+  verifyTotp,
+} = require('../lib/account-security.ts')
 
 async function main() {
   const password = 'Una-password-di-test-2026!'
@@ -32,6 +44,26 @@ async function main() {
   assert.equal(invitationTokenHash(tokenA), invitationTokenHash(tokenA))
   assert.notEqual(invitationTokenHash(tokenA), invitationTokenHash(tokenB))
 
+  const secret = createTotpSecret()
+  const encryptedSecret = encryptAccountSecret(secret)
+  assert.notEqual(encryptedSecret, secret)
+  assert.equal(decryptAccountSecret(encryptedSecret), secret)
+  const fixedTime = Date.UTC(2026, 7, 29, 10, 30, 0)
+  const totp = createTotpCode(secret, fixedTime)
+  assert.match(totp, /^\d{6}$/)
+  assert.equal(verifyTotp(secret, totp, fixedTime), true)
+  assert.equal(verifyTotp(secret, '000000', fixedTime), totp === '000000')
+  const opaqueA = createOpaqueToken()
+  const opaqueB = createOpaqueToken()
+  assert.notEqual(opaqueA, opaqueB)
+  assert.equal(opaqueTokenHash(opaqueA), opaqueTokenHash(opaqueA))
+  assert.notEqual(opaqueTokenHash(opaqueA), opaqueTokenHash(opaqueB))
+  const recoveryCodes = createRecoveryCodes()
+  assert.equal(recoveryCodes.length, 8)
+  assert.equal(new Set(recoveryCodes).size, 8)
+  assert.notEqual(recoveryCodeHash('user-a', recoveryCodes[0]), recoveryCodeHash('user-b', recoveryCodes[0]))
+  assert.equal(deviceLabel('Mozilla/5.0 (Windows NT 10.0) Chrome/140.0'), 'Chrome su Windows')
+
   const root = path.resolve(__dirname, '..')
   const login = fs.readFileSync(path.join(root, 'app/api/auth/login/route.ts'), 'utf8')
   const logout = fs.readFileSync(path.join(root, 'app/api/auth/logout/route.ts'), 'utf8')
@@ -48,9 +80,18 @@ async function main() {
   const portalPage = fs.readFileSync(path.join(root, 'app/portal/page.tsx'), 'utf8')
   const dashboardLayout = fs.readFileSync(path.join(root, 'components/DashboardLayout.tsx'), 'utf8')
   const proxy = fs.readFileSync(path.join(root, 'proxy.ts'), 'utf8')
+  const resetRequest = fs.readFileSync(path.join(root, 'app/api/auth/password-reset/request/route.ts'), 'utf8')
+  const resetConfirm = fs.readFileSync(path.join(root, 'app/api/auth/password-reset/confirm/route.ts'), 'utf8')
+  const mfaSetup = fs.readFileSync(path.join(root, 'app/api/auth/mfa/setup/route.ts'), 'utf8')
+  const mfaEnable = fs.readFileSync(path.join(root, 'app/api/auth/mfa/enable/route.ts'), 'utf8')
+  const mfaVerify = fs.readFileSync(path.join(root, 'app/api/auth/mfa/verify/route.ts'), 'utf8')
+  const sessions = fs.readFileSync(path.join(root, 'app/api/auth/sessions/route.ts'), 'utf8')
+  const securityPage = fs.readFileSync(path.join(root, 'app/account/security/page.tsx'), 'utf8')
   assert.match(login, /verifyUserPassword/)
   assert.match(login, /checkRateLimit/)
   assert.match(login, /issueUserSession/)
+  assert.match(login, /mfaRequired/)
+  assert.match(login, /mfaChallenge\.create/)
   assert.match(logout, /revokeUserSession/)
   assert.match(invitations, /members\.manage/)
   assert.match(invitations, /tokenHash: invitationTokenHash\(token\)/)
@@ -72,7 +113,7 @@ async function main() {
   assert.match(accept, /USER_SESSION_COOKIE/)
   assert.match(accept, /checkRateLimit/)
   assert.match(me, /requireDashboardActor/)
-  assert.match(loginPage, /'client'/)
+  assert.match(loginPage, /["']client["']/)
   assert.match(loginPage, /\/portal/)
   assert.match(invitePage, /Attiva il mio account/)
   assert.match(portalPage, /Dati isolati per azienda/)
@@ -85,8 +126,23 @@ async function main() {
   assert.match(dashboardLayout, /clientCanConfigure/)
   assert.match(proxy, /isTenantReadyPage/)
   assert.match(proxy, /path === '\/analytics'/)
+  assert.match(proxy, /path === '\/account\/security'/)
+  assert.match(resetRequest, /GENERIC_MESSAGE/)
+  assert.match(resetRequest, /user\?\.status === ["']active["']/)
+  assert.match(resetRequest, /opaqueTokenHash/)
+  assert.doesNotMatch(resetRequest, /token:\s*token/)
+  assert.match(resetConfirm, /passwordResetToken\.updateMany/)
+  assert.match(resetConfirm, /userSession\.updateMany/)
+  assert.match(mfaSetup, /encryptAccountSecret/)
+  assert.match(mfaEnable, /mfaRecoveryCodeHashes/)
+  assert.match(mfaVerify, /mfaChallenge\.updateMany/)
+  assert.match(mfaVerify, /recoveryIndex/)
+  assert.match(sessions, /actor\.userId/)
+  assert.match(sessions, /revokedAt: null/)
+  assert.match(securityPage, /autenticazione a due fattori/i)
+  assert.match(securityPage, /Dispositivi collegati/)
 
-  console.log('Client authentication: 49 controlli superati')
+  console.log('Client authentication e sicurezza account: controlli superati')
 }
 
 main().catch(error => {

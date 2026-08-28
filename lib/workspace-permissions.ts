@@ -33,7 +33,7 @@ export interface WorkspaceGrant {
 
 export type DashboardActor =
   | { kind: "legacy_owner"; userId: null; grants: null }
-  | { kind: "user"; userId: string; grants: WorkspaceGrant[] };
+  | { kind: "user"; userId: string; sessionId: string | null; grants: WorkspaceGrant[] };
 
 export function isWorkspaceRole(value: string): value is WorkspaceRole {
   return value === "owner" || value === "admin" || value === "operator" || value === "viewer";

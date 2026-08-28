@@ -29,18 +29,23 @@ model Workspace {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  displayName  String
-  passwordHash String?
-  status       String   @default("active")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  displayName           String
+  passwordHash          String?
+  status                String    @default("active")
+  mfaSecretEncrypted    String?
+  mfaRecoveryCodeHashes String?
+  mfaEnabledAt          DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  memberships        WorkspaceMembership[]
-  sessions           UserSession[]
-  invitationsCreated WorkspaceInvitation[] @relation("WorkspaceInvitationCreator")
-  workspaceAuditLogs WorkspaceAuditLog[]
+  memberships         WorkspaceMembership[]
+  sessions            UserSession[]
+  passwordResetTokens PasswordResetToken[]
+  mfaChallenges       MfaChallenge[]
+  invitationsCreated  WorkspaceInvitation[] @relation("WorkspaceInvitationCreator")
+  workspaceAuditLogs  WorkspaceAuditLog[]
 
   @@index([status])
   @@index([createdAt])
@@ -66,19 +71,52 @@ model WorkspaceMembership {
 }
 
 model UserSession {
-  id         String    @id @default(uuid())
-  userId     String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  lastUsedAt DateTime  @default(now())
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
+  id          String    @id @default(uuid())
+  userId      String
+  tokenHash   String    @unique
+  deviceLabel String?
+  ipHash      String?
+  expiresAt   DateTime
+  lastUsedAt  DateTime  @default(now())
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
   @@index([expiresAt, revokedAt])
   @@map("user_sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
+  @@map("password_reset_tokens")
+}
+
+model MfaChallenge {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
+  @@map("mfa_challenges")
 }
 
 model WorkspaceInvitation {

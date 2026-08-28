@@ -5,6 +5,7 @@ import { checkRateLimit, requestClientIp } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
 import { issueUserSession, USER_SESSION_COOKIE, USER_SESSION_MAX_AGE_SECONDS } from '@/lib/workspace-auth'
 import { verifyUserPassword } from '@/lib/password-hash'
+import { createOpaqueToken, opaqueTokenHash } from '@/lib/account-security'
 
 const Schema = z.object({ email: z.string().trim().email().max(320).optional(), password: z.string().min(1).max(500) })
 
@@ -29,7 +30,16 @@ export async function POST(request: NextRequest) {
       await new Promise(resolve => setTimeout(resolve, 350))
       return NextResponse.json({ success: false, error: 'Credenziali non corrette' }, { status: 401 })
     }
-    const session = await issueUserSession(user.id)
+    if (user.mfaEnabledAt && user.mfaSecretEncrypted) {
+      const challenge = createOpaqueToken(32)
+      const now = new Date()
+      await prisma.$transaction([
+        prisma.mfaChallenge.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: now } }),
+        prisma.mfaChallenge.create({ data: { userId: user.id, tokenHash: opaqueTokenHash(challenge), expiresAt: new Date(now.getTime() + 10 * 60_000) } }),
+      ])
+      return NextResponse.json({ success: true, mode: 'client', mfaRequired: true, challenge })
+    }
+    const session = await issueUserSession(user.id, { headers: request.headers })
     const response = NextResponse.json({ success: true, mode: 'client', data: { displayName: user.displayName, memberships: user.memberships } })
     response.cookies.set(USER_SESSION_COOKIE, session.token, { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: USER_SESSION_MAX_AGE_SECONDS, priority: 'high' })
     response.cookies.set('litx_owner', '', { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 0, priority: 'high' })

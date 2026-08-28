@@ -213,6 +213,7 @@ function ClientNavigation({ canConfigure, onNavigate }: { canConfigure: boolean;
     <SidebarLink href="/conversations" icon={MessageSquare} label="Chat e Help Desk" onClick={onNavigate} />
     <SidebarLink href="/contacts" icon={Users} label="Contatti (CRM)" onClick={onNavigate} />
     {canConfigure && <SidebarLink href="/knowledge" icon={Database} label="Knowledge Base" onClick={onNavigate} />}
+    <SidebarLink href="/account/security" icon={ShieldCheck} label="Sicurezza account" onClick={onNavigate} />
   </SidebarSection>
 }
 

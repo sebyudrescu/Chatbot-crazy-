@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
         id: true,
         email: true,
         displayName: true,
+        mfaEnabledAt: true,
         memberships: {
           where: { status: 'active' },
           select: { role: true, workspace: { select: { id: true, name: true, slug: true } } },
@@ -19,7 +20,8 @@ export async function GET(request: NextRequest) {
       },
     })
     if (!user) return NextResponse.json({ success: false, error: 'Account non disponibile' }, { status: 401 })
-    return NextResponse.json({ success: true, data: { mode: 'client', ...user } })
+    const { mfaEnabledAt, ...safeUser } = user
+    return NextResponse.json({ success: true, data: { mode: 'client', ...safeUser, mfaEnabled: Boolean(mfaEnabledAt) } })
   } catch (error) {
     const authResponse = dashboardAuthErrorResponse(error)
     if (authResponse) return authResponse
