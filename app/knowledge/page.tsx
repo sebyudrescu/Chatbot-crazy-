@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import Link from 'next/link'
+import { useDashboardPermissions } from '@/lib/use-dashboard-permissions'
 
 interface KnowledgeSource {
   id: string
@@ -27,6 +28,7 @@ interface KnowledgeSource {
 
 interface Chatbot {
   id: string
+  workspaceId: string
   companyName: string
   _count: {
     knowledgeSources: number
@@ -34,6 +36,7 @@ interface Chatbot {
 }
 
 export default function KnowledgePage() {
+  const permissions = useDashboardPermissions()
   const [chatbots, setChatbots] = useState<Chatbot[]>([])
   const [selectedChatbot, setSelectedChatbot] = useState<string>('')
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>([])
@@ -51,6 +54,8 @@ export default function KnowledgePage() {
   const [crawlUrl, setCrawlUrl] = useState('')
   const [crawling, setCrawling] = useState(false)
   const [crawlProgress, setCrawlProgress] = useState<string>('')
+  const selectedWorkspaceId = chatbots.find(bot => bot.id === selectedChatbot)?.workspaceId
+  const canManageKnowledge = permissions.can(selectedWorkspaceId, 'configure')
 
   useEffect(() => {
     fetchChatbots()
@@ -349,7 +354,7 @@ export default function KnowledgePage() {
             </select>
           </div>
 
-          {selectedBot && (
+          {selectedBot && canManageKnowledge && (
             <div className="flex gap-2">
               <Link href="/knowledge/import" className="btn btn-secondary"><Upload className="h-4 w-4" />Importa documenti</Link>
               <Button
@@ -365,6 +370,7 @@ export default function KnowledgePage() {
 
       {/* Content */}
       <div className="mx-auto max-w-[1500px] px-5 py-6 lg:px-7">
+        {selectedBot && permissions.loaded && !canManageKnowledge && <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">Accesso in sola lettura: solo proprietari e admin possono modificare le fonti.</div>}
         {selectedBot && (
           <>
             {/* Search */}
@@ -448,7 +454,7 @@ export default function KnowledgePage() {
                       {/* Actions */}
                       <div className="flex items-center gap-2 ml-4">
                         {getStatusIcon(source.status)}
-                        {source.sourceType !== 'qa' && (
+                        {canManageKnowledge && source.sourceType !== 'qa' && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -467,7 +473,7 @@ export default function KnowledgePage() {
       </div>
 
       {/* Upload Modal */}
-      {showUploadModal && (
+      {showUploadModal && canManageKnowledge && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <Card className="max-w-2xl w-full" padding="none">
             <CardHeader>

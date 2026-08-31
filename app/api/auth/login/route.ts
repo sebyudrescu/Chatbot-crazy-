@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       include: { memberships: { where: { status: 'active' }, select: { workspaceId: true, role: true } } },
     })
     const valid = Boolean(user?.passwordHash) && await verifyUserPassword(input.password, user!.passwordHash!)
-    if (!user || user.status !== 'active' || !valid || user.memberships.length === 0) {
+    if (!user || user.status !== 'active' || !user.emailVerifiedAt || !valid || user.memberships.length === 0) {
       await new Promise(resolve => setTimeout(resolve, 350))
       return NextResponse.json({ success: false, error: 'Credenziali non corrette' }, { status: 401 })
     }

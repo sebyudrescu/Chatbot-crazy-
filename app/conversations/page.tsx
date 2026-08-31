@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/Button";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { SafeRichText } from "@/components/chat/SafeRichText";
 import { whatsappServiceWindow } from "@/lib/meta-payloads";
+import { useDashboardPermissions } from "@/lib/use-dashboard-permissions";
 
 interface Message {
   id: string;
@@ -121,6 +122,7 @@ interface SavedView {
 }
 
 export default function ConversationsPage() {
+  const permissions = useDashboardPermissions();
   const [items, setItems] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,7 +141,7 @@ export default function ConversationsPage() {
   const [savingView, setSavingView] = useState(false);
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [viewError, setViewError] = useState("");
-  const [botOptions, setBotOptions] = useState<Array<{ id: string; companyName: string }>>([]);
+  const [botOptions, setBotOptions] = useState<Array<{ id: string; companyName: string; workspaceId: string }>>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
@@ -279,7 +281,7 @@ export default function ConversationsPage() {
   useEffect(() => {
     fetch("/api/chatbots")
       .then((response) => response.json())
-      .then((result) => result.success && setBotOptions(result.data.map((item: { id: string; companyName: string }) => ({ id: item.id, companyName: item.companyName }))));
+      .then((result) => result.success && setBotOptions(result.data.map((item: { id: string; companyName: string; workspaceId: string }) => ({ id: item.id, companyName: item.companyName, workspaceId: item.workspaceId }))));
   }, []);
 
   const loadMore = async () => {
@@ -334,6 +336,8 @@ export default function ConversationsPage() {
   }, [listQuery, debouncedSearch]);
 
   const bots = botOptions;
+  const selectedWorkspaceId = botOptions.find(item => item.id === selected?.botId)?.workspaceId;
+  const canWriteSelected = permissions.can(selectedWorkspaceId, "conversations.write");
   const lastInboundAt = useMemo(
     () =>
       selected?.messages.filter((message) => message.role === "user").at(-1)
@@ -921,7 +925,7 @@ export default function ConversationsPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex shrink-0 gap-1.5">
+                <fieldset disabled={!canWriteSelected} className="flex shrink-0 gap-1.5 disabled:opacity-60">
                   <button
                     type="button"
                     onClick={() => setMobilePanel("details")}
@@ -993,7 +997,7 @@ export default function ConversationsPage() {
                       {selected.isResolved ? "Riapri" : "Risolvi"}
                     </span>
                   </Button>
-                </div>
+                </fieldset>
               </div>
               <div className="flex-1 space-y-4 overflow-y-auto p-3 sm:p-6">
                 {detailLoading ? (
@@ -1024,7 +1028,7 @@ export default function ConversationsPage() {
                             ? ` · ${deliveryLabel(message.deliveryStatus)}`
                             : ""}
                         </p>
-                        {message.role === "assistant" && (
+                        {message.role === "assistant" && permissions.can(selectedWorkspaceId, "configure") && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/20 pt-2">
                             <button
                               type="button"
@@ -1050,6 +1054,8 @@ export default function ConversationsPage() {
                 )}
               </div>
               <div className="border-t bg-white p-3 sm:p-4">
+                {permissions.loaded && !canWriteSelected && <p className="mx-auto mb-3 max-w-3xl rounded-lg border border-blue-200 bg-blue-50 p-2 text-[10px] text-blue-800">Accesso in sola lettura: il ruolo Viewer non può prendere in carico o rispondere.</p>}
+                <fieldset disabled={!canWriteSelected} className="disabled:opacity-70">
                 {selected.channel === "whatsapp" && (
                   <div
                     className={`mx-auto mb-3 max-w-3xl rounded-lg border px-3 py-2 text-[10px] leading-4 ${whatsappWindowOpen ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}
@@ -1203,6 +1209,7 @@ export default function ConversationsPage() {
                     {replyError}
                   </p>
                 )}
+                </fieldset>
               </div>
             </>
           ) : (

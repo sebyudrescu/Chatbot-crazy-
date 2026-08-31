@@ -1,42 +1,731 @@
-'use client'
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { Building2, Columns3, Download, Euro, List, Mail, MessageSquare, Phone, Plus, Search, ShieldCheck, Tag as TagIcon, User, Users } from 'lucide-react'
-import { DashboardLayout } from '@/components/DashboardLayout'
-import { Button } from '@/components/ui/Button'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  Building2,
+  Columns3,
+  Download,
+  Euro,
+  List,
+  Mail,
+  MessageSquare,
+  Phone,
+  Plus,
+  Search,
+  ShieldCheck,
+  Tag as TagIcon,
+  User,
+  Users,
+} from "lucide-react";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import { Button } from "@/components/ui/Button";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { useDashboardPermissions } from "@/lib/use-dashboard-permissions";
 
-type Stage = 'new' | 'qualified' | 'appointment' | 'proposal' | 'client' | 'lost'
-interface Note { id: string; text: string; createdAt: string }
-interface Contact { id: string; conversationId: string | null; name: string | null; email: string | null; phone: string | null; company: string | null; agent: { id: string; companyName: string }; conversationCount: number; messageCount: number; lastInteraction: string; intents: string[]; needsAttention: boolean; resolved: boolean; leadScore: number; stage: Stage; potentialValue: number | null; tags: string[]; notes: Note[]; consentStatus: string }
-const stages: Array<{ id: Stage; label: string; color: string }> = [
-  { id: 'new', label: 'Nuovo lead', color: 'bg-sky-500' }, { id: 'qualified', label: 'Qualificato', color: 'bg-violet-500' }, { id: 'appointment', label: 'Appuntamento', color: 'bg-amber-500' }, { id: 'proposal', label: 'Proposta', color: 'bg-orange-500' }, { id: 'client', label: 'Cliente', color: 'bg-emerald-500' }, { id: 'lost', label: 'Perso', color: 'bg-gray-400' },
-]
-export default function ContactsPage() {
-  const [contacts, setContacts] = useState<Contact[]>([]), [loading, setLoading] = useState(true), [search, setSearch] = useState(''), [agent, setAgent] = useState('all'), [selected, setSelected] = useState<Contact | null>(null), [view, setView] = useState<'list' | 'kanban'>('list'), [note, setNote] = useState(''), [tag, setTag] = useState(''), [error, setError] = useState('')
-  const load = useCallback(async () => { try { const response = await fetch('/api/contacts'); const result = await response.json(); if (!response.ok || !result.success) throw new Error(result.error || 'CRM non disponibile'); const data = result.data || []; setContacts(data); setSelected(current => data.find((item: Contact) => item.id === current?.id) || data[0] || null); setError('') } catch (cause) { setError(cause instanceof Error ? cause.message : 'Impossibile caricare il CRM') } finally { setLoading(false) } }, [])
-  useEffect(() => { load() }, [load])
-  const agents = useMemo(() => Array.from(new Map(contacts.map(item => [item.agent.id, item.agent])).values()), [contacts])
-  const filtered = useMemo(() => contacts.filter(item => { const query = search.toLowerCase(); return (agent === 'all' || item.agent.id === agent) && (!query || [item.name, item.email, item.phone, item.company].some(value => value?.toLowerCase().includes(query))) }), [contacts, search, agent])
-  const update = async (contact: Contact, data: Record<string, unknown>) => { try { const response = await fetch(`/api/contacts/${contact.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); const result = await response.json(); if (!response.ok || !result.success) throw new Error(result.error || 'Aggiornamento non riuscito'); setContacts(current => current.map(item => item.id === contact.id ? { ...item, ...result.data } : item)); setSelected(current => current?.id === contact.id ? { ...current, ...result.data } : current); setError('') } catch (cause) { setError(cause instanceof Error ? cause.message : 'Aggiornamento non riuscito') } }
-  const addTag = async () => { if (!selected || !tag.trim()) return; await update(selected, { tags: [...new Set([...selected.tags, tag.trim()])] }); setTag('') }
-  const addNote = async () => { if (!selected || !note.trim()) return; await update(selected, { note }); setNote('') }
-  if (loading) return <DashboardLayout><LoadingSpinner fullPage text="Preparazione CRM..." /></DashboardLayout>
-  return <DashboardLayout><div className="mx-auto max-w-[1600px] p-4 lg:p-7">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">CRM privato</p><h1 className="mt-1 text-2xl font-bold text-gray-950">Contatti e Pipeline</h1><p className="mt-1 text-sm text-gray-500">Lead sincronizzati dalle conversazioni e organizzati per fase commerciale.</p></div><div className="flex items-center gap-2"><a href={`/api/contacts/export${agent === 'all' ? '' : `?botId=${agent}`}`} className="btn btn-secondary text-xs"><Download className="h-3.5 w-3.5" /> Esporta CSV</a><div className="flex rounded-lg border bg-white p-1"><button onClick={() => setView('list')} className={`rounded-md p-2 ${view === 'list' ? 'bg-brand-50 text-brand-600' : 'text-gray-400'}`} title="Elenco"><List className="h-4 w-4" /></button><button onClick={() => setView('kanban')} className={`rounded-md p-2 ${view === 'kanban' ? 'bg-brand-50 text-brand-600' : 'text-gray-400'}`} title="Pipeline"><Columns3 className="h-4 w-4" /></button></div></div></div>
-    {error && <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
-    <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={Users} label="Contatti totali" value={contacts.length} /><Metric icon={Mail} label="Email raccolte" value={contacts.filter(item => item.email).length} /><Metric icon={Euro} label="Valore pipeline" value={`€${contacts.reduce((sum, item) => sum + (item.potentialValue || 0), 0).toLocaleString('it-IT')}`} /><Metric icon={User} label="Da gestire" value={contacts.filter(item => item.needsAttention).length} /></div>
-    <div className="mt-5 card flex flex-wrap gap-3 p-4"><div className="relative min-w-[240px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Cerca nome, email, telefono..." className="input pl-9 text-xs" /></div><select value={agent} onChange={event => setAgent(event.target.value)} className="input w-52 text-xs"><option value="all">Tutti gli agenti</option>{agents.map(item => <option key={item.id} value={item.id}>{item.companyName}</option>)}</select></div>
-    {view === 'kanban' ? <Kanban contacts={filtered} onSelect={setSelected} onMove={(contact, stage) => update(contact, { stage })} /> : <div className="mt-5 grid min-h-[620px] overflow-hidden rounded-xl border bg-white xl:grid-cols-[minmax(0,1fr)_360px]"><ContactTable contacts={filtered} selected={selected} onSelect={setSelected} /><ContactPanel contact={selected} note={note} setNote={setNote} addNote={addNote} tag={tag} setTag={setTag} addTag={addTag} update={update} /></div>}
-    {view === 'kanban' && selected && <div className="fixed inset-y-0 right-0 z-50 w-full max-w-sm overflow-y-auto border-l bg-white p-5 shadow-2xl"><button onClick={() => setSelected(null)} className="mb-3 text-xs font-semibold text-gray-400">Chiudi</button><ContactPanel contact={selected} note={note} setNote={setNote} addNote={addNote} tag={tag} setTag={setTag} addTag={addTag} update={update} standalone /></div>}
-  </div></DashboardLayout>
+type Stage =
+  "new" | "qualified" | "appointment" | "proposal" | "client" | "lost";
+interface Note {
+  id: string;
+  text: string;
+  createdAt: string;
 }
-function ContactTable({ contacts, selected, onSelect }: { contacts: Contact[]; selected: Contact | null; onSelect: (contact: Contact) => void }) { return <section className="min-w-0 overflow-x-auto"><table className="w-full text-left"><thead className="border-b bg-gray-50 text-[9px] uppercase tracking-wider text-gray-400"><tr><th className="px-5 py-3">Contatto</th><th className="px-4 py-3">Agente</th><th className="px-4 py-3">Fase</th><th className="px-4 py-3">Lead score</th><th className="px-4 py-3">Valore</th></tr></thead><tbody className="divide-y">{contacts.map(item => <tr key={item.id} onClick={() => onSelect(item)} className={`cursor-pointer text-xs hover:bg-gray-50 ${selected?.id === item.id ? 'bg-brand-50/50' : ''}`}><td className="px-5 py-4"><p className="font-semibold text-gray-800">{contactName(item)}</p><p className="mt-0.5 text-[10px] text-gray-400">{item.email || item.phone || 'Contatto non identificato'}</p></td><td className="px-4 py-4 text-[10px] text-gray-500">{item.agent.companyName}</td><td className="px-4 py-4"><StageTag stage={item.stage} /></td><td className="px-4 py-4"><Score value={item.leadScore} /></td><td className="px-4 py-4 font-semibold text-gray-700">{item.potentialValue ? `€${item.potentialValue.toLocaleString('it-IT')}` : '—'}</td></tr>)}</tbody></table>{!contacts.length && <div className="p-16 text-center text-xs text-gray-400">Nessun contatto trovato.</div>}</section> }
-function Kanban({ contacts, onSelect, onMove }: { contacts: Contact[]; onSelect: (contact: Contact) => void; onMove: (contact: Contact, stage: Stage) => void }) { return <div className="mt-5 overflow-x-auto pb-4"><div className="grid min-w-[1450px] grid-cols-6 gap-3">{stages.map(stage => { const items = contacts.filter(item => item.stage === stage.id); return <section key={stage.id} onDragOver={event => event.preventDefault()} onDrop={event => { const contact = contacts.find(item => item.id === event.dataTransfer.getData('contact')); if (contact) onMove(contact, stage.id) }} className="min-h-[560px] rounded-xl bg-gray-100/70 p-3"><div className="flex items-center gap-2 px-1"><span className={`h-2 w-2 rounded-full ${stage.color}`} /><h2 className="text-[11px] font-semibold text-gray-700">{stage.label}</h2><span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[9px] text-gray-500">{items.length}</span></div><div className="mt-3 space-y-2">{items.map(item => <button draggable onDragStart={event => event.dataTransfer.setData('contact', item.id)} onClick={() => onSelect(item)} key={item.id} className="w-full rounded-xl border bg-white p-3 text-left shadow-sm transition hover:border-brand-200 hover:shadow-md"><p className="truncate text-xs font-semibold text-gray-800">{contactName(item)}</p><p className="mt-1 truncate text-[9px] text-gray-400">{item.agent.companyName}</p><div className="mt-3 flex items-center justify-between"><Score value={item.leadScore} compact /><span className="text-[10px] font-semibold text-gray-600">{item.potentialValue ? `€${item.potentialValue.toLocaleString('it-IT')}` : '—'}</span></div>{item.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{item.tags.slice(0, 2).map(tag => <span key={tag} className="rounded bg-brand-50 px-1.5 py-0.5 text-[8px] text-brand-600">{tag}</span>)}</div>}</button>)}</div></section> })}</div></div> }
-function ContactPanel({ contact, note, setNote, addNote, tag, setTag, addTag, update, standalone }: { contact: Contact | null; note: string; setNote: (value: string) => void; addNote: () => void; tag: string; setTag: (value: string) => void; addTag: () => void; update: (contact: Contact, data: Record<string, unknown>) => void; standalone?: boolean }) { if (!contact) return <aside className="border-l p-5 text-xs text-gray-400">Seleziona un contatto.</aside>; return <aside className={standalone ? '' : 'border-l bg-gray-50/40 p-5'}><div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-brand-700"><User className="h-5 w-5" /></div><h2 className="mt-3 text-sm font-semibold">{contactName(contact)}</h2><p className="text-[10px] text-gray-400">Ultima attività {new Date(contact.lastInteraction).toLocaleString('it-IT')}</p><div className="my-4 border-t" /><div className="space-y-3"><Info icon={Mail} label="Email" value={contact.email || 'Non raccolta'} /><Info icon={Phone} label="Telefono" value={contact.phone || 'Non raccolto'} /><Info icon={Building2} label="Azienda" value={contact.company || 'Non raccolta'} /><Info icon={MessageSquare} label="Conversazioni" value={`${contact.conversationCount} · ${contact.messageCount} messaggi`} /></div><div className="my-4 border-t" /><label className="block"><span className="label">Fase pipeline</span><select className="input text-xs" value={contact.stage} onChange={event => update(contact, { stage: event.target.value })}>{stages.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label><label className="mt-3 block"><span className="label">Valore potenziale (€)</span><input key={`${contact.id}:${contact.potentialValue}`} className="input text-xs" type="number" min="0" defaultValue={contact.potentialValue ?? ''} onBlur={event => update(contact, { potentialValue: event.target.value ? Number(event.target.value) : null })} /></label><label className="mt-3 block"><span className="label flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Consenso contatto</span><select className="input text-xs" value={contact.consentStatus} onChange={event => update(contact, { consentStatus: event.target.value })}><option value="unknown">Non registrato</option><option value="granted">Concesso</option><option value="denied">Negato / revocato</option></select></label><div className="my-4 border-t" /><p className="label">Tag</p><div className="flex flex-wrap gap-1">{contact.tags.map(item => <button key={item} type="button" onClick={() => update(contact, { tags: contact.tags.filter(tagItem => tagItem !== item) })} title="Rimuovi tag" className="rounded bg-brand-50 px-2 py-1 text-[9px] text-brand-600">{item} ×</button>)}</div><div className="mt-2 flex gap-2"><input className="input py-2 text-xs" value={tag} onChange={event => setTag(event.target.value)} placeholder="Aggiungi tag" /><Button size="sm" variant="secondary" onClick={addTag} icon={<TagIcon className="h-3.5 w-3.5" />} /></div><div className="my-4 border-t" /><p className="label">Note interne</p><div className="max-h-32 space-y-2 overflow-y-auto">{contact.notes.slice().reverse().map(item => <div key={item.id} className="rounded-lg bg-white p-2 text-[10px] leading-4 text-gray-600"><p>{item.text}</p><span className="text-[8px] text-gray-400">{new Date(item.createdAt).toLocaleString('it-IT')}</span></div>)}</div><textarea className="textarea mt-2 min-h-16 text-xs" value={note} onChange={event => setNote(event.target.value)} placeholder="Nuova nota..." /><Button size="sm" fullWidth variant="secondary" onClick={addNote} disabled={!note.trim()} icon={<Plus className="h-3.5 w-3.5" />}>Aggiungi nota</Button>{contact.conversationId && <Link href={`/conversations?conversation=${contact.conversationId}`} className="btn btn-primary mt-4 w-full text-xs">Apri conversazione</Link>}</aside> }
-function contactName(contact: Contact) { return contact.name || contact.email || `Visitatore ${contact.id.slice(-6)}` }
-function Metric({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: string | number }) { return <div className="card flex items-center gap-4 p-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600"><Icon className="h-5 w-5" /></div><div><p className="text-xl font-bold">{value}</p><p className="text-[10px] text-gray-400">{label}</p></div></div> }
-function Info({ icon: Icon, label, value }: { icon: typeof User; label: string; value: string }) { return <div className="flex gap-3"><Icon className="mt-0.5 h-3.5 w-3.5 text-gray-400" /><div><p className="text-[9px] uppercase tracking-wider text-gray-400">{label}</p><p className="text-[11px] font-medium text-gray-700">{value}</p></div></div> }
-function StageTag({ stage }: { stage: Stage }) { const item = stages.find(value => value.id === stage)!; return <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-1 text-[9px] font-semibold text-gray-600"><span className={`h-1.5 w-1.5 rounded-full ${item.color}`} />{item.label}</span> }
-function Score({ value, compact }: { value: number; compact?: boolean }) { return <div className="flex items-center gap-2"><div className={`${compact ? 'w-10' : 'w-16'} h-1.5 rounded-full bg-gray-100`}><div className={`h-full rounded-full ${value >= 70 ? 'bg-emerald-500' : value >= 40 ? 'bg-amber-400' : 'bg-gray-400'}`} style={{ width: `${value}%` }} /></div><span className="text-[9px] font-semibold">{value}</span></div> }
+interface Contact {
+  id: string;
+  conversationId: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  agent: { id: string; companyName: string; workspaceId: string };
+  conversationCount: number;
+  messageCount: number;
+  lastInteraction: string;
+  intents: string[];
+  needsAttention: boolean;
+  resolved: boolean;
+  leadScore: number;
+  stage: Stage;
+  potentialValue: number | null;
+  tags: string[];
+  notes: Note[];
+  consentStatus: string;
+}
+const stages: Array<{ id: Stage; label: string; color: string }> = [
+  { id: "new", label: "Nuovo lead", color: "bg-sky-500" },
+  { id: "qualified", label: "Qualificato", color: "bg-violet-500" },
+  { id: "appointment", label: "Appuntamento", color: "bg-amber-500" },
+  { id: "proposal", label: "Proposta", color: "bg-orange-500" },
+  { id: "client", label: "Cliente", color: "bg-emerald-500" },
+  { id: "lost", label: "Perso", color: "bg-gray-400" },
+];
+export default function ContactsPage() {
+  const permissions = useDashboardPermissions();
+  const [contacts, setContacts] = useState<Contact[]>([]),
+    [loading, setLoading] = useState(true),
+    [search, setSearch] = useState(""),
+    [agent, setAgent] = useState("all"),
+    [selected, setSelected] = useState<Contact | null>(null),
+    [view, setView] = useState<"list" | "kanban">("list"),
+    [note, setNote] = useState(""),
+    [tag, setTag] = useState(""),
+    [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch("/api/contacts");
+      const result = await response.json();
+      if (!response.ok || !result.success)
+        throw new Error(result.error || "CRM non disponibile");
+      const data = result.data || [];
+      setContacts(data);
+      setSelected(
+        (current) =>
+          data.find((item: Contact) => item.id === current?.id) ||
+          data[0] ||
+          null,
+      );
+      setError("");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Impossibile caricare il CRM",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const agents = useMemo(
+    () =>
+      Array.from(
+        new Map(contacts.map((item) => [item.agent.id, item.agent])).values(),
+      ),
+    [contacts],
+  );
+  const filtered = useMemo(
+    () =>
+      contacts.filter((item) => {
+        const query = search.toLowerCase();
+        return (
+          (agent === "all" || item.agent.id === agent) &&
+          (!query ||
+            [item.name, item.email, item.phone, item.company].some((value) =>
+              value?.toLowerCase().includes(query),
+            ))
+        );
+      }),
+    [contacts, search, agent],
+  );
+  const update = async (contact: Contact, data: Record<string, unknown>) => {
+    if (!permissions.can(contact.agent.workspaceId, "configure")) {
+      setError(
+        "Accesso in sola lettura: modifica riservata a proprietari e admin.",
+      );
+      return;
+    }
+    try {
+      const response = await fetch(`/api/contacts/${contact.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success)
+        throw new Error(result.error || "Aggiornamento non riuscito");
+      setContacts((current) =>
+        current.map((item) =>
+          item.id === contact.id ? { ...item, ...result.data } : item,
+        ),
+      );
+      setSelected((current) =>
+        current?.id === contact.id ? { ...current, ...result.data } : current,
+      );
+      setError("");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Aggiornamento non riuscito",
+      );
+    }
+  };
+  const addTag = async () => {
+    if (!selected || !tag.trim()) return;
+    await update(selected, {
+      tags: [...new Set([...selected.tags, tag.trim()])],
+    });
+    setTag("");
+  };
+  const addNote = async () => {
+    if (!selected || !note.trim()) return;
+    await update(selected, { note });
+    setNote("");
+  };
+  if (loading)
+    return (
+      <DashboardLayout>
+        <LoadingSpinner fullPage text="Preparazione CRM..." />
+      </DashboardLayout>
+    );
+  return (
+    <DashboardLayout>
+      <div className="mx-auto max-w-[1600px] p-4 lg:p-7">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="eyebrow">CRM privato</p>
+            <h1 className="mt-1 text-2xl font-bold text-gray-950">
+              Contatti e Pipeline
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Lead sincronizzati dalle conversazioni e organizzati per fase
+              commerciale.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/api/contacts/export${agent === "all" ? "" : `?botId=${agent}`}`}
+              className="btn btn-secondary text-xs"
+            >
+              <Download className="h-3.5 w-3.5" /> Esporta CSV
+            </a>
+            <div className="flex rounded-lg border bg-white p-1">
+              <button
+                onClick={() => setView("list")}
+                className={`rounded-md p-2 ${view === "list" ? "bg-brand-50 text-brand-600" : "text-gray-400"}`}
+                title="Elenco"
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setView("kanban")}
+                className={`rounded-md p-2 ${view === "kanban" ? "bg-brand-50 text-brand-600" : "text-gray-400"}`}
+                title="Pipeline"
+              >
+                <Columns3 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+        {error && (
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700"
+          >
+            {error}
+          </div>
+        )}
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric
+            icon={Users}
+            label="Contatti totali"
+            value={contacts.length}
+          />
+          <Metric
+            icon={Mail}
+            label="Email raccolte"
+            value={contacts.filter((item) => item.email).length}
+          />
+          <Metric
+            icon={Euro}
+            label="Valore pipeline"
+            value={`€${contacts.reduce((sum, item) => sum + (item.potentialValue || 0), 0).toLocaleString("it-IT")}`}
+          />
+          <Metric
+            icon={User}
+            label="Da gestire"
+            value={contacts.filter((item) => item.needsAttention).length}
+          />
+        </div>
+        <div className="mt-5 card flex flex-wrap gap-3 p-4">
+          <div className="relative min-w-[240px] flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Cerca nome, email, telefono..."
+              className="input pl-9 text-xs"
+            />
+          </div>
+          <select
+            value={agent}
+            onChange={(event) => setAgent(event.target.value)}
+            className="input w-52 text-xs"
+          >
+            <option value="all">Tutti gli agenti</option>
+            {agents.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.companyName}
+              </option>
+            ))}
+          </select>
+        </div>
+        {view === "kanban" ? (
+          <Kanban
+            contacts={filtered}
+            onSelect={setSelected}
+            onMove={(contact, stage) => update(contact, { stage })}
+            canMove={(contact) =>
+              permissions.can(contact.agent.workspaceId, "configure")
+            }
+          />
+        ) : (
+          <div className="mt-5 grid min-h-[620px] overflow-hidden rounded-xl border bg-white xl:grid-cols-[minmax(0,1fr)_360px]">
+            <ContactTable
+              contacts={filtered}
+              selected={selected}
+              onSelect={setSelected}
+            />
+            <ContactPanel
+              contact={selected}
+              note={note}
+              setNote={setNote}
+              addNote={addNote}
+              tag={tag}
+              setTag={setTag}
+              addTag={addTag}
+              update={update}
+              readOnly={Boolean(
+                selected &&
+                !permissions.can(selected.agent.workspaceId, "configure"),
+              )}
+            />
+          </div>
+        )}
+        {view === "kanban" && selected && (
+          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-sm overflow-y-auto border-l bg-white p-5 shadow-2xl">
+            <button
+              onClick={() => setSelected(null)}
+              className="mb-3 text-xs font-semibold text-gray-400"
+            >
+              Chiudi
+            </button>
+            <ContactPanel
+              contact={selected}
+              note={note}
+              setNote={setNote}
+              addNote={addNote}
+              tag={tag}
+              setTag={setTag}
+              addTag={addTag}
+              update={update}
+              standalone
+              readOnly={
+                !permissions.can(selected.agent.workspaceId, "configure")
+              }
+            />
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}
+function ContactTable({
+  contacts,
+  selected,
+  onSelect,
+}: {
+  contacts: Contact[];
+  selected: Contact | null;
+  onSelect: (contact: Contact) => void;
+}) {
+  return (
+    <section className="min-w-0 overflow-x-auto">
+      <table className="w-full text-left">
+        <thead className="border-b bg-gray-50 text-[9px] uppercase tracking-wider text-gray-400">
+          <tr>
+            <th className="px-5 py-3">Contatto</th>
+            <th className="px-4 py-3">Agente</th>
+            <th className="px-4 py-3">Fase</th>
+            <th className="px-4 py-3">Lead score</th>
+            <th className="px-4 py-3">Valore</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {contacts.map((item) => (
+            <tr
+              key={item.id}
+              onClick={() => onSelect(item)}
+              className={`cursor-pointer text-xs hover:bg-gray-50 ${selected?.id === item.id ? "bg-brand-50/50" : ""}`}
+            >
+              <td className="px-5 py-4">
+                <p className="font-semibold text-gray-800">
+                  {contactName(item)}
+                </p>
+                <p className="mt-0.5 text-[10px] text-gray-400">
+                  {item.email || item.phone || "Contatto non identificato"}
+                </p>
+              </td>
+              <td className="px-4 py-4 text-[10px] text-gray-500">
+                {item.agent.companyName}
+              </td>
+              <td className="px-4 py-4">
+                <StageTag stage={item.stage} />
+              </td>
+              <td className="px-4 py-4">
+                <Score value={item.leadScore} />
+              </td>
+              <td className="px-4 py-4 font-semibold text-gray-700">
+                {item.potentialValue
+                  ? `€${item.potentialValue.toLocaleString("it-IT")}`
+                  : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!contacts.length && (
+        <div className="p-16 text-center text-xs text-gray-400">
+          Nessun contatto trovato.
+        </div>
+      )}
+    </section>
+  );
+}
+function Kanban({
+  contacts,
+  onSelect,
+  onMove,
+  canMove,
+}: {
+  contacts: Contact[];
+  onSelect: (contact: Contact) => void;
+  onMove: (contact: Contact, stage: Stage) => void;
+  canMove: (contact: Contact) => boolean;
+}) {
+  return (
+    <div className="mt-5 overflow-x-auto pb-4">
+      <div className="grid min-w-[1450px] grid-cols-6 gap-3">
+        {stages.map((stage) => {
+          const items = contacts.filter((item) => item.stage === stage.id);
+          return (
+            <section
+              key={stage.id}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                const contact = contacts.find(
+                  (item) => item.id === event.dataTransfer.getData("contact"),
+                );
+                if (contact && canMove(contact)) onMove(contact, stage.id);
+              }}
+              className="min-h-[560px] rounded-xl bg-gray-100/70 p-3"
+            >
+              <div className="flex items-center gap-2 px-1">
+                <span className={`h-2 w-2 rounded-full ${stage.color}`} />
+                <h2 className="text-[11px] font-semibold text-gray-700">
+                  {stage.label}
+                </h2>
+                <span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[9px] text-gray-500">
+                  {items.length}
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {items.map((item) => (
+                  <button
+                    draggable={canMove(item)}
+                    onDragStart={(event) =>
+                      event.dataTransfer.setData("contact", item.id)
+                    }
+                    onClick={() => onSelect(item)}
+                    key={item.id}
+                    className="w-full rounded-xl border bg-white p-3 text-left shadow-sm transition hover:border-brand-200 hover:shadow-md"
+                  >
+                    <p className="truncate text-xs font-semibold text-gray-800">
+                      {contactName(item)}
+                    </p>
+                    <p className="mt-1 truncate text-[9px] text-gray-400">
+                      {item.agent.companyName}
+                    </p>
+                    <div className="mt-3 flex items-center justify-between">
+                      <Score value={item.leadScore} compact />
+                      <span className="text-[10px] font-semibold text-gray-600">
+                        {item.potentialValue
+                          ? `€${item.potentialValue.toLocaleString("it-IT")}`
+                          : "—"}
+                      </span>
+                    </div>
+                    {item.tags.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {item.tags.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded bg-brand-50 px-1.5 py-0.5 text-[8px] text-brand-600"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+function ContactPanel({
+  contact,
+  note,
+  setNote,
+  addNote,
+  tag,
+  setTag,
+  addTag,
+  update,
+  standalone,
+  readOnly,
+}: {
+  contact: Contact | null;
+  note: string;
+  setNote: (value: string) => void;
+  addNote: () => void;
+  tag: string;
+  setTag: (value: string) => void;
+  addTag: () => void;
+  update: (contact: Contact, data: Record<string, unknown>) => void;
+  standalone?: boolean;
+  readOnly?: boolean;
+}) {
+  if (!contact)
+    return (
+      <aside className="border-l p-5 text-xs text-gray-400">
+        Seleziona un contatto.
+      </aside>
+    );
+  return (
+    <aside className={standalone ? "" : "border-l bg-gray-50/40 p-5"}>
+      {readOnly && <p className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-2 text-[10px] text-blue-800">Accesso in sola lettura</p>}
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+        <User className="h-5 w-5" />
+      </div>
+      <h2 className="mt-3 text-sm font-semibold">{contactName(contact)}</h2>
+      <p className="text-[10px] text-gray-400">
+        Ultima attività{" "}
+        {new Date(contact.lastInteraction).toLocaleString("it-IT")}
+      </p>
+      <div className="my-4 border-t" />
+      <div className="space-y-3">
+        <Info
+          icon={Mail}
+          label="Email"
+          value={contact.email || "Non raccolta"}
+        />
+        <Info
+          icon={Phone}
+          label="Telefono"
+          value={contact.phone || "Non raccolto"}
+        />
+        <Info
+          icon={Building2}
+          label="Azienda"
+          value={contact.company || "Non raccolta"}
+        />
+        <Info
+          icon={MessageSquare}
+          label="Conversazioni"
+          value={`${contact.conversationCount} · ${contact.messageCount} messaggi`}
+        />
+      </div>
+      <div className="my-4 border-t" />
+      <label className="block">
+        <span className="label">Fase pipeline</span>
+        <select
+          disabled={readOnly}
+          className="input text-xs"
+          value={contact.stage}
+          onChange={(event) => update(contact, { stage: event.target.value })}
+        >
+          {stages.map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {stage.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="mt-3 block">
+        <span className="label">Valore potenziale (€)</span>
+        <input
+          disabled={readOnly}
+          key={`${contact.id}:${contact.potentialValue}`}
+          className="input text-xs"
+          type="number"
+          min="0"
+          defaultValue={contact.potentialValue ?? ""}
+          onBlur={(event) =>
+            update(contact, {
+              potentialValue: event.target.value
+                ? Number(event.target.value)
+                : null,
+            })
+          }
+        />
+      </label>
+      <label className="mt-3 block">
+        <span className="label flex items-center gap-1">
+          <ShieldCheck className="h-3 w-3" /> Consenso contatto
+        </span>
+        <select
+          disabled={readOnly}
+          className="input text-xs"
+          value={contact.consentStatus}
+          onChange={(event) =>
+            update(contact, { consentStatus: event.target.value })
+          }
+        >
+          <option value="unknown">Non registrato</option>
+          <option value="granted">Concesso</option>
+          <option value="denied">Negato / revocato</option>
+        </select>
+      </label>
+      <div className="my-4 border-t" />
+      <p className="label">Tag</p>
+      <div className="flex flex-wrap gap-1">
+        {contact.tags.map((item) => (
+          <button
+            disabled={readOnly}
+            key={item}
+            type="button"
+            onClick={() =>
+              update(contact, {
+                tags: contact.tags.filter((tagItem) => tagItem !== item),
+              })
+            }
+            title="Rimuovi tag"
+            className="rounded bg-brand-50 px-2 py-1 text-[9px] text-brand-600"
+          >
+            {item} ×
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <input
+          disabled={readOnly}
+          className="input py-2 text-xs"
+          value={tag}
+          onChange={(event) => setTag(event.target.value)}
+          placeholder="Aggiungi tag"
+        />
+        <Button
+          disabled={readOnly}
+          size="sm"
+          variant="secondary"
+          onClick={addTag}
+          icon={<TagIcon className="h-3.5 w-3.5" />}
+        />
+      </div>
+      <div className="my-4 border-t" />
+      <p className="label">Note interne</p>
+      <div className="max-h-32 space-y-2 overflow-y-auto">
+        {contact.notes
+          .slice()
+          .reverse()
+          .map((item) => (
+            <div
+              key={item.id}
+              className="rounded-lg bg-white p-2 text-[10px] leading-4 text-gray-600"
+            >
+              <p>{item.text}</p>
+              <span className="text-[8px] text-gray-400">
+                {new Date(item.createdAt).toLocaleString("it-IT")}
+              </span>
+            </div>
+          ))}
+      </div>
+      <textarea
+        disabled={readOnly}
+        className="textarea mt-2 min-h-16 text-xs"
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        placeholder="Nuova nota..."
+      />
+      <Button
+        size="sm"
+        fullWidth
+        variant="secondary"
+        onClick={addNote}
+        disabled={readOnly || !note.trim()}
+        icon={<Plus className="h-3.5 w-3.5" />}
+      >
+        Aggiungi nota
+      </Button>
+      {contact.conversationId && (
+        <Link
+          href={`/conversations?conversation=${contact.conversationId}`}
+          className="btn btn-primary mt-4 w-full text-xs"
+        >
+          Apri conversazione
+        </Link>
+      )}
+    </aside>
+  );
+}
+function contactName(contact: Contact) {
+  return contact.name || contact.email || `Visitatore ${contact.id.slice(-6)}`;
+}
+function Metric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="card flex items-center gap-4 p-4">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div>
+        <p className="text-xl font-bold">{value}</p>
+        <p className="text-[10px] text-gray-400">{label}</p>
+      </div>
+    </div>
+  );
+}
+function Info({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof User;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex gap-3">
+      <Icon className="mt-0.5 h-3.5 w-3.5 text-gray-400" />
+      <div>
+        <p className="text-[9px] uppercase tracking-wider text-gray-400">
+          {label}
+        </p>
+        <p className="text-[11px] font-medium text-gray-700">{value}</p>
+      </div>
+    </div>
+  );
+}
+function StageTag({ stage }: { stage: Stage }) {
+  const item = stages.find((value) => value.id === stage)!;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-1 text-[9px] font-semibold text-gray-600">
+      <span className={`h-1.5 w-1.5 rounded-full ${item.color}`} />
+      {item.label}
+    </span>
+  );
+}
+function Score({ value, compact }: { value: number; compact?: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className={`${compact ? "w-10" : "w-16"} h-1.5 rounded-full bg-gray-100`}
+      >
+        <div
+          className={`h-full rounded-full ${value >= 70 ? "bg-emerald-500" : value >= 40 ? "bg-amber-400" : "bg-gray-400"}`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+      <span className="text-[9px] font-semibold">{value}</span>
+    </div>
+  );
+}

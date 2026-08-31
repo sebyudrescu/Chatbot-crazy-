@@ -50,8 +50,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ toke
       })
       if (claimed.count !== 1) throw new Error('Invito già utilizzato')
       const account = existing
-        ? await tx.user.update({ where: { id: existing.id }, data: { displayName: input.displayName, passwordHash } })
-        : await tx.user.create({ data: { email: invitation!.email, displayName: input.displayName, passwordHash } })
+        ? await tx.user.update({ where: { id: existing.id }, data: { displayName: input.displayName, passwordHash, emailVerifiedAt: existing.emailVerifiedAt || new Date(), status: 'active' } })
+        : await tx.user.create({ data: { email: invitation!.email, displayName: input.displayName, passwordHash, emailVerifiedAt: new Date() } })
       const membership = await tx.workspaceMembership.upsert({
         where: { workspaceId_userId: { workspaceId: invitation!.workspaceId, userId: account.id } },
         create: { workspaceId: invitation!.workspaceId, userId: account.id, role: invitation!.role, status: 'active' },

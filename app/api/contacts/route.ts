@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const [contacts, conversations] = await Promise.all([
       prisma.cRMContact.findMany({
         where,
-        include: { chatbot: { select: { id: true, companyName: true } } },
+        include: { chatbot: { select: { id: true, companyName: true, workspaceId: true } } },
         orderBy: { lastInteraction: "desc" },
       }),
       prisma.conversation.findMany({

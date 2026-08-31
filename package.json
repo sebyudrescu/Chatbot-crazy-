@@ -45,6 +45,7 @@
         "test:auth": "node scripts/test-owner-session.cjs",
         "test:workspace-auth": "node scripts/test-workspace-authorization.cjs",
         "test:client-auth": "node scripts/test-client-auth.cjs",
+        "test:billing": "node scripts/test-billing-foundation.mjs",
         "test:prompt": "node scripts/test-agent-instructions.cjs",
         "test:evaluations": "node scripts/evaluate-agents.mjs",
         "test:evaluation-runner": "node scripts/test-evaluation-runner.mjs",
@@ -100,6 +101,7 @@
         "robots-parser": "^3.0.1",
         "server-only": "^0.0.1",
         "sharp": "^0.35.0",
+        "stripe": "^18.5.0",
         "tailwind-merge": "^2.2.0",
         "workflow": "^4.8.1",
         "zod": "^3.22.4"

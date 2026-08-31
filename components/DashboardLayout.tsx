@@ -27,6 +27,7 @@ import {
   PanelsTopLeft,
   BrainCircuit,
   Home,
+  CreditCard,
 } from 'lucide-react'
 import { Sidebar, SidebarLink, SidebarSection } from './ui/Sidebar'
 import { Button } from './ui/Button'
@@ -102,6 +103,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const clientMode = dashboardAccount?.mode === 'client'
   const ownerMode = dashboardAccount?.mode === 'owner'
   const clientCanConfigure = clientMode && dashboardAccount.memberships.some(membership => membership.role === 'owner' || membership.role === 'admin')
+  const clientCanManageBilling = clientMode && dashboardAccount.memberships.some(membership => membership.role === 'owner')
   const accountName = clientMode ? dashboardAccount.displayName : ownerMode ? 'Sebastian U.' : 'LitX AI'
   const accountDetail = clientMode ? dashboardAccount.email : ownerMode ? 'Amministratore' : 'Caricamento account…'
   const accountInitials = clientMode ? dashboardAccount.displayName.slice(0, 2).toUpperCase() : ownerMode ? 'SU' : 'LX'
@@ -129,7 +131,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         }
         footer={accountFooter}
       >
-        {clientMode ? <ClientNavigation canConfigure={clientCanConfigure} /> : ownerMode ? <SidebarSection>
+        {clientMode ? <ClientNavigation canConfigure={clientCanConfigure} canManageBilling={clientCanManageBilling} /> : ownerMode ? <SidebarSection>
           <SidebarLink href="/dashboard" icon={BarChart3} label="Overview" exact />
           <SidebarLink href="/chatbots" icon={Bot} label="AI Agents" />
           <SidebarLink href="/templates" icon={LayoutTemplate} label="Templates" />
@@ -150,6 +152,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <SidebarLink href="/dashboard/traces" icon={Activity} label="Decision Traces" />
         </SidebarSection> : null}
         {ownerMode ? <SidebarSection title="Operazioni">
+          <SidebarLink href="/billing" icon={CreditCard} label="Billing" />
           <SidebarLink href="/settings" icon={Settings} label="Settings" />
         </SidebarSection> : null}
       </Sidebar>
@@ -165,7 +168,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </div>
               <button ref={closeButtonRef} type="button" onClick={closeMobileNavigation} aria-label="Chiudi navigazione" className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"><X className="h-5 w-5" /></button>
             </div>
-            <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4"><MobileNavigation onNavigate={closeMobileNavigation} clientMode={clientMode} ownerMode={ownerMode} clientCanConfigure={clientCanConfigure} /></nav>
+            <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4"><MobileNavigation onNavigate={closeMobileNavigation} clientMode={clientMode} ownerMode={ownerMode} clientCanConfigure={clientCanConfigure} clientCanManageBilling={clientCanManageBilling} /></nav>
             <div className="border-t border-gray-200 p-4">{accountFooter}</div>
           </aside>
         </div>
@@ -206,19 +209,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   )
 }
 
-function ClientNavigation({ canConfigure, onNavigate }: { canConfigure: boolean; onNavigate?: () => void }) {
+function ClientNavigation({ canConfigure, canManageBilling, onNavigate }: { canConfigure: boolean; canManageBilling: boolean; onNavigate?: () => void }) {
   return <SidebarSection>
     <SidebarLink href="/portal" icon={Home} label="Portale" exact onClick={onNavigate} />
     <SidebarLink href="/analytics" icon={BarChart3} label="Analytics" onClick={onNavigate} />
     <SidebarLink href="/conversations" icon={MessageSquare} label="Chat e Help Desk" onClick={onNavigate} />
     <SidebarLink href="/contacts" icon={Users} label="Contatti (CRM)" onClick={onNavigate} />
     {canConfigure && <SidebarLink href="/knowledge" icon={Database} label="Knowledge Base" onClick={onNavigate} />}
+    {canManageBilling && <SidebarLink href="/billing" icon={CreditCard} label="Piano e fatturazione" onClick={onNavigate} />}
     <SidebarLink href="/account/security" icon={ShieldCheck} label="Sicurezza account" onClick={onNavigate} />
   </SidebarSection>
 }
 
-function MobileNavigation({ onNavigate, clientMode, ownerMode, clientCanConfigure }: { onNavigate: () => void; clientMode: boolean; ownerMode: boolean; clientCanConfigure: boolean }) {
-  if (clientMode) return <ClientNavigation canConfigure={clientCanConfigure} onNavigate={onNavigate} />
+function MobileNavigation({ onNavigate, clientMode, ownerMode, clientCanConfigure, clientCanManageBilling }: { onNavigate: () => void; clientMode: boolean; ownerMode: boolean; clientCanConfigure: boolean; clientCanManageBilling: boolean }) {
+  if (clientMode) return <ClientNavigation canConfigure={clientCanConfigure} canManageBilling={clientCanManageBilling} onNavigate={onNavigate} />
   if (!ownerMode) return null
   return (
     <>
@@ -243,6 +247,7 @@ function MobileNavigation({ onNavigate, clientMode, ownerMode, clientCanConfigur
         <SidebarLink href="/dashboard/traces" icon={Activity} label="Decision Traces" onClick={onNavigate} />
       </SidebarSection>
       <SidebarSection title="Operazioni">
+        <SidebarLink href="/billing" icon={CreditCard} label="Billing" onClick={onNavigate} />
         <SidebarLink href="/settings" icon={Settings} label="Settings" onClick={onNavigate} />
       </SidebarSection>
     </>

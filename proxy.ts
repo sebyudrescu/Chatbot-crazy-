@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyOwnerSessionToken } from '@/lib/auth-token'
 import { httpSecurityHeaders } from '@/lib/http-security'
 
-const publicPaths = ['/', '/login', '/forgot-password', '/reset-password', '/accept-invite', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/api/internal/commerce-sync', '/api/shopify/widget.js', '/chatbot-widget.js']
-const publicPrefixes = ['/agent/', '/api/auth/', '/api/embed/', '/api/v1/', '/api/cron/', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions', '/api/commerce/click']
+const publicPaths = ['/', '/login', '/register', '/verify-email', '/forgot-password', '/reset-password', '/accept-invite', '/connect/meta', '/api/chat', '/api/health', '/api/internal/observability', '/api/internal/commerce-sync', '/api/shopify/widget.js', '/chatbot-widget.js']
+const publicPrefixes = ['/agent/', '/api/auth/', '/api/embed/', '/api/v1/', '/api/cron/', '/api/webhooks/stripe', '/api/meta/webhook/', '/api/meta/client/', '/api/meta/instagram/callback', '/api/shopify/oauth/callback', '/api/shopify/webhooks', '/api/woocommerce/oauth/callback', '/api/woocommerce/oauth/return', '/api/woocommerce/webhooks', '/api/commerce/conversions', '/api/commerce/click']
 
 function isTenantReadyApi(request: NextRequest) {
   const path = request.nextUrl.pathname
@@ -57,6 +57,8 @@ function isTenantReadyApi(request: NextRequest) {
   if (/^\/api\/suggestions\/[0-9a-f-]{36}$/i.test(path)) return request.method === 'PATCH'
   if (/^\/api\/suggestions\/[0-9a-f-]{36}\/apply$/i.test(path)) return request.method === 'POST'
   if (path === '/api/analytics') return request.method === 'GET'
+  if (path === '/api/billing/status') return request.method === 'GET'
+  if (path === '/api/billing/checkout' || path === '/api/billing/portal') return request.method === 'POST'
   if (path === '/api/conversations') return request.method === 'GET'
   if (path === '/api/chatbots/import') return request.method === 'POST'
   if (path === '/api/templates/instantiate') return request.method === 'POST'
@@ -112,7 +114,7 @@ function isTenantReadyApi(request: NextRequest) {
 
 function isTenantReadyPage(request: NextRequest) {
   const path = request.nextUrl.pathname
-  if (path === '/portal' || path === '/analytics' || path === '/conversations' || path === '/contacts' || path === '/knowledge' || path === '/account/security') return true
+  if (path === '/portal' || path === '/analytics' || path === '/conversations' || path === '/contacts' || path === '/knowledge' || path === '/billing' || path === '/account/security') return true
   return /^\/chatbot\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/settings$/i.test(path)
 }
 

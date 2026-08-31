@@ -10,22 +10,44 @@ datasource db {
 }
 
 model Workspace {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  kind      String   @default("client")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                           String    @id @default(uuid())
+  name                         String
+  slug                         String    @unique
+  kind                         String    @default("client")
+  billingPlan                  String    @default("free")
+  billingStatus                String    @default("inactive")
+  stripeCustomerId             String?   @unique
+  stripeSubscriptionId         String?   @unique
+  stripePriceId                String?
+  subscriptionCurrentPeriodEnd DateTime?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
   chatbots           Chatbot[]
   memberships        WorkspaceMembership[]
   invitations        WorkspaceInvitation[]
   helpDeskSavedViews HelpDeskSavedView[]
   auditLogs          WorkspaceAuditLog[]
+  billingEvents      BillingWebhookEvent[]
 
   @@index([kind])
   @@index([createdAt])
   @@map("workspaces")
+}
+
+model BillingWebhookEvent {
+  id          String   @id @default(uuid())
+  provider    String   @default("stripe")
+  eventId     String   @unique
+  eventType   String
+  workspaceId String?
+  processedAt DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, processedAt])
+  @@index([provider, eventType])
+  @@map("billing_webhook_events")
 }
 
 model User {
@@ -34,22 +56,39 @@ model User {
   displayName           String
   passwordHash          String?
   status                String    @default("active")
+  emailVerifiedAt       DateTime?
   mfaSecretEncrypted    String?
   mfaRecoveryCodeHashes String?
   mfaEnabledAt          DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  memberships         WorkspaceMembership[]
-  sessions            UserSession[]
-  passwordResetTokens PasswordResetToken[]
-  mfaChallenges       MfaChallenge[]
-  invitationsCreated  WorkspaceInvitation[] @relation("WorkspaceInvitationCreator")
-  workspaceAuditLogs  WorkspaceAuditLog[]
+  memberships             WorkspaceMembership[]
+  sessions                UserSession[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  mfaChallenges           MfaChallenge[]
+  invitationsCreated      WorkspaceInvitation[]    @relation("WorkspaceInvitationCreator")
+  workspaceAuditLogs      WorkspaceAuditLog[]
 
   @@index([status])
   @@index([createdAt])
   @@map("users")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
+  @@map("email_verification_tokens")
 }
 
 model WorkspaceMembership {

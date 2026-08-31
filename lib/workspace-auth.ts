@@ -128,6 +128,17 @@ export async function requireBotPermission(
   return bot;
 }
 
+export function requireWorkspacePermission(
+  actor: DashboardActor,
+  workspaceId: string,
+  permission: WorkspacePermission,
+) {
+  if (!actorCanAccessWorkspace(actor, workspaceId, permission)) {
+    throw new DashboardAuthError("Risorsa non trovata", 404);
+  }
+  return { workspaceId };
+}
+
 export async function accessibleBotIds(actor: DashboardActor, permission: WorkspacePermission) {
   const workspaceIds = allowedWorkspaceIds(actor, permission);
   if (workspaceIds === null) return null;
