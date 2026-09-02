@@ -46,7 +46,7 @@ assert.match(analyticsUi, /Gli ordini sono attribuiti al canale soltanto con una
 assert.match(analyticsUi, /Le performance appariranno dopo l’esecuzione delle azioni/);
 
 assert.match(contactsUi, /Contatti e Pipeline/);
-assert.match(contactsUi, /view === 'kanban'/);
+assert.match(contactsUi, /view === ["']kanban["']/);
 assert.match(contactsUi, /Esporta CSV/);
 assert.match(contactsUi, /Consenso contatto/);
 assert.match(contactsUi, /Note interne/);

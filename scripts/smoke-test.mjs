@@ -211,16 +211,21 @@ async function verifyWorkspaceIsolation() {
   assert(!analytics.body.data?.byAgent?.some((item) => item.id === botB.id), "Foreign tenant analytics leaked");
 
   const foreignItemChecks = [
-    tenantRequest(`/api/actions/${actionB.id}`, token, { method: "PATCH", body: JSON.stringify({}) }),
-    tenantRequest(`/api/workflows/${workflowB.id}`, token),
-    tenantRequest(`/api/evaluations/${evaluationB.id}`, token, { method: "PATCH", body: JSON.stringify({}) }),
-    tenantRequest(`/api/integrations/${integrationB.id}`, token, { method: "PATCH", body: JSON.stringify({ enabled: false }) }),
-    tenantRequest(`/api/contacts/${contactB.id}`, token, { method: "PATCH", body: JSON.stringify({}) }),
-    tenantRequest(`/api/commerce/${productB.id}`, token, { method: "PATCH", body: JSON.stringify({ botId: botB.id, rankingBoost: 1 }) }),
-    tenantRequest(`/api/conversations/${conversationB.id}`, token),
+    ["action", tenantRequest(`/api/actions/${actionB.id}`, token, { method: "PATCH", body: JSON.stringify({}) })],
+    ["workflow", tenantRequest(`/api/workflows/${workflowB.id}`, token)],
+    ["evaluation", tenantRequest(`/api/evaluations/${evaluationB.id}`, token, { method: "PATCH", body: JSON.stringify({}) })],
+    ["integration", tenantRequest(`/api/integrations/${integrationB.id}`, token, { method: "PATCH", body: JSON.stringify({ enabled: false }) })],
+    ["contact", tenantRequest(`/api/contacts/${contactB.id}`, token, { method: "PATCH", body: JSON.stringify({}) })],
+    ["product", tenantRequest(`/api/commerce/${productB.id}`, token, { method: "PATCH", body: JSON.stringify({ botId: botB.id, rankingBoost: 1 }) })],
+    ["conversation", tenantRequest(`/api/conversations/${conversationB.id}`, token)],
   ];
-  for (const result of await Promise.all(foreignItemChecks)) {
-    assert(result.response.status === 404, "Foreign tenant item did not return a tenant-safe 404");
+  for (const [label, result] of await Promise.all(
+    foreignItemChecks.map(async ([label, requestPromise]) => [label, await requestPromise]),
+  )) {
+    assert(
+      result.response.status === 404,
+      `Foreign tenant ${label} returned ${result.response.status} instead of a tenant-safe 404`,
+    );
   }
 
   for (const route of ["actions", "workflows", "evaluations", "integrations", "contacts", "commerce", "knowledge-sources"]) {
