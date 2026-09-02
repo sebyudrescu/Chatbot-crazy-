@@ -1047,13 +1047,15 @@
   }
 
   function readStorage(key) {
-    try { return window.localStorage.getItem(key); } catch { return null; }
+    // La cronologia appartiene alla visita corrente: resta disponibile durante
+    // la navigazione nella stessa scheda, ma non segue il cliente nelle visite future.
+    try { return window.sessionStorage.getItem(key); } catch { return null; }
   }
 
   function writeStorage(key, value) {
     try {
-      if (value) window.localStorage.setItem(key, value);
-      else window.localStorage.removeItem(key);
+      if (value) window.sessionStorage.setItem(key, value);
+      else window.sessionStorage.removeItem(key);
     } catch {}
   }
 

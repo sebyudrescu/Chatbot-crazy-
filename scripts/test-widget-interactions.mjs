@@ -20,7 +20,9 @@ assert.doesNotMatch(script, /visualViewport\.addEventListener\('scroll'/, "mobil
 assert.match(script, /if \(layoutLocked\) return/, "storefront coordinates must remain locked after WhatsApp is measured");
 assert.match(script, /const isMobile = mobileQuery\.matches/, "the storefront coordinator must align launchers on desktop and mobile");
 assert.match(script, /sessionExpiresStorageKey/, "widget session must persist with an explicit expiry");
-assert.match(script, /readSessionExpiry\(signedSessionToken\)/, "existing signed sessions must migrate without losing chat history");
+assert.match(script, /readSessionExpiry\(signedSessionToken\)/, "an active tab session must recover its expiry from the signed token");
+assert.match(script, /window\.sessionStorage\.getItem\(key\)/, "widget conversations must be scoped to the current browser tab visit");
+assert.doesNotMatch(script, /window\.localStorage\.(?:getItem|setItem)\(key/, "widget conversations must not survive a future visit through localStorage");
 assert.match(script, /window\.addEventListener\('resize', unlockForViewportWidthChange/, "layout must respond only to real viewport width changes");
 assert.match(script, /src\.includes\('\/api\/shopify\/widget\.js'\)/, "layout must survive Shopify script optimizers by reading its own URL");
 const dom = new JSDOM(
@@ -422,7 +424,7 @@ assert.equal(
   "Il widget non invia la prova crittografica della sessione",
 );
 assert.equal(
-  window.localStorage.getItem(
+  window.sessionStorage.getItem(
     "litx:00000000-0000-4000-8000-000000000001:conversation",
   ),
   "00000000-0000-4000-8000-000000000002",
@@ -784,19 +786,19 @@ restoredWindow.ChatbotConfig = {
   title: "Assistente",
   subtitle: "Cronologia",
 };
-restoredWindow.localStorage.setItem(
+restoredWindow.sessionStorage.setItem(
   "litx:00000000-0000-4000-8000-000000000001:conversation",
   "00000000-0000-4000-8000-000000000002",
 );
-restoredWindow.localStorage.setItem(
+restoredWindow.sessionStorage.setItem(
   "litx:00000000-0000-4000-8000-000000000001:session",
   "00000000-0000-4000-8000-000000000222",
 );
-restoredWindow.localStorage.setItem(
+restoredWindow.sessionStorage.setItem(
   "litx:00000000-0000-4000-8000-000000000001:session-token",
   "restored-signed-widget-token",
 );
-restoredWindow.localStorage.setItem(
+restoredWindow.sessionStorage.setItem(
   "litx:00000000-0000-4000-8000-000000000001:session-expires",
   String(Date.now() + 30 * 24 * 60 * 60 * 1000),
 );
@@ -1041,7 +1043,7 @@ console.log(
         "source-citations",
         "unsafe-protocol-rejection",
         "message-feedback",
-        "persistent-session",
+        "tab-session-continuity",
         "stale-session-recovery",
         "lead-capture-form",
         "restored-history",
