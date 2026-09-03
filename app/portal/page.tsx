@@ -74,7 +74,7 @@ export default function ClientPortalPage() {
       })
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || 'Invito non riuscito')
-      setInviteEmail(''); setLatestInviteUrl(body.data.acceptUrl); setTeamMessage('Invito creato. Condividi il link tramite un canale sicuro.')
+      setInviteEmail(''); setLatestInviteUrl(body.data.acceptUrl); setTeamMessage(body.data.emailSent ? 'Invito inviato via email. Il link resta disponibile come copia di sicurezza.' : 'Invito creato, ma l’email non è partita. Condividi il link tramite un canale sicuro.')
       await loadTeam(selectedWorkspaceId)
     } catch (reason) { setTeamMessage(reason instanceof Error ? reason.message : 'Invito non riuscito') }
     finally { setTeamBusy(false) }

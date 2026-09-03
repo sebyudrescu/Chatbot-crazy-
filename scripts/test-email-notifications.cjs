@@ -19,6 +19,8 @@ global.fetch = async (url, init) => {
 };
 
 const { deliverEmailNotification } = require("../lib/email-notifications.ts");
+const { sendWorkspaceInvitationEmail } = require("../lib/account-emails.ts");
+const { buildWorkspaceInvitationUrl } = require("../lib/workspace-invitation-url.ts");
 
 ;(async () => {
   const result = await deliverEmailNotification({
@@ -46,9 +48,27 @@ const { deliverEmailNotification } = require("../lib/email-notifications.ts");
   assert.equal(request.body.subject.includes("Errore server critico"), true);
   assert.match(request.body.html, /Errore &lt;critico&gt;/);
   assert.match(request.body.html, /\/settings/);
+  const invitationUrl = buildWorkspaceInvitationUrl("  https://litx.example.com/base/  ", "token+con/spazi=");
+  assert.equal(invitationUrl, "https://litx.example.com/accept-invite?token=token%2Bcon%2Fspazi%3D");
+  const invitationResult = await sendWorkspaceInvitationEmail({
+    to: "owner@example.com",
+    workspaceName: "Negozio <Suddenly>",
+    role: "owner",
+    invitationUrl,
+    expiresInHours: 72,
+    idempotencyKey: "workspace-invitation:invite-123",
+  });
+  assert.equal(invitationResult.success, true);
+  assert.equal(request.url, "https://api.resend.com/emails");
+  assert.equal(request.init.headers["Idempotency-Key"], "workspace-invitation:invite-123");
+  assert.equal(request.body.to[0], "owner@example.com");
+  assert.match(request.body.subject, /Invito a Negozio/);
+  assert.match(request.body.html, /Negozio &lt;Suddenly&gt;/);
+  assert.match(request.body.html, /token%2Bcon%2Fspazi%3D/);
+  assert.doesNotMatch(request.body.html, /<Suddenly>/);
   delete process.env.RESEND_API_KEY;
   const missing = await deliverEmailNotification({ to: "owner@example.com", event: "lead.captured", agentName: "Test", payload: {}, idempotencyKey: "lead:222" });
   assert.equal(missing.success, false);
   assert.match(missing.error, /RESEND_API_KEY/);
-  console.log(JSON.stringify({ success: true, checks: 13 }, null, 2));
+  console.log(JSON.stringify({ success: true, checks: 22 }, null, 2));
 })().catch(error => { console.error(error); process.exit(1); });

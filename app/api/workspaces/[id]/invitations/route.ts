@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db'
 import { actorCanAccessWorkspace, DashboardAuthError, dashboardAuthErrorResponse, requireDashboardActor } from '@/lib/workspace-auth'
 import { createInvitationToken, invitationTokenHash } from '@/lib/invitation-token'
 import { writeWorkspaceAudit } from '@/lib/workspace-audit'
+import { sendWorkspaceInvitationEmail } from '@/lib/account-emails'
+import { buildWorkspaceInvitationUrl } from '@/lib/workspace-invitation-url'
 
 const InviteSchema = z.object({
   email: z.string().trim().email().max(320),
@@ -47,7 +49,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const email = input.email.toLowerCase()
     const token = createInvitationToken()
     const now = new Date()
-    await prisma.$transaction(async tx => {
+    const invitation = await prisma.$transaction(async tx => {
       await tx.workspaceInvitation.updateMany({
         where: { workspaceId: id, email, acceptedAt: null, revokedAt: null },
         data: { revokedAt: now },
@@ -70,11 +72,21 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         targetId: invitation.id,
         metadata: { role: input.role, expiresInHours: input.expiresInHours },
       })
+      return invitation
     })
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || request.nextUrl.origin
+    const acceptUrl = buildWorkspaceInvitationUrl(appUrl, token)
+    const delivery = await sendWorkspaceInvitationEmail({
+      to: email,
+      workspaceName: workspace.name,
+      role: input.role,
+      invitationUrl: acceptUrl,
+      expiresInHours: input.expiresInHours,
+      idempotencyKey: `workspace-invitation:${invitation.id}`,
+    })
     return NextResponse.json({
       success: true,
-      data: { email, role: input.role, workspaceName: workspace.name, acceptUrl: `${appUrl}/accept-invite?token=${encodeURIComponent(token)}` },
+      data: { email, role: input.role, workspaceName: workspace.name, acceptUrl, emailSent: delivery.success },
     }, { status: 201 })
   } catch (error) {
     const authResponse = dashboardAuthErrorResponse(error)

@@ -17,7 +17,7 @@ type Workspace = {
 }
 
 type Chatbot = { id: string; companyName: string; workspaceId: string; isActive: boolean }
-type InviteResult = { email: string; role: string; workspaceName: string; acceptUrl: string }
+type InviteResult = { email: string; role: string; workspaceName: string; acceptUrl: string; emailSent: boolean }
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: 'no-store', ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } })
@@ -123,7 +123,9 @@ export default function ClientsPage() {
       })
       setInviteResult(invite)
       setInviteEmail('')
-      setSuccess(`Accesso preparato per ${invite.email}. Il link scade tra 72 ore.`)
+      setSuccess(invite.emailSent
+        ? `Invito inviato a ${invite.email}. Il link scade tra 72 ore.`
+        : `Invito creato per ${invite.email}, ma l’email non è partita. Usa il link manuale qui sotto.`)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Invito non riuscito')
     } finally {
@@ -166,7 +168,7 @@ export default function ClientsPage() {
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Mail className="h-5 w-5" /></div>
           <div><p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Passaggio 3</p><h2 className="mt-1 text-lg font-bold text-gray-950">Invita il cliente</h2><p className="mt-1 text-sm text-gray-500">Riceverà un account protetto con il ruolo scelto. Nessun pagamento richiesto.</p></div>
           <form onSubmit={createInvite} className="space-y-3"><Input label="Email cliente" type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="cliente@azienda.it" required /><label className="block text-sm font-medium text-gray-700">Ruolo<select className="input mt-1" value={inviteRole} onChange={event => setInviteRole(event.target.value as typeof inviteRole)}><option value="owner">Proprietario</option><option value="admin">Amministratore</option><option value="operator">Operatore</option><option value="viewer">Solo lettura</option></select></label><Button type="submit" fullWidth loading={working === 'invite'} disabled={!selectedWorkspaceId}>Genera accesso</Button></form>
-          {inviteResult && <div className="rounded-xl border border-brand-200 bg-brand-50 p-3"><p className="text-xs font-semibold text-brand-800">Link monouso per {inviteResult.email}</p><p className="mt-1 truncate text-xs text-brand-600">{inviteResult.acceptUrl}</p><div className="mt-3 flex gap-2"><Button type="button" size="sm" variant="secondary" onClick={copyInvite} icon={copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}>{copied ? 'Copiato' : 'Copia'}</Button><a className="btn btn-sm btn-secondary" href={inviteResult.acceptUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /> Apri</a></div></div>}
+          {inviteResult && <div className="rounded-xl border border-brand-200 bg-brand-50 p-3"><p className="text-xs font-semibold text-brand-800">{inviteResult.emailSent ? `Email inviata a ${inviteResult.email}` : `Link monouso per ${inviteResult.email}`}</p><p className="mt-1 truncate text-xs text-brand-600">{inviteResult.acceptUrl}</p><div className="mt-3 flex gap-2"><Button type="button" size="sm" variant="secondary" onClick={copyInvite} icon={copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}>{copied ? 'Copiato' : 'Copia'}</Button><a className="btn btn-sm btn-secondary" href={inviteResult.acceptUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /> Verifica link</a></div></div>}
         </Card>
       </div>
 
