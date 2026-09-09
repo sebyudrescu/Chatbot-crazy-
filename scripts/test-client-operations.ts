@@ -12,6 +12,8 @@ const contactsUi = read("app/contacts/page.tsx");
 const contactsApi = read("app/api/contacts/route.ts");
 const contactsUpdateApi = read("app/api/contacts/[id]/route.ts");
 const conversationsUi = read("app/conversations/page.tsx");
+const knowledgeUi = read("app/knowledge/page.tsx");
+const dashboardPermissions = read("lib/use-dashboard-permissions.ts");
 const assistApi = read("app/api/conversations/[id]/assist/route.ts");
 const cloneApi = read("app/api/chatbots/[id]/clone/route.ts");
 const importApi = read("app/api/chatbots/import/route.ts");
@@ -83,6 +85,16 @@ assert.match(contactsApi, /botId/);
 assert.match(contactsUpdateApi, /leadScore|potentialValue/);
 assert.match(contactsUpdateApi, /consentStatus/);
 
+assert.match(knowledgeUi, /!searchTerm && canManageKnowledge/);
+assert.match(knowledgeUi, /permissions\.isOwner/);
+assert.match(knowledgeUi, /Nessun chatbot assegnato/);
+assert.match(knowledgeUi, /Elaborazione in corso/);
+assert.match(dashboardPermissions, /const \[loaded, setLoaded\]/);
+assert.match(
+  dashboardPermissions,
+  /isClient: account\?\.mode === ["']client["']/,
+);
+
 assert.match(conversationsUi, /assignedAgent/);
 assert.match(conversationsUi, /Riepilogo AI/);
 assert.match(conversationsUi, /Note interne/);
@@ -95,4 +107,4 @@ assert.match(importApi, /conversationQualityContractSchema\.safeParse/);
 assert.match(importApi, /conversationTurns: item\.conversationTurns/);
 assert.match(importApi, /qualityContract: item\.qualityContract/);
 
-console.log("Client operations: 47 controlli superati");
+console.log("Client operations: 53 controlli superati");

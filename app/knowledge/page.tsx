@@ -65,6 +65,12 @@ export default function KnowledgePage() {
     [],
   );
   const [loading, setLoading] = useState(true);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -88,24 +94,27 @@ export default function KnowledgePage() {
   }, []);
 
   const fetchChatbots = async () => {
+    setPageError("");
     try {
       const response = await fetch("/api/chatbots");
-      if (response.ok) {
-        const data = await response.json();
-        const bots = data.success ? data.data || [] : [];
-        setChatbots(bots);
-        if (bots.length > 0) {
-          const requestedBotId = new URLSearchParams(
-            window.location.search,
-          ).get("botId");
-          const requestedBotExists =
-            requestedBotId &&
-            bots.some((bot: Chatbot) => bot.id === requestedBotId);
-          setSelectedChatbot(requestedBotExists ? requestedBotId : bots[0].id);
-        }
+      const data = await response.json();
+      if (!response.ok || !data.success)
+        throw new Error(data.error || "Elenco chatbot non disponibile");
+      const bots = data.data || [];
+      setChatbots(bots);
+      if (bots.length > 0) {
+        const requestedBotId = new URLSearchParams(window.location.search).get(
+          "botId",
+        );
+        const requestedBotExists =
+          requestedBotId &&
+          bots.some((bot: Chatbot) => bot.id === requestedBotId);
+        setSelectedChatbot(requestedBotExists ? requestedBotId : bots[0].id);
       }
-    } catch (error) {
-      console.error("Error fetching chatbots:", error);
+    } catch {
+      setPageError(
+        "Non è stato possibile caricare i chatbot. Riprova tra qualche secondo.",
+      );
     } finally {
       setLoading(false);
     }
@@ -113,41 +122,55 @@ export default function KnowledgePage() {
 
   const fetchKnowledgeSources = useCallback(async () => {
     if (!selectedChatbot) return;
-
+    setSourcesLoading(true);
+    setPageError("");
     try {
       const response = await fetch(
         `/api/knowledge-sources?botId=${selectedChatbot}`,
       );
-      if (response.ok) {
-        const data = await response.json();
-        setKnowledgeSources(data.success ? data.data || [] : []);
-      }
-    } catch (error) {
-      console.error("Error fetching knowledge sources:", error);
+      const data = await response.json();
+      if (!response.ok || !data.success)
+        throw new Error(data.error || "Informazioni non disponibili");
+      setKnowledgeSources(data.data || []);
+    } catch {
+      setPageError(
+        "Non è stato possibile caricare le informazioni del chatbot.",
+      );
+    } finally {
+      setSourcesLoading(false);
     }
   }, [selectedChatbot]);
 
   useEffect(() => {
-    if (selectedChatbot) {
-      fetchKnowledgeSources();
-      const interval = window.setInterval(fetchKnowledgeSources, 5000);
-      return () => window.clearInterval(interval);
-    }
+    if (selectedChatbot) void fetchKnowledgeSources();
   }, [selectedChatbot, fetchKnowledgeSources]);
+
+  const hasProcessingSources = knowledgeSources.some(
+    (source) => source.status === "processing",
+  );
+  useEffect(() => {
+    if (!selectedChatbot || !hasProcessingSources) return;
+    const interval = window.setInterval(fetchKnowledgeSources, 5000);
+    return () => window.clearInterval(interval);
+  }, [selectedChatbot, hasProcessingSources, fetchKnowledgeSources]);
 
   const handleCrawl = async () => {
     if (!selectedChatbot) {
-      alert("Seleziona un chatbot prima");
+      setFeedback({ type: "error", text: "Seleziona prima un chatbot." });
       return;
     }
 
     if (!crawlUrl.trim()) {
-      alert("Inserisci un URL da cui iniziare il crawling");
+      setFeedback({
+        type: "error",
+        text: "Inserisci l’indirizzo del sito da cui iniziare.",
+      });
       return;
     }
 
     setCrawling(true);
-    setCrawlProgress("Inizializzazione crawler...");
+    setFeedback(null);
+    setCrawlProgress("Preparazione del sito...");
 
     try {
       const response = await fetch(
@@ -185,9 +208,10 @@ export default function KnowledgePage() {
             setCrawlUrl("");
             setShowUploadModal(false);
             await fetchKnowledgeSources();
-            alert(
-              `Crawl completato: ${job.sourcesCreated} pagine e ${job.chunksCreated} blocchi indicizzati.`,
-            );
+            setFeedback({
+              type: "success",
+              text: `Sito aggiunto: ${job.sourcesCreated} pagine e ${job.chunksCreated} sezioni pronte per il chatbot.`,
+            });
             break;
           }
           if (job.status === "failed")
@@ -197,19 +221,20 @@ export default function KnowledgePage() {
         }
         if (!completed)
           throw new Error(
-            "Il crawl sta impiegando troppo tempo. Puoi seguirlo dalla pagina dei job.",
+            "L’importazione sta impiegando più del previsto. Puoi chiudere questa finestra: il lavoro continuerà in background.",
           );
       } else {
         const data = await response.json();
-        alert(
-          "❌ Errore durante il crawling: " + (data.error || "Unknown error"),
-        );
+        throw new Error(data.error || "Impossibile leggere il sito");
       }
     } catch (error) {
-      console.error("Error crawling:", error);
-      alert(
-        `Errore durante il crawling: ${error instanceof Error ? error.message : "errore sconosciuto"}`,
-      );
+      setFeedback({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Non è stato possibile aggiungere il sito.",
+      });
     } finally {
       setCrawling(false);
       setCrawlProgress("");
@@ -218,7 +243,7 @@ export default function KnowledgePage() {
 
   const handleUpload = async () => {
     if (!selectedChatbot) {
-      alert("Seleziona un chatbot prima");
+      setFeedback({ type: "error", text: "Seleziona prima un chatbot." });
       return;
     }
 
@@ -227,16 +252,20 @@ export default function KnowledgePage() {
     }
 
     if (uploadType === "url" && !url.trim()) {
-      alert("Inserisci un URL");
+      setFeedback({
+        type: "error",
+        text: "Inserisci l’indirizzo della pagina web.",
+      });
       return;
     }
 
     if (uploadType === "pdf" && !selectedFile) {
-      alert("Seleziona un file PDF");
+      setFeedback({ type: "error", text: "Seleziona un file PDF." });
       return;
     }
 
     setUploading(true);
+    setFeedback(null);
 
     try {
       if (uploadType === "url") {
@@ -254,10 +283,13 @@ export default function KnowledgePage() {
           setUrl("");
           setShowUploadModal(false);
           fetchKnowledgeSources();
-          alert("✅ URL aggiunto con successo!");
+          setFeedback({
+            type: "success",
+            text: "Pagina web aggiunta alle informazioni del chatbot.",
+          });
         } else {
           const data = await response.json();
-          alert("❌ Errore: " + (data.error || "Impossibile aggiungere URL"));
+          throw new Error(data.error || "Impossibile aggiungere la pagina web");
         }
       } else {
         // Upload PDF
@@ -274,24 +306,32 @@ export default function KnowledgePage() {
           setSelectedFile(null);
           setShowUploadModal(false);
           fetchKnowledgeSources();
-          alert("✅ PDF caricato con successo!");
+          setFeedback({
+            type: "success",
+            text: "Documento aggiunto alle informazioni del chatbot.",
+          });
         } else {
           const data = await response.json();
-          alert("❌ Errore: " + (data.error || "Impossibile caricare PDF"));
+          throw new Error(data.error || "Impossibile caricare il documento");
         }
       }
     } catch (error) {
-      console.error("Error uploading:", error);
-      alert("❌ Errore durante il caricamento");
+      setFeedback({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Non è stato possibile aggiungere le informazioni.",
+      });
     } finally {
       setUploading(false);
     }
   };
 
   const deleteSource = async (id: string) => {
-    if (!confirm("Sei sicuro di voler eliminare questa knowledge source?"))
+    if (!confirm("Vuoi eliminare questa fonte dalle informazioni del chatbot?"))
       return;
-
+    setFeedback(null);
     try {
       const response = await fetch(
         `/api/knowledge-sources?sourceId=${id}&botId=${selectedChatbot}`,
@@ -301,10 +341,20 @@ export default function KnowledgePage() {
       );
 
       if (response.ok) {
-        fetchKnowledgeSources();
+        await fetchKnowledgeSources();
+        setFeedback({ type: "success", text: "Fonte eliminata." });
+      } else {
+        const data = await response.json();
+        throw new Error(data.error || "Eliminazione non riuscita");
       }
     } catch (error) {
-      console.error("Error deleting source:", error);
+      setFeedback({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Non è stato possibile eliminare la fonte.",
+      });
     }
   };
 
@@ -322,13 +372,13 @@ export default function KnowledgePage() {
     if (status === "completed")
       return (
         <Badge variant="success" dot>
-          Completato
+          Pronta
         </Badge>
       );
     if (status === "processing")
       return (
         <Badge variant="info" dot>
-          Processing...
+          Elaborazione in corso
         </Badge>
       );
     if (status === "failed")
@@ -374,6 +424,27 @@ export default function KnowledgePage() {
     );
   }
 
+  if (pageError && chatbots.length === 0) {
+    return (
+      <DashboardLayout>
+        <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center p-6">
+          <Card className="w-full max-w-md" padding="md">
+            <div className="text-center">
+              <AlertCircle className="mx-auto h-9 w-9 text-red-500" />
+              <h1 className="mt-3 text-lg font-bold text-gray-950">
+                Informazioni non disponibili
+              </h1>
+              <p className="mt-2 text-sm text-gray-500">{pageError}</p>
+              <Button className="mt-5" onClick={() => void fetchChatbots()}>
+                Riprova
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   if (chatbots.length === 0) {
     return (
       <DashboardLayout>
@@ -381,15 +452,27 @@ export default function KnowledgePage() {
           <Card padding="none">
             <EmptyState
               icon={Database}
-              title="Nessun chatbot disponibile"
-              description="Crea prima un chatbot per aggiungere le informazioni che userà nelle risposte"
-              action={{
-                label: "Crea Chatbot",
-                onClick: () => {
-                  window.dispatchEvent(new Event("open-create-modal"));
-                },
-                variant: "success",
-              }}
+              title={
+                permissions.isOwner
+                  ? "Nessun chatbot disponibile"
+                  : "Nessun chatbot assegnato"
+              }
+              description={
+                permissions.isOwner
+                  ? "Crea prima un chatbot per aggiungere le informazioni che userà nelle risposte."
+                  : "Contatta LitX per collegare un chatbot al tuo account."
+              }
+              action={
+                permissions.isOwner
+                  ? {
+                      label: "Crea chatbot",
+                      onClick: () => {
+                        window.dispatchEvent(new Event("open-create-modal"));
+                      },
+                      variant: "success",
+                    }
+                  : undefined
+              }
             />
           </Card>
         </div>
@@ -426,7 +509,7 @@ export default function KnowledgePage() {
                 htmlFor="knowledge-chatbot"
                 className="block text-sm font-semibold text-gray-700 mb-2"
               >
-                Seleziona Chatbot
+                Chatbot
               </label>
               <select
                 id="knowledge-chatbot"
@@ -465,6 +548,29 @@ export default function KnowledgePage() {
 
       {/* Content */}
       <div className="mx-auto max-w-[1500px] px-5 py-6 lg:px-7">
+        {pageError && (
+          <div
+            role="alert"
+            className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700"
+          >
+            <span>{pageError}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void fetchKnowledgeSources()}
+            >
+              Riprova
+            </Button>
+          </div>
+        )}
+        {feedback && (
+          <div
+            role="status"
+            className={`mb-4 rounded-xl border p-3 text-xs ${feedback.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
+          >
+            {feedback.text}
+          </div>
+        )}
         {selectedBot && permissions.loaded && !canManageKnowledge && (
           <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
             Accesso in sola lettura: solo proprietari e admin possono modificare
@@ -484,7 +590,11 @@ export default function KnowledgePage() {
             </div>
 
             {/* Knowledge Sources */}
-            {filteredSources.length === 0 ? (
+            {sourcesLoading && knowledgeSources.length === 0 ? (
+              <Card padding="none">
+                <LoadingSpinner text="Caricamento informazioni..." />
+              </Card>
+            ) : filteredSources.length === 0 ? (
               <Card padding="none">
                 <EmptyState
                   icon={Database}
@@ -499,7 +609,7 @@ export default function KnowledgePage() {
                       : `Aggiungi un documento o una pagina web per aiutare ${selectedBot.companyName} a rispondere meglio`
                   }
                   action={
-                    !searchTerm
+                    !searchTerm && canManageKnowledge
                       ? {
                           label: "Aggiungi la prima fonte",
                           onClick: () => setShowUploadModal(true),
@@ -512,9 +622,9 @@ export default function KnowledgePage() {
             ) : (
               <div className="grid gap-4">
                 {filteredSources.map((source) => (
-                  <Card key={source.id} hover padding="md">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-4 flex-1">
+                  <Card key={source.id} hover padding="md" className="min-w-0">
+                    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 flex-1 items-start gap-4">
                         {/* Icon */}
                         <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                           {getSourceIcon(source.sourceType)}
@@ -536,20 +646,20 @@ export default function KnowledgePage() {
                           <div className="grid gap-4 text-sm sm:grid-cols-3">
                             <div>
                               <span className="text-gray-500">Tipo:</span>{" "}
-                              <span className="text-gray-900 font-medium uppercase">
-                                {source.sourceType}
+                              <span className="text-gray-900 font-medium">
+                                {sourceTypeLabel(source.sourceType)}
                               </span>
                             </div>
                             <div>
                               <span className="text-gray-500">
-                                Sezioni indicizzate:
+                                Sezioni disponibili:
                               </span>{" "}
                               <span className="text-gray-900 font-medium">
                                 {source.chunkCount}
                               </span>
                             </div>
                             <div>
-                              <span className="text-gray-500">Caricato:</span>{" "}
+                              <span className="text-gray-500">Aggiunta:</span>{" "}
                               <span className="text-gray-900">
                                 {new Date(source.createdAt).toLocaleDateString(
                                   "it-IT",
@@ -567,13 +677,15 @@ export default function KnowledgePage() {
                       </div>
 
                       {/* Actions */}
-                      <div className="flex items-center gap-2 ml-4">
+                      <div className="flex shrink-0 items-center justify-end gap-2 sm:ml-4">
                         {getStatusIcon(source.status)}
                         {canManageKnowledge && source.sourceType !== "qa" && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => deleteSource(source.id)}
+                            aria-label={`Elimina ${source.originalFilename || "fonte"}`}
+                            title="Elimina fonte"
                             icon={
                               <Trash2 className="w-4 h-4 text-danger-600" />
                             }
@@ -591,12 +703,20 @@ export default function KnowledgePage() {
 
       {/* Upload Modal */}
       {showUploadModal && canManageKnowledge && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="knowledge-upload-title"
+        >
           <Card className="max-w-2xl w-full" padding="none">
             <CardHeader>
-              <CardTitle>Aggiungi informazioni</CardTitle>
+              <CardTitle>
+                <span id="knowledge-upload-title">Aggiungi informazioni</span>
+              </CardTitle>
               <CardDescription>
-                Carica un PDF o aggiungi un URL per {selectedBot?.companyName}
+                Scegli un documento, una pagina o un intero sito per{" "}
+                {selectedBot?.companyName}.
               </CardDescription>
             </CardHeader>
 
@@ -650,18 +770,20 @@ export default function KnowledgePage() {
                             ✅ Esplora automaticamente fino a 10 pagine per
                             importazione
                           </li>
-                          <li>✅ Estrae solo il contenuto di qualità</li>
-                          <li>✅ Rimuove automaticamente duplicati e noise</li>
-                          <li>✅ Crea chunks ottimizzati per il RAG</li>
-                          <li>✅ Aggiunge tutto alla knowledge base</li>
+                          <li>✅ Conserva il contenuto utile delle pagine</li>
+                          <li>✅ Evita contenuti duplicati o poco utili</li>
+                          <li>✅ Prepara il testo per risposte più precise</li>
+                          <li>
+                            ✅ Aggiunge tutto alle informazioni del chatbot
+                          </li>
                         </ul>
                       </div>
                     </div>
                   </div>
 
                   <Input
-                    label="URL del Sito"
-                    placeholder="https://example.com o https://docs.example.com"
+                    label="Indirizzo del sito"
+                    placeholder="https://esempio.it"
                     value={crawlUrl}
                     onChange={(e) => setCrawlUrl(e.target.value)}
                     helperText="Inserisci l'indirizzo della homepage o della sezione da importare"
@@ -677,7 +799,7 @@ export default function KnowledgePage() {
                             Importazione del sito in corso...
                           </p>
                           <p className="text-sm text-brand-700">
-                            Sto esplorando il sito e raccogliendo contenuto
+                            Sto leggendo le pagine e preparando le informazioni.
                           </p>
                         </div>
                       </div>
@@ -696,20 +818,20 @@ export default function KnowledgePage() {
                   {!crawling && (
                     <div className="p-4 bg-success-50 border border-success-200 rounded-lg">
                       <p className="text-sm text-success-800">
-                        💡 <strong>Automatico:</strong> il crawler segue i link
-                        interni fino a 3 livelli, filtra duplicati e contenuti
-                        di bassa qualità. Non serve configurare nulla.
+                        <strong>Automatico:</strong> LitX segue i collegamenti
+                        interni, evita i duplicati e conserva le pagine utili.
+                        Non devi configurare altro.
                       </p>
                     </div>
                   )}
                 </div>
               ) : uploadType === "url" ? (
                 <Input
-                  label="URL"
-                  placeholder="https://example.com/documentation"
+                  label="Indirizzo della pagina"
+                  placeholder="https://esempio.it/spedizioni"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  helperText="Inserisci l'URL di una pagina web da cui estrarre contenuto"
+                  helperText="Inserisci la pagina precisa che il chatbot deve conoscere"
                 />
               ) : (
                 <div>
@@ -760,8 +882,8 @@ export default function KnowledgePage() {
                   : uploading
                     ? "Caricamento..."
                     : uploadType === "crawl"
-                      ? "Importa sito"
-                      : "Carica"}
+                      ? "Aggiungi sito"
+                      : "Aggiungi"}
               </Button>
             </div>
           </Card>
@@ -779,4 +901,17 @@ function readableSourceUrl(value: string | null) {
   } catch {
     return value;
   }
+}
+
+function sourceTypeLabel(type: KnowledgeSource["sourceType"]) {
+  const labels: Record<KnowledgeSource["sourceType"], string> = {
+    url: "Pagina web",
+    pdf: "Documento PDF",
+    docx: "Documento Word",
+    txt: "Documento di testo",
+    csv: "Foglio dati",
+    manual: "Testo inserito manualmente",
+    qa: "Risposta verificata",
+  };
+  return labels[type];
 }
