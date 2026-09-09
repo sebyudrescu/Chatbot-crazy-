@@ -25,9 +25,15 @@ assert.equal(production["X-Content-Type-Options"], "nosniff");
 const proxy = readFileSync(resolve(process.cwd(), "proxy.ts"), "utf8");
 assert.match(proxy, /httpSecurityHeaders/);
 assert.match(proxy, /withSecurityHeaders\(NextResponse\.redirect/);
-assert.match(proxy, /'\/agent\/'/);
-assert.match(proxy, /publicPaths[^\n]*'\/api\/internal\/commerce-sync'/);
-assert.doesNotMatch(proxy, /publicPrefixes[^\n]*'\/api\/internal\/commerce-sync'/);
+assert.match(proxy, /["']\/agent\/["']/);
+assert.match(
+  proxy,
+  /const publicPaths\s*=\s*\[[\s\S]*?["']\/api\/internal\/commerce-sync["'][\s\S]*?\]/,
+);
+assert.doesNotMatch(
+  proxy,
+  /const publicPrefixes\s*=\s*\[[\s\S]*?["']\/api\/internal\/commerce-sync["'][\s\S]*?\]/,
+);
 assert.match(proxy, /\.well-known\/workflow\//);
 
 const commerceWorkerRoute = readFileSync(resolve(process.cwd(), "app/api/internal/commerce-sync/route.ts"), "utf8");

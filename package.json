@@ -133,7 +133,7 @@
             "nanoid": "5.1.16"
         },
         "xdg-app-paths": "5.5.1",
-        "js-yaml": "4.3.1",
+        "js-yaml": "4.3.2",
         "minimatch@3.1.5": {
             "brace-expansion": "1.1.18"
         },
