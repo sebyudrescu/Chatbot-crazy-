@@ -52,7 +52,7 @@ interface Contact {
   consentStatus: string;
 }
 const stages: Array<{ id: Stage; label: string; color: string }> = [
-  { id: "new", label: "Nuovo lead", color: "bg-sky-500" },
+  { id: "new", label: "Nuovo visitatore", color: "bg-sky-500" },
   { id: "qualified", label: "Qualificato", color: "bg-violet-500" },
   { id: "appointment", label: "Appuntamento", color: "bg-amber-500" },
   { id: "proposal", label: "Proposta", color: "bg-orange-500" },
@@ -163,7 +163,7 @@ export default function ContactsPage() {
   if (loading)
     return (
       <DashboardLayout>
-        <LoadingSpinner fullPage text="Preparazione CRM..." />
+        <LoadingSpinner fullPage text="Caricamento contatti..." />
       </DashboardLayout>
     );
   return (
@@ -171,13 +171,11 @@ export default function ContactsPage() {
       <div className="mx-auto max-w-[1600px] p-4 lg:p-7">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="eyebrow">CRM privato</p>
-            <h1 className="mt-1 text-2xl font-bold text-gray-950">
-              Contatti e Pipeline
-            </h1>
+            <p className="eyebrow">Persone e conversazioni</p>
+            <h1 className="mt-1 text-2xl font-bold text-gray-950">Contatti</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Lead sincronizzati dalle conversazioni e organizzati per fase
-              commerciale.
+              Qui trovi anche i visitatori anonimi. Un contatto diventa
+              riconoscibile quando lascia almeno un recapito.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -216,12 +214,12 @@ export default function ContactsPage() {
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric
             icon={Users}
-            label="Contatti totali"
+            label="Visitatori registrati"
             value={contacts.length}
           />
           <Metric
             icon={Mail}
-            label="Email raccolte"
+            label="Con email"
             value={contacts.filter((item) => item.email).length}
           />
           <Metric
@@ -495,7 +493,11 @@ function ContactPanel({
     );
   return (
     <aside className={standalone ? "" : "border-l bg-gray-50/40 p-5"}>
-      {readOnly && <p className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-2 text-[10px] text-blue-800">Accesso in sola lettura</p>}
+      {readOnly && (
+        <p className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-2 text-[10px] text-blue-800">
+          Accesso in sola lettura
+        </p>
+      )}
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-brand-700">
         <User className="h-5 w-5" />
       </div>

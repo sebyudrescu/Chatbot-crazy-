@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { Bot, Check, ChevronLeft, FlaskConical, GitCompare, History, Loader2, MessageSquare, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, UserRoundCheck, Wand2, X } from 'lucide-react'
+import { Bot, Check, FlaskConical, GitCompare, History, Loader2, MessageSquare, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, UserRoundCheck, Wand2, X } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
+import { BackToAccountHome } from '@/components/BackToAccountHome'
 import { Button } from '@/components/ui/Button'
 import { AI_MODEL_CATALOG, DEFAULT_AGENTIC_MODEL, normalizeAgentAIModel } from '@/lib/ai-models'
 import { appendAgentInstructions } from '@/lib/agent-instructions'
@@ -150,7 +151,7 @@ export default function ChatbotSettingsPage() {
     <div className="mx-auto max-w-[1500px] px-5 py-6 lg:px-7">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link href="/chatbots" aria-label="Torna agli agenti" className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:text-brand-600"><ChevronLeft className="h-4 w-4" /></Link>
+          <BackToAccountHome />
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-100 text-brand-700"><Bot className="h-5 w-5" /></div>
           <div><div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-950">{bot.companyName}</h1><span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">{bot.isActive ? 'Attivo' : 'In pausa'}</span></div><p className="text-xs text-gray-500">Configurazione completa dell&apos;AI Agent</p></div>
         </div>

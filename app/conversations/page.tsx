@@ -54,7 +54,8 @@ interface ResponseRevision {
   rationale: string | null;
   expectedKeywords: string[];
   forbiddenKeywords: string[];
-  status: "draft" | "publishing" | "published" | "failed" | "archiving" | "archived";
+  status:
+    "draft" | "publishing" | "published" | "failed" | "archiving" | "archived";
   publishedAt: string | null;
   archivedAt: string | null;
 }
@@ -141,7 +142,9 @@ export default function ConversationsPage() {
   const [savingView, setSavingView] = useState(false);
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [viewError, setViewError] = useState("");
-  const [botOptions, setBotOptions] = useState<Array<{ id: string; companyName: string; workspaceId: string }>>([]);
+  const [botOptions, setBotOptions] = useState<
+    Array<{ id: string; companyName: string; workspaceId: string }>
+  >([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
@@ -171,7 +174,9 @@ export default function ConversationsPage() {
   const selectedRef = useRef<Conversation | null>(null);
 
   useEffect(() => {
-    const requestedBotId = new URLSearchParams(window.location.search).get("botId");
+    const requestedBotId = new URLSearchParams(window.location.search).get(
+      "botId",
+    );
     if (requestedBotId) setBot(requestedBotId);
   }, []);
 
@@ -210,7 +215,10 @@ export default function ConversationsPage() {
   );
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    const timeout = window.setTimeout(
+      () => setDebouncedSearch(search.trim()),
+      250,
+    );
     return () => window.clearTimeout(timeout);
   }, [search]);
 
@@ -225,7 +233,16 @@ export default function ConversationsPage() {
     params.set("sort", inboxSort);
     if (debouncedSearch) params.set("q", debouncedSearch);
     return params.toString();
-  }, [bot, status, priority, channel, sla, assignment, inboxSort, debouncedSearch]);
+  }, [
+    bot,
+    status,
+    priority,
+    channel,
+    sla,
+    assignment,
+    inboxSort,
+    debouncedSearch,
+  ]);
 
   const load = useCallback(async () => {
     try {
@@ -261,10 +278,16 @@ export default function ConversationsPage() {
       const views = (result.data || []) as SavedView[];
       setSavedViews(views);
       const defaultView = views.find((view) => view.isDefault);
-      const requestedBotId = new URLSearchParams(window.location.search).get("botId");
+      const requestedBotId = new URLSearchParams(window.location.search).get(
+        "botId",
+      );
       if (defaultView && !requestedBotId) {
         setBot(defaultView.filters.botId || "all");
-        setStatus(defaultView.filters.status === "handoff" ? "escalated" : defaultView.filters.status);
+        setStatus(
+          defaultView.filters.status === "handoff"
+            ? "escalated"
+            : defaultView.filters.status,
+        );
         setPriority(defaultView.filters.priority || "all");
         setChannel(defaultView.filters.channel || "all");
         setSla(defaultView.filters.sla || "all");
@@ -281,15 +304,39 @@ export default function ConversationsPage() {
   useEffect(() => {
     fetch("/api/chatbots")
       .then((response) => response.json())
-      .then((result) => result.success && setBotOptions(result.data.map((item: { id: string; companyName: string; workspaceId: string }) => ({ id: item.id, companyName: item.companyName, workspaceId: item.workspaceId }))));
+      .then(
+        (result) =>
+          result.success &&
+          setBotOptions(
+            result.data.map(
+              (item: {
+                id: string;
+                companyName: string;
+                workspaceId: string;
+              }) => ({
+                id: item.id,
+                companyName: item.companyName,
+                workspaceId: item.workspaceId,
+              }),
+            ),
+          ),
+      );
   }, []);
 
   const loadMore = async () => {
     if (!nextCursor) return;
-    const response = await fetch(`/api/conversations?${listQuery}&cursor=${encodeURIComponent(nextCursor)}`);
+    const response = await fetch(
+      `/api/conversations?${listQuery}&cursor=${encodeURIComponent(nextCursor)}`,
+    );
     const result = await response.json();
     if (!response.ok || !result.success) return;
-    setItems((current) => [...current, ...result.data.filter((item: Conversation) => !current.some((existing) => existing.id === item.id))]);
+    setItems((current) => [
+      ...current,
+      ...result.data.filter(
+        (item: Conversation) =>
+          !current.some((existing) => existing.id === item.id),
+      ),
+    ]);
     setNextCursor(result.pagination?.nextCursor || null);
   };
 
@@ -302,19 +349,30 @@ export default function ConversationsPage() {
       try {
         const current = selectedRef.current;
         const [listResult, detailResult] = await Promise.all([
-          fetch(`/api/conversations?${listQuery}`, { cache: "no-store" }).then((response) => response.json()),
+          fetch(`/api/conversations?${listQuery}`, { cache: "no-store" }).then(
+            (response) => response.json(),
+          ),
           current
-            ? fetch(`/api/conversations/${current.id}`, { cache: "no-store" }).then((response) => response.json())
+            ? fetch(`/api/conversations/${current.id}`, {
+                cache: "no-store",
+              }).then((response) => response.json())
             : Promise.resolve(null),
         ]);
         if (!active) return;
-        if (listResult.success) setItems((current) => [
-          ...listResult.data,
-          ...current.filter((item) => !listResult.data.some((fresh: Conversation) => fresh.id === item.id)),
-        ]);
+        if (listResult.success)
+          setItems((current) => [
+            ...listResult.data,
+            ...current.filter(
+              (item) =>
+                !listResult.data.some(
+                  (fresh: Conversation) => fresh.id === item.id,
+                ),
+            ),
+          ]);
         if (detailResult?.success) {
           setSelected((selectedConversation) =>
-            selectedConversation && selectedConversation.id === detailResult.data.id
+            selectedConversation &&
+            selectedConversation.id === detailResult.data.id
               ? { ...detailResult.data, _count: selectedConversation._count }
               : selectedConversation,
           );
@@ -323,7 +381,9 @@ export default function ConversationsPage() {
         running = false;
       }
     };
-    const interval = debouncedSearch ? null : window.setInterval(() => void refresh(), 8_000);
+    const interval = debouncedSearch
+      ? null
+      : window.setInterval(() => void refresh(), 8_000);
     const onVisibilityChange = () => {
       if (!document.hidden) void refresh();
     };
@@ -336,8 +396,13 @@ export default function ConversationsPage() {
   }, [listQuery, debouncedSearch]);
 
   const bots = botOptions;
-  const selectedWorkspaceId = botOptions.find(item => item.id === selected?.botId)?.workspaceId;
-  const canWriteSelected = permissions.can(selectedWorkspaceId, "conversations.write");
+  const selectedWorkspaceId = botOptions.find(
+    (item) => item.id === selected?.botId,
+  )?.workspaceId;
+  const canWriteSelected = permissions.can(
+    selectedWorkspaceId,
+    "conversations.write",
+  );
   const lastInboundAt = useMemo(
     () =>
       selected?.messages.filter((message) => message.role === "user").at(-1)
@@ -411,15 +476,29 @@ export default function ConversationsPage() {
         const matchPriority = priority === "all" || item.priority === priority;
         const matchChannel = channel === "all" || item.channel === channel;
         const matchSla = sla === "all" || helpDeskSlaState(item) === sla;
-        const matchAssignment = assignment === "all" || (assignment === "assigned" ? Boolean(item.assignedAgent) : !item.assignedAgent);
-        return matchSearch && matchBot && matchStatus && matchPriority && matchChannel && matchSla && matchAssignment;
+        const matchAssignment =
+          assignment === "all" ||
+          (assignment === "assigned"
+            ? Boolean(item.assignedAgent)
+            : !item.assignedAgent);
+        return (
+          matchSearch &&
+          matchBot &&
+          matchStatus &&
+          matchPriority &&
+          matchChannel &&
+          matchSla &&
+          matchAssignment
+        );
       }),
     [items, search, bot, status, priority, channel, sla, assignment],
   );
 
   const applySavedView = (view: SavedView) => {
     setBot(view.filters.botId || "all");
-    setStatus(view.filters.status === "handoff" ? "escalated" : view.filters.status);
+    setStatus(
+      view.filters.status === "handoff" ? "escalated" : view.filters.status,
+    );
     setPriority(view.filters.priority || "all");
     setChannel(view.filters.channel || "all");
     setSla(view.filters.sla || "all");
@@ -463,8 +542,11 @@ export default function ConversationsPage() {
   };
 
   const deleteSavedView = async (id: string) => {
-    const response = await fetch(`/api/helpdesk/views/${id}`, { method: "DELETE" });
-    if (response.ok) setSavedViews((current) => current.filter((view) => view.id !== id));
+    const response = await fetch(`/api/helpdesk/views/${id}`, {
+      method: "DELETE",
+    });
+    if (response.ok)
+      setSavedViews((current) => current.filter((view) => view.id !== id));
   };
 
   const patchSelected = async (data: Partial<Conversation>) => {
@@ -599,7 +681,8 @@ export default function ConversationsPage() {
         await patchSelected({
           summary: result.data.summary,
           tags: [...new Set([...(selected.tags || []), ...result.data.tags])],
-          priority: result.data.priority === "medium" ? "normal" : result.data.priority,
+          priority:
+            result.data.priority === "medium" ? "normal" : result.data.priority,
         });
     } catch (error) {
       setAiError(
@@ -626,11 +709,14 @@ export default function ConversationsPage() {
 
   const openRevision = (message: Message) => {
     if (!selected) return;
-    const messageIndex = selected.messages.findIndex((item) => item.id === message.id);
-    const precedingQuestion = selected.messages
-      .slice(0, messageIndex)
-      .reverse()
-      .find((item) => item.role === "user")?.content || "";
+    const messageIndex = selected.messages.findIndex(
+      (item) => item.id === message.id,
+    );
+    const precedingQuestion =
+      selected.messages
+        .slice(0, messageIndex)
+        .reverse()
+        .find((item) => item.role === "user")?.content || "";
     const editable = message.responseRevisions?.find((item) =>
       ["draft", "failed"].includes(item.status),
     );
@@ -649,8 +735,14 @@ export default function ConversationsPage() {
     question: revisionQuestion.trim(),
     revisedAnswer: revisionAnswer.trim(),
     rationale: revisionRationale.trim() || null,
-    expectedKeywords: revisionExpected.split(",").map((item) => item.trim()).filter(Boolean),
-    forbiddenKeywords: revisionForbidden.split(",").map((item) => item.trim()).filter(Boolean),
+    expectedKeywords: revisionExpected
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+    forbiddenKeywords: revisionForbidden
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
   });
 
   const saveRevisionDraft = async () => {
@@ -669,14 +761,19 @@ export default function ConversationsPage() {
         },
       );
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Salvataggio bozza non riuscito");
+      if (!response.ok)
+        throw new Error(result.error || "Salvataggio bozza non riuscito");
       setRevisionDraftId(result.data.id);
       setRevisionExpected(result.data.expectedKeywords.join(", "));
       setRevisionForbidden(result.data.forbiddenKeywords.join(", "));
       setRevisionReview(true);
       return result.data as ResponseRevision;
     } catch (error) {
-      setRevisionError(error instanceof Error ? error.message : "Salvataggio bozza non riuscito");
+      setRevisionError(
+        error instanceof Error
+          ? error.message
+          : "Salvataggio bozza non riuscito",
+      );
       return null;
     } finally {
       setRevisionBusy(false);
@@ -688,32 +785,50 @@ export default function ConversationsPage() {
     setRevisionBusy(true);
     setRevisionError("");
     try {
-      const response = await fetch(`/api/response-revisions/${revisionDraftId}/publish`, { method: "POST" });
+      const response = await fetch(
+        `/api/response-revisions/${revisionDraftId}/publish`,
+        { method: "POST" },
+      );
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Pubblicazione non riuscita");
+      if (!response.ok)
+        throw new Error(result.error || "Pubblicazione non riuscita");
       const current = selected;
       setRevisionTarget(null);
       await openConversation(current, false);
     } catch (error) {
-      setRevisionError(error instanceof Error ? error.message : "Pubblicazione non riuscita");
+      setRevisionError(
+        error instanceof Error ? error.message : "Pubblicazione non riuscita",
+      );
     } finally {
       setRevisionBusy(false);
     }
   };
 
   const archiveRevision = async (revision: ResponseRevision) => {
-    if (!selected || !window.confirm("Rimuovere questa Q&A verificata dalla knowledge base e disattivare il relativo test?")) return;
+    if (
+      !selected ||
+      !window.confirm(
+        "Rimuovere questa Q&A verificata dalla knowledge base e disattivare il relativo test?",
+      )
+    )
+      return;
     setRevisionBusy(true);
     setRevisionError("");
     try {
-      const response = await fetch(`/api/response-revisions/${revision.id}/archive`, { method: "POST" });
+      const response = await fetch(
+        `/api/response-revisions/${revision.id}/archive`,
+        { method: "POST" },
+      );
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Archiviazione non riuscita");
+      if (!response.ok)
+        throw new Error(result.error || "Archiviazione non riuscita");
       const current = selected;
       setRevisionTarget(null);
       await openConversation(current, false);
     } catch (error) {
-      setRevisionError(error instanceof Error ? error.message : "Archiviazione non riuscita");
+      setRevisionError(
+        error instanceof Error ? error.message : "Archiviazione non riuscita",
+      );
     } finally {
       setRevisionBusy(false);
     }
@@ -722,7 +837,7 @@ export default function ConversationsPage() {
   if (loading)
     return (
       <DashboardLayout>
-        <LoadingSpinner fullPage text="Caricamento inbox..." />
+        <LoadingSpinner fullPage text="Caricamento conversazioni..." />
       </DashboardLayout>
     );
 
@@ -736,9 +851,9 @@ export default function ConversationsPage() {
           <div className="border-b p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="eyebrow">Inbox operativa</p>
+                <p className="eyebrow">Assistenza clienti</p>
                 <h1 className="mt-1 text-xl font-bold text-gray-950">
-                  Chat Logs
+                  Conversazioni
                 </h1>
               </div>
               <div className="flex gap-1">
@@ -774,7 +889,7 @@ export default function ConversationsPage() {
                 onChange={(event) => setBot(event.target.value)}
                 className="input py-2 text-xs"
               >
-                <option value="all">Tutti gli agenti</option>
+                <option value="all">Tutti i chatbot</option>
                 {bots.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.companyName}
@@ -788,58 +903,136 @@ export default function ConversationsPage() {
               >
                 <option value="all">Tutti gli stati</option>
                 <option value="open">Aperte</option>
-                <option value="escalated">Handoff</option>
+                <option value="escalated">Richiedono una persona</option>
                 <option value="resolved">Risolte</option>
               </select>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              <select value={priority} onChange={(event) => setPriority(event.target.value as Priority)} className="input py-2 text-[10px]" aria-label="Filtra per priorità">
-                <option value="all">Priorità</option>
-                <option value="urgent">Urgente</option>
-                <option value="high">Alta</option>
-                <option value="normal">Normale</option>
-                <option value="low">Bassa</option>
-              </select>
-              <select value={channel} onChange={(event) => setChannel(event.target.value)} className="input py-2 text-[10px]" aria-label="Filtra per canale">
-                <option value="all">Canale</option>
-                <option value="widget">Widget</option>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="instagram">Instagram</option>
-              </select>
-              <select value={sla} onChange={(event) => setSla(event.target.value as SlaFilter)} className="input py-2 text-[10px]" aria-label="Filtra per SLA">
-                <option value="all">SLA</option>
-                <option value="breached">Scaduto</option>
-                <option value="due_soon">In scadenza</option>
-                <option value="healthy">Regolare</option>
-                <option value="untracked">Non avviato</option>
-              </select>
-              <select value={assignment} onChange={(event) => setAssignment(event.target.value as AssignmentFilter)} className="input py-2 text-[10px]" aria-label="Filtra per assegnazione">
-                <option value="all">Assegnazione</option>
-                <option value="assigned">Assegnate</option>
-                <option value="unassigned">Non assegnate</option>
-              </select>
-              <select value={inboxSort} onChange={(event) => setInboxSort(event.target.value as InboxSort)} className="input py-2 text-[10px]" aria-label="Ordina conversazioni">
-                <option value="recent">Più recenti</option>
-                <option value="oldest">Più vecchie</option>
-              </select>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {savedViews.map((view) => (
-                <span key={view.id} className="inline-flex items-center rounded-full border border-gray-200 bg-white text-[9px] font-semibold text-gray-600">
-                  <button type="button" onClick={() => applySavedView(view)} className="inline-flex items-center gap-1 py-1 pl-2.5 pr-1 hover:text-brand-700"><Bookmark className="h-3 w-3" />{view.name}</button>
-                  <button type="button" onClick={() => void deleteSavedView(view.id)} className="rounded-full p-1 text-gray-300 hover:text-red-500" aria-label={`Elimina vista ${view.name}`}><X className="h-2.5 w-2.5" /></button>
-                </span>
-              ))}
-            </div>
-            <div className="mt-2 flex gap-1.5">
-              <input value={viewName} onChange={(event) => setViewName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void saveCurrentView()} className="input py-1.5 text-[10px]" placeholder="Salva vista corrente" maxLength={80} />
-              <button type="button" onClick={() => void saveCurrentView()} disabled={!viewName.trim() || savingView} className="rounded-lg border border-gray-200 px-2 text-gray-500 hover:bg-gray-50 disabled:opacity-40" aria-label="Salva vista"><Bookmark className="h-3.5 w-3.5" /></button>
-            </div>
-            <label className="mt-1.5 inline-flex items-center gap-1.5 text-[9px] text-gray-500">
-              <input type="checkbox" checked={saveAsDefault} onChange={(event) => setSaveAsDefault(event.target.checked)} />
-              Apri automaticamente questa vista
-            </label>
-            {viewError && <p role="alert" className="mt-1.5 text-[9px] text-red-600">{viewError}</p>}
+            <details className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+              <summary className="cursor-pointer text-[10px] font-semibold text-gray-500">
+                Filtri avanzati e viste salvate
+              </summary>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <select
+                  value={priority}
+                  onChange={(event) =>
+                    setPriority(event.target.value as Priority)
+                  }
+                  className="input py-2 text-[10px]"
+                  aria-label="Filtra per priorità"
+                >
+                  <option value="all">Priorità</option>
+                  <option value="urgent">Urgente</option>
+                  <option value="high">Alta</option>
+                  <option value="normal">Normale</option>
+                  <option value="low">Bassa</option>
+                </select>
+                <select
+                  value={channel}
+                  onChange={(event) => setChannel(event.target.value)}
+                  className="input py-2 text-[10px]"
+                  aria-label="Filtra per canale"
+                >
+                  <option value="all">Canale</option>
+                  <option value="widget">Widget</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="instagram">Instagram</option>
+                </select>
+                <select
+                  value={sla}
+                  onChange={(event) => setSla(event.target.value as SlaFilter)}
+                  className="input py-2 text-[10px]"
+                  aria-label="Filtra per SLA"
+                >
+                  <option value="all">SLA</option>
+                  <option value="breached">Scaduto</option>
+                  <option value="due_soon">In scadenza</option>
+                  <option value="healthy">Regolare</option>
+                  <option value="untracked">Non avviato</option>
+                </select>
+                <select
+                  value={assignment}
+                  onChange={(event) =>
+                    setAssignment(event.target.value as AssignmentFilter)
+                  }
+                  className="input py-2 text-[10px]"
+                  aria-label="Filtra per assegnazione"
+                >
+                  <option value="all">Assegnazione</option>
+                  <option value="assigned">Assegnate</option>
+                  <option value="unassigned">Non assegnate</option>
+                </select>
+                <select
+                  value={inboxSort}
+                  onChange={(event) =>
+                    setInboxSort(event.target.value as InboxSort)
+                  }
+                  className="input py-2 text-[10px]"
+                  aria-label="Ordina conversazioni"
+                >
+                  <option value="recent">Più recenti</option>
+                  <option value="oldest">Più vecchie</option>
+                </select>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {savedViews.map((view) => (
+                  <span
+                    key={view.id}
+                    className="inline-flex items-center rounded-full border border-gray-200 bg-white text-[9px] font-semibold text-gray-600"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => applySavedView(view)}
+                      className="inline-flex items-center gap-1 py-1 pl-2.5 pr-1 hover:text-brand-700"
+                    >
+                      <Bookmark className="h-3 w-3" />
+                      {view.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteSavedView(view.id)}
+                      className="rounded-full p-1 text-gray-300 hover:text-red-500"
+                      aria-label={`Elimina vista ${view.name}`}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="mt-2 flex gap-1.5">
+                <input
+                  value={viewName}
+                  onChange={(event) => setViewName(event.target.value)}
+                  onKeyDown={(event) =>
+                    event.key === "Enter" && void saveCurrentView()
+                  }
+                  className="input py-1.5 text-[10px]"
+                  placeholder="Salva vista corrente"
+                  maxLength={80}
+                />
+                <button
+                  type="button"
+                  onClick={() => void saveCurrentView()}
+                  disabled={!viewName.trim() || savingView}
+                  className="rounded-lg border border-gray-200 px-2 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+                  aria-label="Salva vista"
+                >
+                  <Bookmark className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <label className="mt-1.5 inline-flex items-center gap-1.5 text-[9px] text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={saveAsDefault}
+                  onChange={(event) => setSaveAsDefault(event.target.checked)}
+                />
+                Apri automaticamente questa vista
+              </label>
+              {viewError && (
+                <p role="alert" className="mt-1.5 text-[9px] text-red-600">
+                  {viewError}
+                </p>
+              )}
+            </details>
           </div>
           <div className="flex-1 overflow-y-auto">
             {filtered.map((item) => (
@@ -869,7 +1062,7 @@ export default function ConversationsPage() {
                       <PriorityTag priority={item.priority} />
                       <SlaTag conversation={item} />
                       {item.needsHumanEscalation && (
-                        <Tag color="red">Handoff</Tag>
+                        <Tag color="red">Serve assistenza</Tag>
                       )}
                       {item.isResolved ? (
                         <Tag color="green">Risolta</Tag>
@@ -877,7 +1070,7 @@ export default function ConversationsPage() {
                         <Tag color="gray">Aperta</Tag>
                       )}
                       {item.userIntent && (
-                        <Tag color="brand">{item.userIntent}</Tag>
+                        <Tag color="brand">{intentLabel(item.userIntent)}</Tag>
                       )}
                     </div>
                   </div>
@@ -891,7 +1084,14 @@ export default function ConversationsPage() {
             )}
             {nextCursor && (
               <div className="p-3">
-                <Button variant="secondary" size="sm" fullWidth onClick={() => void loadMore()}>Carica altre conversazioni</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  fullWidth
+                  onClick={() => void loadMore()}
+                >
+                  Carica altre conversazioni
+                </Button>
               </div>
             )}
           </div>
@@ -925,7 +1125,10 @@ export default function ConversationsPage() {
                     </p>
                   </div>
                 </div>
-                <fieldset disabled={!canWriteSelected} className="flex shrink-0 gap-1.5 disabled:opacity-60">
+                <fieldset
+                  disabled={!canWriteSelected}
+                  className="flex shrink-0 gap-1.5 disabled:opacity-60"
+                >
                   <button
                     type="button"
                     onClick={() => setMobilePanel("details")}
@@ -942,10 +1145,14 @@ export default function ConversationsPage() {
                           size="sm"
                           variant="secondary"
                           disabled={busy}
-                          onClick={() => patchSelected({ assignedAgent: "Proprietario" })}
+                          onClick={() =>
+                            patchSelected({ assignedAgent: "Proprietario" })
+                          }
                           icon={<UserRoundCheck className="h-4 w-4" />}
                         >
-                          <span className="hidden sm:inline">Prendi in carico</span>
+                          <span className="hidden sm:inline">
+                            Prendi in carico
+                          </span>
                         </Button>
                       )}
                       <Button
@@ -1014,7 +1221,9 @@ export default function ConversationsPage() {
                         {message.role === "assistant" ? (
                           <SafeRichText content={message.content} />
                         ) : (
-                          <p className="whitespace-pre-wrap">{message.content}</p>
+                          <p className="whitespace-pre-wrap">
+                            {message.content}
+                          </p>
                         )}
                         <p className="mt-1 text-[9px] opacity-60">
                           {new Date(message.createdAt).toLocaleTimeString(
@@ -1028,187 +1237,205 @@ export default function ConversationsPage() {
                             ? ` · ${deliveryLabel(message.deliveryStatus)}`
                             : ""}
                         </p>
-                        {message.role === "assistant" && permissions.can(selectedWorkspaceId, "configure") && (
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/20 pt-2">
-                            <button
-                              type="button"
-                              onClick={() => openRevision(message)}
-                              className="flex items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-[9px] font-semibold text-white hover:bg-white/25"
-                            >
-                              <PencilLine className="h-3 w-3" />
-                              Correggi e insegna
-                            </button>
-                            {message.responseRevisions?.slice(0, 2).map((revision) => (
-                              <span
-                                key={revision.id}
-                                className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${revision.status === "published" ? "bg-emerald-100 text-emerald-800" : revision.status === "archived" ? "bg-gray-200 text-gray-600" : "bg-amber-100 text-amber-800"}`}
+                        {message.role === "assistant" &&
+                          permissions.can(selectedWorkspaceId, "configure") && (
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/20 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => openRevision(message)}
+                                className="flex items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-[9px] font-semibold text-white hover:bg-white/25"
                               >
-                                v{revision.version} · {revision.status === "published" ? "verificata" : revision.status === "archived" ? "archiviata" : "bozza"}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                                <PencilLine className="h-3 w-3" />
+                                Correggi e insegna
+                              </button>
+                              {message.responseRevisions
+                                ?.slice(0, 2)
+                                .map((revision) => (
+                                  <span
+                                    key={revision.id}
+                                    className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${revision.status === "published" ? "bg-emerald-100 text-emerald-800" : revision.status === "archived" ? "bg-gray-200 text-gray-600" : "bg-amber-100 text-amber-800"}`}
+                                  >
+                                    v{revision.version} ·{" "}
+                                    {revision.status === "published"
+                                      ? "verificata"
+                                      : revision.status === "archived"
+                                        ? "archiviata"
+                                        : "bozza"}
+                                  </span>
+                                ))}
+                            </div>
+                          )}
                       </div>
                     </div>
                   ))
                 )}
               </div>
               <div className="border-t bg-white p-3 sm:p-4">
-                {permissions.loaded && !canWriteSelected && <p className="mx-auto mb-3 max-w-3xl rounded-lg border border-blue-200 bg-blue-50 p-2 text-[10px] text-blue-800">Accesso in sola lettura: il ruolo Viewer non può prendere in carico o rispondere.</p>}
-                <fieldset disabled={!canWriteSelected} className="disabled:opacity-70">
-                {selected.channel === "whatsapp" && (
-                  <div
-                    className={`mx-auto mb-3 max-w-3xl rounded-lg border px-3 py-2 text-[10px] leading-4 ${whatsappWindowOpen ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Clock3 className="h-3.5 w-3.5 shrink-0" />
-                      <span className="font-semibold">
-                        {whatsappWindowOpen
-                          ? `Finestra WhatsApp aperta${whatsappWindow?.closesAt ? ` fino alle ${new Date(whatsappWindow.closesAt).toLocaleString("it-IT", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}` : ""}`
-                          : "Finestra WhatsApp chiusa: usa un template approvato da Meta."}
-                      </span>
-                    </div>
-                  </div>
-                )}
-                {selected.channel === "whatsapp" && !whatsappWindowOpen ? (
-                  <div className="mx-auto max-w-3xl space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-gray-800">
-                        Template WhatsApp
-                      </p>
-                      {templatesLoading && (
-                        <LoadingSpinner text="Caricamento template..." />
-                      )}
-                    </div>
-                    {!templatesLoading && (
-                      <select
-                        aria-label="Template WhatsApp"
-                        className="input text-xs"
-                        value={templateKey}
-                        onChange={(event) => chooseTemplate(event.target.value)}
-                      >
-                        <option value="">
-                          Seleziona un template approvato
-                        </option>
-                        {templates.map((template) => (
-                          <option
-                            key={`${template.name}:${template.language}`}
-                            value={`${template.name}:${template.language}`}
-                            disabled={!template.supported}
-                          >
-                            {template.name} · {template.language} ·{" "}
-                            {template.category}
-                            {template.supported
-                              ? ""
-                              : " · variabili non supportate"}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {selectedTemplate && (
-                      <div className="rounded-lg bg-gray-50 p-3">
-                        <p className="whitespace-pre-wrap text-[11px] leading-5 text-gray-600">
-                          {selectedTemplate.body}
-                        </p>
-                        {templateParameters.map((value, index) => (
-                          <label key={index} className="mt-2 block">
-                            <span className="label">Valore {index + 1}</span>
-                            <input
-                              className="input text-xs"
-                              value={value}
-                              onChange={(event) =>
-                                setTemplateParameters((current) =>
-                                  current.map((item, parameterIndex) =>
-                                    parameterIndex === index
-                                      ? event.target.value
-                                      : item,
-                                  ),
-                                )
-                              }
-                              placeholder={`Sostituisce {{${index + 1}}}`}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex justify-end">
-                      <Button
-                        disabled={
-                          busy ||
-                          !selectedTemplate ||
-                          templateParameters.some((value) => !value.trim())
-                        }
-                        onClick={sendTemplate}
-                        icon={<Send className="h-4 w-4" />}
-                      >
-                        Invia template
-                      </Button>
-                    </div>
-                    {!templatesLoading && !templates.length && (
-                      <p className="rounded-lg bg-gray-50 p-3 text-[10px] text-gray-500">
-                        Nessun template Utility o Authentication approvato
-                        disponibile nel WhatsApp Business Account.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div className="mx-auto mb-2 flex max-w-3xl items-center justify-between">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={Boolean(aiBusy) || detailLoading}
-                        onClick={() => assist("reply")}
-                        icon={
-                          <Sparkles
-                            className={`h-3.5 w-3.5 ${aiBusy === "reply" ? "animate-pulse" : ""}`}
-                          />
-                        }
-                      >
-                        {aiBusy === "reply"
-                          ? "Creo la bozza..."
-                          : "Suggerisci risposta AI"}
-                      </Button>
-                      {aiError && (
-                        <p className="text-[9px] text-red-600">{aiError}</p>
-                      )}
-                    </div>
-                    <div className="mx-auto flex max-w-3xl items-end gap-2">
-                      <textarea
-                        aria-label="Risposta operatore"
-                        value={reply}
-                        onChange={(event) => setReply(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && !event.shiftKey) {
-                            event.preventDefault();
-                            sendReply();
-                          }
-                        }}
-                        rows={2}
-                        className="textarea resize-none text-xs"
-                        placeholder="Rispondi come operatore..."
-                      />
-                      <Button
-                        aria-label="Invia risposta"
-                        disabled={busy || !reply.trim()}
-                        onClick={sendReply}
-                        icon={<Send className="h-4 w-4" />}
-                      />
-                    </div>
-                    <p className="mx-auto mt-1 max-w-3xl text-[9px] text-gray-400">
-                      La bozza AI non viene inviata automaticamente: puoi
-                      modificarla prima dell’invio.
-                    </p>
-                  </>
-                )}
-                {replyError && (
-                  <p
-                    role="alert"
-                    className="mx-auto mt-3 max-w-3xl rounded-lg bg-red-50 p-2 text-[10px] text-red-700"
-                  >
-                    {replyError}
+                {permissions.loaded && !canWriteSelected && (
+                  <p className="mx-auto mb-3 max-w-3xl rounded-lg border border-blue-200 bg-blue-50 p-2 text-[10px] text-blue-800">
+                    Accesso in sola lettura: il ruolo Viewer non può prendere in
+                    carico o rispondere.
                   </p>
                 )}
+                <fieldset
+                  disabled={!canWriteSelected}
+                  className="disabled:opacity-70"
+                >
+                  {selected.channel === "whatsapp" && (
+                    <div
+                      className={`mx-auto mb-3 max-w-3xl rounded-lg border px-3 py-2 text-[10px] leading-4 ${whatsappWindowOpen ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="font-semibold">
+                          {whatsappWindowOpen
+                            ? `Finestra WhatsApp aperta${whatsappWindow?.closesAt ? ` fino alle ${new Date(whatsappWindow.closesAt).toLocaleString("it-IT", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}` : ""}`
+                            : "Finestra WhatsApp chiusa: usa un template approvato da Meta."}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {selected.channel === "whatsapp" && !whatsappWindowOpen ? (
+                    <div className="mx-auto max-w-3xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-gray-800">
+                          Template WhatsApp
+                        </p>
+                        {templatesLoading && (
+                          <LoadingSpinner text="Caricamento template..." />
+                        )}
+                      </div>
+                      {!templatesLoading && (
+                        <select
+                          aria-label="Template WhatsApp"
+                          className="input text-xs"
+                          value={templateKey}
+                          onChange={(event) =>
+                            chooseTemplate(event.target.value)
+                          }
+                        >
+                          <option value="">
+                            Seleziona un template approvato
+                          </option>
+                          {templates.map((template) => (
+                            <option
+                              key={`${template.name}:${template.language}`}
+                              value={`${template.name}:${template.language}`}
+                              disabled={!template.supported}
+                            >
+                              {template.name} · {template.language} ·{" "}
+                              {template.category}
+                              {template.supported
+                                ? ""
+                                : " · variabili non supportate"}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {selectedTemplate && (
+                        <div className="rounded-lg bg-gray-50 p-3">
+                          <p className="whitespace-pre-wrap text-[11px] leading-5 text-gray-600">
+                            {selectedTemplate.body}
+                          </p>
+                          {templateParameters.map((value, index) => (
+                            <label key={index} className="mt-2 block">
+                              <span className="label">Valore {index + 1}</span>
+                              <input
+                                className="input text-xs"
+                                value={value}
+                                onChange={(event) =>
+                                  setTemplateParameters((current) =>
+                                    current.map((item, parameterIndex) =>
+                                      parameterIndex === index
+                                        ? event.target.value
+                                        : item,
+                                    ),
+                                  )
+                                }
+                                placeholder={`Sostituisce {{${index + 1}}}`}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex justify-end">
+                        <Button
+                          disabled={
+                            busy ||
+                            !selectedTemplate ||
+                            templateParameters.some((value) => !value.trim())
+                          }
+                          onClick={sendTemplate}
+                          icon={<Send className="h-4 w-4" />}
+                        >
+                          Invia template
+                        </Button>
+                      </div>
+                      {!templatesLoading && !templates.length && (
+                        <p className="rounded-lg bg-gray-50 p-3 text-[10px] text-gray-500">
+                          Nessun template Utility o Authentication approvato
+                          disponibile nel WhatsApp Business Account.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mx-auto mb-2 flex max-w-3xl items-center justify-between">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={Boolean(aiBusy) || detailLoading}
+                          onClick={() => assist("reply")}
+                          icon={
+                            <Sparkles
+                              className={`h-3.5 w-3.5 ${aiBusy === "reply" ? "animate-pulse" : ""}`}
+                            />
+                          }
+                        >
+                          {aiBusy === "reply"
+                            ? "Creo la bozza..."
+                            : "Suggerisci risposta AI"}
+                        </Button>
+                        {aiError && (
+                          <p className="text-[9px] text-red-600">{aiError}</p>
+                        )}
+                      </div>
+                      <div className="mx-auto flex max-w-3xl items-end gap-2">
+                        <textarea
+                          aria-label="Risposta operatore"
+                          value={reply}
+                          onChange={(event) => setReply(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && !event.shiftKey) {
+                              event.preventDefault();
+                              sendReply();
+                            }
+                          }}
+                          rows={2}
+                          className="textarea resize-none text-xs"
+                          placeholder="Rispondi come operatore..."
+                        />
+                        <Button
+                          aria-label="Invia risposta"
+                          disabled={busy || !reply.trim()}
+                          onClick={sendReply}
+                          icon={<Send className="h-4 w-4" />}
+                        />
+                      </div>
+                      <p className="mx-auto mt-1 max-w-3xl text-[9px] text-gray-400">
+                        La bozza AI non viene inviata automaticamente: puoi
+                        modificarla prima dell’invio.
+                      </p>
+                    </>
+                  )}
+                  {replyError && (
+                    <p
+                      role="alert"
+                      className="mx-auto mt-3 max-w-3xl rounded-lg bg-red-50 p-2 text-[10px] text-red-700"
+                    >
+                      {replyError}
+                    </p>
+                  )}
                 </fieldset>
               </div>
             </>
@@ -1282,8 +1509,23 @@ export default function ConversationsPage() {
                 Stato conversazione
               </h2>
               <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <label className="text-[9px] font-semibold uppercase tracking-wide text-gray-500" htmlFor="helpdesk-priority">Priorità operativa</label>
-                <select id="helpdesk-priority" value={selected.priority || "normal"} onChange={(event) => void patchSelected({ priority: event.target.value as Conversation["priority"] })} className="input mt-1.5 py-2 text-xs" disabled={busy}>
+                <label
+                  className="text-[9px] font-semibold uppercase tracking-wide text-gray-500"
+                  htmlFor="helpdesk-priority"
+                >
+                  Priorità operativa
+                </label>
+                <select
+                  id="helpdesk-priority"
+                  value={selected.priority || "normal"}
+                  onChange={(event) =>
+                    void patchSelected({
+                      priority: event.target.value as Conversation["priority"],
+                    })
+                  }
+                  className="input mt-1.5 py-2 text-xs"
+                  disabled={busy}
+                >
                   <option value="urgent">Urgente · 15 min</option>
                   <option value="high">Alta · 30 min</option>
                   <option value="normal">Normale · 60 min</option>
@@ -1301,7 +1543,7 @@ export default function ConversationsPage() {
                   good={selected.isResolved}
                 />
                 <StateLine
-                  label="Handoff"
+                  label="Richiesta al team"
                   value={selected.needsHumanEscalation ? "Richiesto" : "No"}
                   good={!selected.needsHumanEscalation}
                 />
@@ -1311,7 +1553,11 @@ export default function ConversationsPage() {
                 />
                 <StateLine
                   label="Intento"
-                  value={selected.userIntent || "Non rilevato"}
+                  value={
+                    selected.userIntent
+                      ? intentLabel(selected.userIntent)
+                      : "Non rilevato"
+                  }
                 />
               </div>
               {selected.escalationReason && (
@@ -1425,16 +1671,38 @@ export default function ConversationsPage() {
       {revisionTarget && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-950/55 p-3 backdrop-blur-sm sm:p-5"
-          onMouseDown={(event) => event.target === event.currentTarget && !revisionBusy && setRevisionTarget(null)}
+          onMouseDown={(event) =>
+            event.target === event.currentTarget &&
+            !revisionBusy &&
+            setRevisionTarget(null)
+          }
         >
-          <div role="dialog" aria-modal="true" aria-labelledby="revision-title" className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="revision-title"
+            className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-start justify-between border-b p-5">
               <div>
                 <p className="eyebrow">Apprendimento supervisionato</p>
-                <h2 id="revision-title" className="mt-1 text-lg font-bold text-gray-950">Correggi e insegna al chatbot</h2>
-                <p className="mt-1 text-[11px] text-gray-500">Il messaggio storico resta immutato. La correzione diventa una Q&A verificata e un test anti-regressione.</p>
+                <h2
+                  id="revision-title"
+                  className="mt-1 text-lg font-bold text-gray-950"
+                >
+                  Correggi e insegna al chatbot
+                </h2>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Il messaggio storico resta immutato. La correzione diventa una
+                  Q&A verificata e un test anti-regressione.
+                </p>
               </div>
-              <button disabled={revisionBusy} onClick={() => setRevisionTarget(null)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 disabled:opacity-50" aria-label="Chiudi">
+              <button
+                disabled={revisionBusy}
+                onClick={() => setRevisionTarget(null)}
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 disabled:opacity-50"
+                aria-label="Chiudi"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1443,34 +1711,83 @@ export default function ConversationsPage() {
                 <div className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
                   <div className="space-y-4">
                     <label className="block">
-                      <span className="label">Domanda canonica dell’utente</span>
-                      <textarea className="textarea mt-1 min-h-20 text-xs" value={revisionQuestion} onChange={(event) => setRevisionQuestion(event.target.value)} />
+                      <span className="label">
+                        Domanda canonica dell’utente
+                      </span>
+                      <textarea
+                        className="textarea mt-1 min-h-20 text-xs"
+                        value={revisionQuestion}
+                        onChange={(event) =>
+                          setRevisionQuestion(event.target.value)
+                        }
+                      />
                     </label>
                     <label className="block">
-                      <span className="label">Risposta corretta e verificata</span>
-                      <textarea className="textarea mt-1 min-h-40 text-xs leading-5" value={revisionAnswer} onChange={(event) => setRevisionAnswer(event.target.value)} />
+                      <span className="label">
+                        Risposta corretta e verificata
+                      </span>
+                      <textarea
+                        className="textarea mt-1 min-h-40 text-xs leading-5"
+                        value={revisionAnswer}
+                        onChange={(event) =>
+                          setRevisionAnswer(event.target.value)
+                        }
+                      />
                     </label>
                     <label className="block">
-                      <span className="label">Perché la risposta originale era sbagliata (nota interna)</span>
-                      <textarea className="textarea mt-1 min-h-20 text-xs" value={revisionRationale} onChange={(event) => setRevisionRationale(event.target.value)} placeholder="Es. categoria dimenticata, prodotto non pertinente, informazione mancante..." />
+                      <span className="label">
+                        Perché la risposta originale era sbagliata (nota
+                        interna)
+                      </span>
+                      <textarea
+                        className="textarea mt-1 min-h-20 text-xs"
+                        value={revisionRationale}
+                        onChange={(event) =>
+                          setRevisionRationale(event.target.value)
+                        }
+                        placeholder="Es. categoria dimenticata, prodotto non pertinente, informazione mancante..."
+                      />
                     </label>
                   </div>
                   <div className="space-y-4">
                     <div className="rounded-xl border bg-gray-50 p-4">
                       <p className="label">Risposta originale</p>
-                      <div className="mt-2 max-h-44 overflow-y-auto text-[11px] leading-5 text-gray-600"><SafeRichText content={revisionTarget.content} /></div>
+                      <div className="mt-2 max-h-44 overflow-y-auto text-[11px] leading-5 text-gray-600">
+                        <SafeRichText content={revisionTarget.content} />
+                      </div>
                     </div>
                     <label className="block">
-                      <span className="label">Parole o frasi che devono comparire</span>
-                      <input className="input mt-1 text-xs" value={revisionExpected} onChange={(event) => setRevisionExpected(event.target.value)} placeholder="lino, donna, disponibile" />
-                      <span className="mt-1 block text-[9px] text-gray-400">Separate da virgola. Se vuoto, vengono proposte automaticamente.</span>
+                      <span className="label">
+                        Parole o frasi che devono comparire
+                      </span>
+                      <input
+                        className="input mt-1 text-xs"
+                        value={revisionExpected}
+                        onChange={(event) =>
+                          setRevisionExpected(event.target.value)
+                        }
+                        placeholder="lino, donna, disponibile"
+                      />
+                      <span className="mt-1 block text-[9px] text-gray-400">
+                        Separate da virgola. Se vuoto, vengono proposte
+                        automaticamente.
+                      </span>
                     </label>
                     <label className="block">
                       <span className="label">Parole vietate nel test</span>
-                      <input className="input mt-1 text-xs" value={revisionForbidden} onChange={(event) => setRevisionForbidden(event.target.value)} placeholder="giacca, uomo" />
+                      <input
+                        className="input mt-1 text-xs"
+                        value={revisionForbidden}
+                        onChange={(event) =>
+                          setRevisionForbidden(event.target.value)
+                        }
+                        placeholder="giacca, uomo"
+                      />
                     </label>
                     <div className="rounded-xl bg-amber-50 p-4 text-[10px] leading-5 text-amber-800">
-                      Non inserire email, telefoni, dati di pagamento o credenziali. Il server blocca automaticamente questi dati prima dell’indicizzazione.
+                      Non inserire email, telefoni, dati di pagamento o
+                      credenziali. Il server blocca automaticamente questi dati
+                      prima dell’indicizzazione.
                     </div>
                   </div>
                 </div>
@@ -1478,46 +1795,109 @@ export default function ConversationsPage() {
                 <div className="grid gap-5 lg:grid-cols-2">
                   <div className="rounded-xl border p-4">
                     <p className="label">Domanda verificata</p>
-                    <p className="mt-2 text-sm font-semibold text-gray-900">{revisionQuestion}</p>
+                    <p className="mt-2 text-sm font-semibold text-gray-900">
+                      {revisionQuestion}
+                    </p>
                     <p className="label mt-5">Risposta che verrà indicizzata</p>
-                    <div className="mt-2 text-xs leading-6 text-gray-700"><SafeRichText content={revisionAnswer} /></div>
+                    <div className="mt-2 text-xs leading-6 text-gray-700">
+                      <SafeRichText content={revisionAnswer} />
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <div className="rounded-xl bg-emerald-50 p-4 text-[11px] leading-5 text-emerald-800">
-                      <div className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-4 w-4" /> Pubblicazione controllata</div>
-                      <p className="mt-2">Verrà creata una sola fonte Q&A verificata, una versione auditabile e un caso di valutazione attivo. La versione pubblicata precedente verrà disattivata per evitare contraddizioni.</p>
+                      <div className="flex items-center gap-2 font-semibold">
+                        <ShieldCheck className="h-4 w-4" /> Pubblicazione
+                        controllata
+                      </div>
+                      <p className="mt-2">
+                        Verrà creata una sola fonte Q&A verificata, una versione
+                        auditabile e un caso di valutazione attivo. La versione
+                        pubblicata precedente verrà disattivata per evitare
+                        contraddizioni.
+                      </p>
                     </div>
                     <div className="rounded-xl border p-4">
                       <p className="label">Criteri anti-regressione</p>
-                      <p className="mt-2 text-[11px] text-gray-600"><strong>Attesi:</strong> {revisionExpected || "—"}</p>
-                      <p className="mt-2 text-[11px] text-gray-600"><strong>Vietati:</strong> {revisionForbidden || "nessuno"}</p>
+                      <p className="mt-2 text-[11px] text-gray-600">
+                        <strong>Attesi:</strong> {revisionExpected || "—"}
+                      </p>
+                      <p className="mt-2 text-[11px] text-gray-600">
+                        <strong>Vietati:</strong>{" "}
+                        {revisionForbidden || "nessuno"}
+                      </p>
                     </div>
                   </div>
                 </div>
               )}
-              {revisionTarget.responseRevisions && revisionTarget.responseRevisions.length > 0 && (
-                <div className="mt-5 border-t pt-4">
-                  <p className="label">Cronologia versioni</p>
-                  <div className="mt-2 space-y-2">
-                    {revisionTarget.responseRevisions.map((revision) => (
-                      <div key={revision.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-[10px]">
-                        <span className="font-semibold text-gray-700">v{revision.version} · {revision.status}</span>
-                        {revision.status === "published" && (
-                          <button disabled={revisionBusy} onClick={() => archiveRevision(revision)} className="flex items-center gap-1 font-semibold text-red-600 disabled:opacity-50"><Archive className="h-3 w-3" /> Rimuovi dalla KB</button>
-                        )}
-                      </div>
-                    ))}
+              {revisionTarget.responseRevisions &&
+                revisionTarget.responseRevisions.length > 0 && (
+                  <div className="mt-5 border-t pt-4">
+                    <p className="label">Cronologia versioni</p>
+                    <div className="mt-2 space-y-2">
+                      {revisionTarget.responseRevisions.map((revision) => (
+                        <div
+                          key={revision.id}
+                          className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-[10px]"
+                        >
+                          <span className="font-semibold text-gray-700">
+                            v{revision.version} · {revision.status}
+                          </span>
+                          {revision.status === "published" && (
+                            <button
+                              disabled={revisionBusy}
+                              onClick={() => archiveRevision(revision)}
+                              className="flex items-center gap-1 font-semibold text-red-600 disabled:opacity-50"
+                            >
+                              <Archive className="h-3 w-3" /> Rimuovi dalla KB
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
+              {revisionError && (
+                <p
+                  role="alert"
+                  className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700"
+                >
+                  {revisionError}
+                </p>
               )}
-              {revisionError && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{revisionError}</p>}
             </div>
             <div className="flex flex-wrap justify-end gap-2 border-t p-4">
-              <Button variant="secondary" disabled={revisionBusy} onClick={() => revisionReview ? setRevisionReview(false) : setRevisionTarget(null)}>{revisionReview ? "Torna alla modifica" : "Annulla"}</Button>
+              <Button
+                variant="secondary"
+                disabled={revisionBusy}
+                onClick={() =>
+                  revisionReview
+                    ? setRevisionReview(false)
+                    : setRevisionTarget(null)
+                }
+              >
+                {revisionReview ? "Torna alla modifica" : "Annulla"}
+              </Button>
               {!revisionReview ? (
-                <Button loading={revisionBusy} disabled={!revisionQuestion.trim() || revisionAnswer.trim().length < 10} onClick={saveRevisionDraft} icon={<ShieldCheck className="h-4 w-4" />}>Salva e rivedi</Button>
+                <Button
+                  loading={revisionBusy}
+                  disabled={
+                    !revisionQuestion.trim() ||
+                    revisionAnswer.trim().length < 10
+                  }
+                  onClick={saveRevisionDraft}
+                  icon={<ShieldCheck className="h-4 w-4" />}
+                >
+                  Salva e rivedi
+                </Button>
               ) : (
-                <Button variant="success" loading={revisionBusy} onClick={publishRevision} icon={<Check className="h-4 w-4" />}>Pubblica Q&A verificata</Button>
+                <Button
+                  variant="success"
+                  loading={revisionBusy}
+                  onClick={publishRevision}
+                  icon={<Check className="h-4 w-4" />}
+                >
+                  Pubblica Q&A verificata
+                </Button>
               )}
             </div>
           </div>
@@ -1592,7 +1972,12 @@ function Tag({
   );
 }
 function PriorityTag({ priority }: { priority: Conversation["priority"] }) {
-  const labels = { low: "Bassa", normal: "Normale", high: "Alta", urgent: "Urgente" };
+  const labels = {
+    low: "Bassa",
+    normal: "Normale",
+    high: "Alta",
+    urgent: "Urgente",
+  };
   const classes = {
     low: "bg-slate-100 text-slate-600",
     normal: "bg-blue-50 text-blue-600",
@@ -1600,21 +1985,40 @@ function PriorityTag({ priority }: { priority: Conversation["priority"] }) {
     urgent: "bg-red-50 text-red-700",
   };
   const value = priority || "normal";
-  return <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${classes[value]}`}>{labels[value]}</span>;
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${classes[value]}`}
+    >
+      {labels[value]}
+    </span>
+  );
 }
 function SlaTag({ conversation }: { conversation: Conversation }) {
   const state = helpDeskSlaState(conversation);
   if (state === "untracked") return null;
   const config = {
-    healthy: { label: "SLA regolare", className: "bg-emerald-50 text-emerald-700" },
+    healthy: {
+      label: "SLA regolare",
+      className: "bg-emerald-50 text-emerald-700",
+    },
     due_soon: { label: "In scadenza", className: "bg-amber-50 text-amber-700" },
     breached: { label: "SLA scaduto", className: "bg-red-50 text-red-700" },
   }[state];
-  return <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-semibold ${config.className}`}><AlertTriangle className="h-2.5 w-2.5" />{config.label}</span>;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-semibold ${config.className}`}
+    >
+      <AlertTriangle className="h-2.5 w-2.5" />
+      {config.label}
+    </span>
+  );
 }
-function helpDeskSlaState(conversation: Conversation): Exclude<SlaFilter, "all"> {
+function helpDeskSlaState(
+  conversation: Conversation,
+): Exclude<SlaFilter, "all"> {
   if (!conversation.escalatedAt) return "untracked";
-  if (!conversation.needsHumanEscalation && !conversation.isResolved) return "untracked";
+  if (!conversation.needsHumanEscalation && !conversation.isResolved)
+    return "untracked";
   const completedAt = conversation.isResolved ? conversation.resolvedAt : null;
   const dueAt = conversation.firstHumanResponseAt
     ? conversation.resolutionDueAt
@@ -1628,10 +2032,15 @@ function helpDeskSlaState(conversation: Conversation): Exclude<SlaFilter, "all">
 }
 function helpDeskSlaDescription(conversation: Conversation) {
   const state = helpDeskSlaState(conversation);
-  if (state === "untracked") return "Lo SLA parte quando viene richiesto un operatore.";
-  const dueAt = conversation.firstHumanResponseAt ? conversation.resolutionDueAt : conversation.firstResponseDueAt;
+  if (state === "untracked")
+    return "Lo SLA parte quando viene richiesto un operatore.";
+  const dueAt = conversation.firstHumanResponseAt
+    ? conversation.resolutionDueAt
+    : conversation.firstResponseDueAt;
   if (!dueAt) return "Scadenza non disponibile per questo ciclo storico.";
-  const label = conversation.firstHumanResponseAt ? "Risoluzione" : "Prima risposta";
+  const label = conversation.firstHumanResponseAt
+    ? "Risoluzione"
+    : "Prima risposta";
   return `${label}: ${new Date(dueAt).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}`;
 }
 function InfoRow({
@@ -1745,4 +2154,19 @@ function ContactEditor({
       </Button>
     </div>
   );
+}
+
+function intentLabel(intent: string) {
+  const labels: Record<string, string> = {
+    product_discovery: "Ricerca prodotti",
+    product_search: "Ricerca prodotti",
+    variant_availability: "Taglia o variante",
+    question: "Domanda generale",
+    conversation: "Conversazione generale",
+    returns_policy: "Resi e cambi",
+    identity_question: "Informazioni sul negozio",
+    order_tracking: "Stato ordine",
+    support: "Assistenza",
+  };
+  return labels[intent] || intent.replaceAll("_", " ");
 }

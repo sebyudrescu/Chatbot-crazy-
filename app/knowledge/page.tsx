@@ -1,296 +1,377 @@
-'use client'
+"use client";
 
-import { useCallback, useEffect, useState } from 'react'
-import { Database, Upload, Globe, FileText, FileSpreadsheet, FileType2, PenLine, Trash2, Search, Plus, Loader2, CheckCircle, XCircle, AlertCircle, Globe2, ShieldCheck } from 'lucide-react'
-import { DashboardLayout } from '@/components/DashboardLayout'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
-import { EmptyState } from '@/components/ui/EmptyState'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import Link from 'next/link'
-import { useDashboardPermissions } from '@/lib/use-dashboard-permissions'
+import { useCallback, useEffect, useState } from "react";
+import {
+  Database,
+  Upload,
+  Globe,
+  FileText,
+  FileSpreadsheet,
+  FileType2,
+  PenLine,
+  Trash2,
+  Search,
+  Plus,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Globe2,
+  ShieldCheck,
+} from "lucide-react";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import Link from "next/link";
+import { useDashboardPermissions } from "@/lib/use-dashboard-permissions";
 
 interface KnowledgeSource {
-  id: string
-  botId: string
-  sourceType: 'url' | 'pdf' | 'docx' | 'txt' | 'csv' | 'manual' | 'qa'
-  sourceUrl: string | null
-  originalFilename: string | null
-  contentText: string
-  processedAt: string | null
-  status: 'processing' | 'completed' | 'failed'
-  createdAt: string
-  chunkCount: number
-  errorMessage: string | null
+  id: string;
+  botId: string;
+  sourceType: "url" | "pdf" | "docx" | "txt" | "csv" | "manual" | "qa";
+  sourceUrl: string | null;
+  originalFilename: string | null;
+  contentText: string;
+  processedAt: string | null;
+  status: "processing" | "completed" | "failed";
+  createdAt: string;
+  chunkCount: number;
+  errorMessage: string | null;
 }
 
 interface Chatbot {
-  id: string
-  workspaceId: string
-  companyName: string
+  id: string;
+  workspaceId: string;
+  companyName: string;
   _count: {
-    knowledgeSources: number
-  }
+    knowledgeSources: number;
+  };
 }
 
 export default function KnowledgePage() {
-  const permissions = useDashboardPermissions()
-  const [chatbots, setChatbots] = useState<Chatbot[]>([])
-  const [selectedChatbot, setSelectedChatbot] = useState<string>('')
-  const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  
+  const permissions = useDashboardPermissions();
+  const [chatbots, setChatbots] = useState<Chatbot[]>([]);
+  const [selectedChatbot, setSelectedChatbot] = useState<string>("");
+  const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>(
+    [],
+  );
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
   // Upload state
-  const [showUploadModal, setShowUploadModal] = useState(false)
-  const [uploadType, setUploadType] = useState<'pdf' | 'url' | 'crawl'>('pdf')
-  const [url, setUrl] = useState('')
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadType, setUploadType] = useState<"pdf" | "url" | "crawl">("pdf");
+  const [url, setUrl] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   // Crawl state
-  const [crawlUrl, setCrawlUrl] = useState('')
-  const [crawling, setCrawling] = useState(false)
-  const [crawlProgress, setCrawlProgress] = useState<string>('')
-  const selectedWorkspaceId = chatbots.find(bot => bot.id === selectedChatbot)?.workspaceId
-  const canManageKnowledge = permissions.can(selectedWorkspaceId, 'configure')
+  const [crawlUrl, setCrawlUrl] = useState("");
+  const [crawling, setCrawling] = useState(false);
+  const [crawlProgress, setCrawlProgress] = useState<string>("");
+  const selectedWorkspaceId = chatbots.find(
+    (bot) => bot.id === selectedChatbot,
+  )?.workspaceId;
+  const canManageKnowledge = permissions.can(selectedWorkspaceId, "configure");
 
   useEffect(() => {
-    fetchChatbots()
-  }, [])
+    fetchChatbots();
+  }, []);
 
   const fetchChatbots = async () => {
     try {
-      const response = await fetch('/api/chatbots')
+      const response = await fetch("/api/chatbots");
       if (response.ok) {
-        const data = await response.json()
-        const bots = data.success ? (data.data || []) : []
-        setChatbots(bots)
+        const data = await response.json();
+        const bots = data.success ? data.data || [] : [];
+        setChatbots(bots);
         if (bots.length > 0) {
-          const requestedBotId = new URLSearchParams(window.location.search).get('botId')
-          const requestedBotExists = requestedBotId && bots.some((bot: Chatbot) => bot.id === requestedBotId)
-          setSelectedChatbot(requestedBotExists ? requestedBotId : bots[0].id)
+          const requestedBotId = new URLSearchParams(
+            window.location.search,
+          ).get("botId");
+          const requestedBotExists =
+            requestedBotId &&
+            bots.some((bot: Chatbot) => bot.id === requestedBotId);
+          setSelectedChatbot(requestedBotExists ? requestedBotId : bots[0].id);
         }
       }
     } catch (error) {
-      console.error('Error fetching chatbots:', error)
+      console.error("Error fetching chatbots:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const fetchKnowledgeSources = useCallback(async () => {
-    if (!selectedChatbot) return
-    
+    if (!selectedChatbot) return;
+
     try {
-      const response = await fetch(`/api/knowledge-sources?botId=${selectedChatbot}`)
+      const response = await fetch(
+        `/api/knowledge-sources?botId=${selectedChatbot}`,
+      );
       if (response.ok) {
-        const data = await response.json()
-        setKnowledgeSources(data.success ? (data.data || []) : [])
+        const data = await response.json();
+        setKnowledgeSources(data.success ? data.data || [] : []);
       }
     } catch (error) {
-      console.error('Error fetching knowledge sources:', error)
+      console.error("Error fetching knowledge sources:", error);
     }
-  }, [selectedChatbot])
+  }, [selectedChatbot]);
 
   useEffect(() => {
     if (selectedChatbot) {
-      fetchKnowledgeSources()
-      const interval = window.setInterval(fetchKnowledgeSources, 5000)
-      return () => window.clearInterval(interval)
+      fetchKnowledgeSources();
+      const interval = window.setInterval(fetchKnowledgeSources, 5000);
+      return () => window.clearInterval(interval);
     }
-  }, [selectedChatbot, fetchKnowledgeSources])
+  }, [selectedChatbot, fetchKnowledgeSources]);
 
   const handleCrawl = async () => {
     if (!selectedChatbot) {
-      alert('Seleziona un chatbot prima')
-      return
+      alert("Seleziona un chatbot prima");
+      return;
     }
 
     if (!crawlUrl.trim()) {
-      alert('Inserisci un URL da cui iniziare il crawling')
-      return
+      alert("Inserisci un URL da cui iniziare il crawling");
+      return;
     }
 
-    setCrawling(true)
-    setCrawlProgress('Inizializzazione crawler...')
+    setCrawling(true);
+    setCrawlProgress("Inizializzazione crawler...");
 
     try {
-      const response = await fetch('/api/knowledge-sources/crawl-with-progress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          botId: selectedChatbot,
-          url: crawlUrl.trim(),
-          maxPages: 10,
-          maxDepth: 3,
-        }),
-      })
+      const response = await fetch(
+        "/api/knowledge-sources/crawl-with-progress",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            botId: selectedChatbot,
+            url: crawlUrl.trim(),
+            maxPages: 10,
+            maxDepth: 3,
+          }),
+        },
+      );
 
       if (response.ok) {
-        const data = await response.json()
-        const jobId = data.jobId
-        let completed = false
+        const data = await response.json();
+        const jobId = data.jobId;
+        let completed = false;
         for (let attempt = 0; attempt < 150; attempt++) {
-          await new Promise(resolve => setTimeout(resolve, 2000))
-          const statusResponse = await fetch(`/api/ingestion/status?jobId=${jobId}`)
-          const statusData = await statusResponse.json()
-          if (!statusResponse.ok) throw new Error(statusData.error || 'Stato crawl non disponibile')
-          const job = statusData.data
-          setCrawlProgress(`${job.progress || 0}% · ${job.progressMessage || 'Elaborazione in corso...'}`)
-          if (job.status === 'completed') {
-            completed = true
-            setCrawlUrl('')
-            setShowUploadModal(false)
-            await fetchKnowledgeSources()
-            alert(`Crawl completato: ${job.sourcesCreated} pagine e ${job.chunksCreated} blocchi indicizzati.`)
-            break
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const statusResponse = await fetch(
+            `/api/ingestion/status?jobId=${jobId}`,
+          );
+          const statusData = await statusResponse.json();
+          if (!statusResponse.ok)
+            throw new Error(statusData.error || "Stato crawl non disponibile");
+          const job = statusData.data;
+          setCrawlProgress(
+            `${job.progress || 0}% · ${job.progressMessage || "Elaborazione in corso..."}`,
+          );
+          if (job.status === "completed") {
+            completed = true;
+            setCrawlUrl("");
+            setShowUploadModal(false);
+            await fetchKnowledgeSources();
+            alert(
+              `Crawl completato: ${job.sourcesCreated} pagine e ${job.chunksCreated} blocchi indicizzati.`,
+            );
+            break;
           }
-          if (job.status === 'failed') throw new Error(job.error || 'Il crawler non è riuscito a completare il sito')
+          if (job.status === "failed")
+            throw new Error(
+              job.error || "Il crawler non è riuscito a completare il sito",
+            );
         }
-        if (!completed) throw new Error('Il crawl sta impiegando troppo tempo. Puoi seguirlo dalla pagina dei job.')
+        if (!completed)
+          throw new Error(
+            "Il crawl sta impiegando troppo tempo. Puoi seguirlo dalla pagina dei job.",
+          );
       } else {
-        const data = await response.json()
-        alert('❌ Errore durante il crawling: ' + (data.error || 'Unknown error'))
+        const data = await response.json();
+        alert(
+          "❌ Errore durante il crawling: " + (data.error || "Unknown error"),
+        );
       }
     } catch (error) {
-      console.error('Error crawling:', error)
-      alert(`Errore durante il crawling: ${error instanceof Error ? error.message : 'errore sconosciuto'}`)
+      console.error("Error crawling:", error);
+      alert(
+        `Errore durante il crawling: ${error instanceof Error ? error.message : "errore sconosciuto"}`,
+      );
     } finally {
-      setCrawling(false)
-      setCrawlProgress('')
+      setCrawling(false);
+      setCrawlProgress("");
     }
-  }
+  };
 
   const handleUpload = async () => {
     if (!selectedChatbot) {
-      alert('Seleziona un chatbot prima')
-      return
+      alert("Seleziona un chatbot prima");
+      return;
     }
 
-    if (uploadType === 'crawl') {
-      return handleCrawl()
+    if (uploadType === "crawl") {
+      return handleCrawl();
     }
 
-    if (uploadType === 'url' && !url.trim()) {
-      alert('Inserisci un URL')
-      return
+    if (uploadType === "url" && !url.trim()) {
+      alert("Inserisci un URL");
+      return;
     }
 
-    if (uploadType === 'pdf' && !selectedFile) {
-      alert('Seleziona un file PDF')
-      return
+    if (uploadType === "pdf" && !selectedFile) {
+      alert("Seleziona un file PDF");
+      return;
     }
 
-    setUploading(true)
+    setUploading(true);
 
     try {
-      if (uploadType === 'url') {
+      if (uploadType === "url") {
         // Upload URL
-        const response = await fetch('/api/knowledge-sources/add-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const response = await fetch("/api/knowledge-sources/add-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             botId: selectedChatbot,
             url: url.trim(),
           }),
-        })
+        });
 
         if (response.ok) {
-          setUrl('')
-          setShowUploadModal(false)
-          fetchKnowledgeSources()
-          alert('✅ URL aggiunto con successo!')
+          setUrl("");
+          setShowUploadModal(false);
+          fetchKnowledgeSources();
+          alert("✅ URL aggiunto con successo!");
         } else {
-          const data = await response.json()
-          alert('❌ Errore: ' + (data.error || 'Impossibile aggiungere URL'))
+          const data = await response.json();
+          alert("❌ Errore: " + (data.error || "Impossibile aggiungere URL"));
         }
       } else {
         // Upload PDF
-        const formData = new FormData()
-        formData.append('botId', selectedChatbot)
-        formData.append('file', selectedFile!)
+        const formData = new FormData();
+        formData.append("botId", selectedChatbot);
+        formData.append("file", selectedFile!);
 
-        const response = await fetch('/api/knowledge-sources/upload-pdf', {
-          method: 'POST',
+        const response = await fetch("/api/knowledge-sources/upload-pdf", {
+          method: "POST",
           body: formData,
-        })
+        });
 
         if (response.ok) {
-          setSelectedFile(null)
-          setShowUploadModal(false)
-          fetchKnowledgeSources()
-          alert('✅ PDF caricato con successo!')
+          setSelectedFile(null);
+          setShowUploadModal(false);
+          fetchKnowledgeSources();
+          alert("✅ PDF caricato con successo!");
         } else {
-          const data = await response.json()
-          alert('❌ Errore: ' + (data.error || 'Impossibile caricare PDF'))
+          const data = await response.json();
+          alert("❌ Errore: " + (data.error || "Impossibile caricare PDF"));
         }
       }
     } catch (error) {
-      console.error('Error uploading:', error)
-      alert('❌ Errore durante il caricamento')
+      console.error("Error uploading:", error);
+      alert("❌ Errore durante il caricamento");
     } finally {
-      setUploading(false)
+      setUploading(false);
     }
-  }
+  };
 
   const deleteSource = async (id: string) => {
-    if (!confirm('Sei sicuro di voler eliminare questa knowledge source?')) return
+    if (!confirm("Sei sicuro di voler eliminare questa knowledge source?"))
+      return;
 
     try {
-      const response = await fetch(`/api/knowledge-sources?sourceId=${id}&botId=${selectedChatbot}`, {
-        method: 'DELETE',
-      })
+      const response = await fetch(
+        `/api/knowledge-sources?sourceId=${id}&botId=${selectedChatbot}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       if (response.ok) {
-        fetchKnowledgeSources()
+        fetchKnowledgeSources();
       }
     } catch (error) {
-      console.error('Error deleting source:', error)
+      console.error("Error deleting source:", error);
     }
-  }
+  };
 
-  const filteredSources = knowledgeSources.filter(source => {
-    if (!searchTerm.trim()) return true
-    
-    const search = searchTerm.toLowerCase()
-    const filename = source.originalFilename?.toLowerCase() || ''
-    const url = source.sourceUrl?.toLowerCase() || ''
-    
-    return filename.includes(search) || url.includes(search)
-  })
+  const filteredSources = knowledgeSources.filter((source) => {
+    if (!searchTerm.trim()) return true;
+
+    const search = searchTerm.toLowerCase();
+    const filename = source.originalFilename?.toLowerCase() || "";
+    const url = source.sourceUrl?.toLowerCase() || "";
+
+    return filename.includes(search) || url.includes(search);
+  });
 
   const getStatusBadge = (status: string) => {
-    if (status === 'completed') return <Badge variant="success" dot>Completato</Badge>
-    if (status === 'processing') return <Badge variant="info" dot>Processing...</Badge>
-    if (status === 'failed') return <Badge variant="danger" dot>Errore</Badge>
-    return <Badge variant="gray">{status}</Badge>
-  }
+    if (status === "completed")
+      return (
+        <Badge variant="success" dot>
+          Completato
+        </Badge>
+      );
+    if (status === "processing")
+      return (
+        <Badge variant="info" dot>
+          Processing...
+        </Badge>
+      );
+    if (status === "failed")
+      return (
+        <Badge variant="danger" dot>
+          Errore
+        </Badge>
+      );
+    return <Badge variant="gray">{status}</Badge>;
+  };
 
   const getStatusIcon = (status: string) => {
-    if (status === 'completed') return <CheckCircle className="w-5 h-5 text-success-600" />
-    if (status === 'processing') return <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />
-    if (status === 'failed') return <XCircle className="w-5 h-5 text-danger-600" />
-    return <AlertCircle className="w-5 h-5 text-gray-400" />
-  }
+    if (status === "completed")
+      return <CheckCircle className="w-5 h-5 text-success-600" />;
+    if (status === "processing")
+      return <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />;
+    if (status === "failed")
+      return <XCircle className="w-5 h-5 text-danger-600" />;
+    return <AlertCircle className="w-5 h-5 text-gray-400" />;
+  };
 
-  const getSourceIcon = (type: KnowledgeSource['sourceType']) => {
-    if (type === 'url') return <Globe className="h-6 w-6 text-brand-600" />
-    if (type === 'csv') return <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
-    if (type === 'docx') return <FileType2 className="h-6 w-6 text-blue-600" />
-    if (type === 'manual') return <PenLine className="h-6 w-6 text-violet-600" />
-    if (type === 'qa') return <ShieldCheck className="h-6 w-6 text-emerald-600" />
-    return <FileText className={`h-6 w-6 ${type === 'pdf' ? 'text-danger-600' : 'text-gray-600'}`} />
-  }
+  const getSourceIcon = (type: KnowledgeSource["sourceType"]) => {
+    if (type === "url") return <Globe className="h-6 w-6 text-brand-600" />;
+    if (type === "csv")
+      return <FileSpreadsheet className="h-6 w-6 text-emerald-600" />;
+    if (type === "docx") return <FileType2 className="h-6 w-6 text-blue-600" />;
+    if (type === "manual")
+      return <PenLine className="h-6 w-6 text-violet-600" />;
+    if (type === "qa")
+      return <ShieldCheck className="h-6 w-6 text-emerald-600" />;
+    return (
+      <FileText
+        className={`h-6 w-6 ${type === "pdf" ? "text-danger-600" : "text-gray-600"}`}
+      />
+    );
+  };
 
   if (loading) {
     return (
       <DashboardLayout>
-        <LoadingSpinner fullPage text="Caricamento knowledge base..." />
+        <LoadingSpinner fullPage text="Caricamento informazioni..." />
       </DashboardLayout>
-    )
+    );
   }
 
   if (chatbots.length === 0) {
@@ -301,22 +382,22 @@ export default function KnowledgePage() {
             <EmptyState
               icon={Database}
               title="Nessun chatbot disponibile"
-              description="Crea prima un chatbot per gestire la knowledge base"
+              description="Crea prima un chatbot per aggiungere le informazioni che userà nelle risposte"
               action={{
                 label: "Crea Chatbot",
                 onClick: () => {
-                  window.dispatchEvent(new Event('open-create-modal'))
+                  window.dispatchEvent(new Event("open-create-modal"));
                 },
-                variant: "success"
+                variant: "success",
               }}
             />
           </Card>
         </div>
       </DashboardLayout>
-    )
+    );
   }
 
-  const selectedBot = chatbots.find(b => b.id === selectedChatbot)
+  const selectedBot = chatbots.find((b) => b.id === selectedChatbot);
 
   return (
     <DashboardLayout>
@@ -324,10 +405,13 @@ export default function KnowledgePage() {
       <div className="mx-auto max-w-[1500px] px-5 pt-6 lg:px-7">
         <div className="flex items-center justify-between">
           <div>
-            <p className="eyebrow">Knowledge engine</p>
-            <h1 className="mt-1 text-2xl font-bold text-gray-950">Knowledge Base</h1>
+            <p className="eyebrow">Cosa conosce il chatbot</p>
+            <h1 className="mt-1 text-2xl font-bold text-gray-950">
+              Informazioni del chatbot
+            </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Gestisci le fonti di conoscenza per i tuoi chatbot
+              Aggiungi e controlla le pagine e i documenti usati per rispondere
+              ai clienti.
             </p>
           </div>
         </div>
@@ -335,42 +419,58 @@ export default function KnowledgePage() {
 
       {/* Chatbot Selector */}
       <div className="mx-auto mt-6 max-w-[1500px] px-5 lg:px-7">
-        <div className="card flex items-end gap-4 p-4">
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Seleziona Chatbot
-            </label>
-            <select
-              value={selectedChatbot}
-              onChange={(e) => setSelectedChatbot(e.target.value)}
-              className="input"
-            >
-              {chatbots.map(bot => (
-                <option key={bot.id} value={bot.id}>
-                  {bot.companyName} ({bot._count.knowledgeSources} sources)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedBot && canManageKnowledge && (
-            <div className="flex gap-2">
-              <Link href="/knowledge/import" className="btn btn-secondary"><Upload className="h-4 w-4" />Importa documenti</Link>
-              <Button
-                icon={<Plus className="w-4 h-4" />}
-                onClick={() => setShowUploadModal(true)}
+        <div className="card p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <label
+                htmlFor="knowledge-chatbot"
+                className="block text-sm font-semibold text-gray-700 mb-2"
               >
-                Aggiungi fonte
-              </Button>
+                Seleziona Chatbot
+              </label>
+              <select
+                id="knowledge-chatbot"
+                value={selectedChatbot}
+                onChange={(e) => setSelectedChatbot(e.target.value)}
+                className="input"
+              >
+                {chatbots.map((bot) => (
+                  <option key={bot.id} value={bot.id}>
+                    {bot.companyName} ({bot._count.knowledgeSources} fonti)
+                  </option>
+                ))}
+              </select>
             </div>
-          )}
-        </div></div>
+
+            {selectedBot && canManageKnowledge && (
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/knowledge/import?botId=${selectedChatbot}`}
+                  className="btn btn-secondary"
+                >
+                  <Upload className="h-4 w-4" />
+                  Importa documenti
+                </Link>
+                <Button
+                  icon={<Plus className="w-4 h-4" />}
+                  onClick={() => setShowUploadModal(true)}
+                >
+                  Aggiungi informazioni
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Content */}
       <div className="mx-auto max-w-[1500px] px-5 py-6 lg:px-7">
-        {selectedBot && permissions.loaded && !canManageKnowledge && <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">Accesso in sola lettura: solo proprietari e admin possono modificare le fonti.</div>}
+        {selectedBot && permissions.loaded && !canManageKnowledge && (
+          <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+            Accesso in sola lettura: solo proprietari e admin possono modificare
+            le fonti.
+          </div>
+        )}
         {selectedBot && (
           <>
             {/* Search */}
@@ -388,17 +488,25 @@ export default function KnowledgePage() {
               <Card padding="none">
                 <EmptyState
                   icon={Database}
-                  title={searchTerm ? "Nessun risultato" : "Nessuna knowledge source"}
+                  title={
+                    searchTerm
+                      ? "Nessun risultato"
+                      : "Nessuna informazione disponibile"
+                  }
                   description={
                     searchTerm
-                      ? "Nessuna source trovata con questo termine"
-                      : `Aggiungi PDF o URL per arricchire la knowledge base di ${selectedBot.companyName}`
+                      ? "Nessuna fonte trovata con questo termine"
+                      : `Aggiungi un documento o una pagina web per aiutare ${selectedBot.companyName} a rispondere meglio`
                   }
-                  action={!searchTerm ? {
-                    label: "Aggiungi Prima Source",
-                    onClick: () => setShowUploadModal(true),
-                    variant: "success"
-                  } : undefined}
+                  action={
+                    !searchTerm
+                      ? {
+                          label: "Aggiungi la prima fonte",
+                          onClick: () => setShowUploadModal(true),
+                          variant: "success",
+                        }
+                      : undefined
+                  }
                 />
               </Card>
             ) : (
@@ -416,29 +524,36 @@ export default function KnowledgePage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="font-semibold text-gray-900 truncate">
-                              {source.originalFilename || source.sourceUrl}
+                              {source.originalFilename ||
+                                readableSourceUrl(source.sourceUrl)}
                             </h3>
                             {getStatusBadge(source.status)}
-                            {source.sourceType === 'qa' && <Badge variant="success">Verificata</Badge>}
+                            {source.sourceType === "qa" && (
+                              <Badge variant="success">Verificata</Badge>
+                            )}
                           </div>
 
-                          <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div className="grid gap-4 text-sm sm:grid-cols-3">
                             <div>
-                              <span className="text-gray-500">Tipo:</span>{' '}
+                              <span className="text-gray-500">Tipo:</span>{" "}
                               <span className="text-gray-900 font-medium uppercase">
                                 {source.sourceType}
                               </span>
                             </div>
                             <div>
-                              <span className="text-gray-500">Chunks:</span>{' '}
+                              <span className="text-gray-500">
+                                Sezioni indicizzate:
+                              </span>{" "}
                               <span className="text-gray-900 font-medium">
                                 {source.chunkCount}
                               </span>
                             </div>
                             <div>
-                              <span className="text-gray-500">Caricato:</span>{' '}
+                              <span className="text-gray-500">Caricato:</span>{" "}
                               <span className="text-gray-900">
-                                {new Date(source.createdAt).toLocaleDateString('it-IT')}
+                                {new Date(source.createdAt).toLocaleDateString(
+                                  "it-IT",
+                                )}
                               </span>
                             </div>
                           </div>
@@ -454,12 +569,14 @@ export default function KnowledgePage() {
                       {/* Actions */}
                       <div className="flex items-center gap-2 ml-4">
                         {getStatusIcon(source.status)}
-                        {canManageKnowledge && source.sourceType !== 'qa' && (
+                        {canManageKnowledge && source.sourceType !== "qa" && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => deleteSource(source.id)}
-                            icon={<Trash2 className="w-4 h-4 text-danger-600" />}
+                            icon={
+                              <Trash2 className="w-4 h-4 text-danger-600" />
+                            }
                           />
                         )}
                       </div>
@@ -477,7 +594,7 @@ export default function KnowledgePage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <Card className="max-w-2xl w-full" padding="none">
             <CardHeader>
-              <CardTitle>Aggiungi Knowledge Source</CardTitle>
+              <CardTitle>Aggiungi informazioni</CardTitle>
               <CardDescription>
                 Carica un PDF o aggiungi un URL per {selectedBot?.companyName}
               </CardDescription>
@@ -487,33 +604,33 @@ export default function KnowledgePage() {
               {/* Type Selector */}
               <div className="grid grid-cols-3 gap-2">
                 <Button
-                  variant={uploadType === 'pdf' ? 'primary' : 'secondary'}
-                  onClick={() => setUploadType('pdf')}
+                  variant={uploadType === "pdf" ? "primary" : "secondary"}
+                  onClick={() => setUploadType("pdf")}
                   icon={<FileText className="w-4 h-4" />}
                   size="sm"
                 >
                   PDF
                 </Button>
                 <Button
-                  variant={uploadType === 'url' ? 'primary' : 'secondary'}
-                  onClick={() => setUploadType('url')}
+                  variant={uploadType === "url" ? "primary" : "secondary"}
+                  onClick={() => setUploadType("url")}
                   icon={<Globe className="w-4 h-4" />}
                   size="sm"
                 >
                   URL
                 </Button>
                 <Button
-                  variant={uploadType === 'crawl' ? 'primary' : 'secondary'}
-                  onClick={() => setUploadType('crawl')}
+                  variant={uploadType === "crawl" ? "primary" : "secondary"}
+                  onClick={() => setUploadType("crawl")}
                   icon={<Globe2 className="w-4 h-4" />}
                   size="sm"
                 >
-                  Crawl Site
+                  Intero sito
                 </Button>
               </div>
 
               {/* Upload Form */}
-              {uploadType === 'crawl' ? (
+              {uploadType === "crawl" ? (
                 <div className="space-y-4">
                   <div className="p-4 bg-gradient-to-r from-brand-50 to-purple-50 border-2 border-brand-200 rounded-xl">
                     <div className="flex items-start gap-3">
@@ -522,13 +639,17 @@ export default function KnowledgePage() {
                       </div>
                       <div>
                         <p className="text-base font-bold text-brand-900 mb-1">
-                          🚀 Intelligent Website Crawler
+                          Importa automaticamente il sito
                         </p>
                         <p className="text-sm text-brand-800">
-                          Inserisci solo l&apos;URL e il crawler farà tutto automaticamente:
+                          Inserisci l&apos;indirizzo principale: il sistema
+                          troverà e preparerà le pagine utili.
                         </p>
                         <ul className="text-sm text-brand-700 mt-2 space-y-1">
-                          <li>✅ Esplora automaticamente fino a 10 pagine per importazione</li>
+                          <li>
+                            ✅ Esplora automaticamente fino a 10 pagine per
+                            importazione
+                          </li>
                           <li>✅ Estrae solo il contenuto di qualità</li>
                           <li>✅ Rimuove automaticamente duplicati e noise</li>
                           <li>✅ Crea chunks ottimizzati per il RAG</li>
@@ -543,7 +664,7 @@ export default function KnowledgePage() {
                     placeholder="https://example.com o https://docs.example.com"
                     value={crawlUrl}
                     onChange={(e) => setCrawlUrl(e.target.value)}
-                    helperText="Inserisci l'URL principale del sito (homepage o sezione docs)"
+                    helperText="Inserisci l'indirizzo della homepage o della sezione da importare"
                     disabled={crawling}
                   />
 
@@ -552,7 +673,9 @@ export default function KnowledgePage() {
                       <div className="flex items-center gap-4 mb-4">
                         <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
                         <div>
-                          <p className="font-bold text-brand-900">Crawling in corso...</p>
+                          <p className="font-bold text-brand-900">
+                            Importazione del sito in corso...
+                          </p>
                           <p className="text-sm text-brand-700">
                             Sto esplorando il sito e raccogliendo contenuto
                           </p>
@@ -573,13 +696,14 @@ export default function KnowledgePage() {
                   {!crawling && (
                     <div className="p-4 bg-success-50 border border-success-200 rounded-lg">
                       <p className="text-sm text-success-800">
-                        💡 <strong>Automatico:</strong> il crawler segue i link interni fino a 3 livelli,
-                        filtra duplicati e contenuti di bassa qualità. Non serve configurare nulla.
+                        💡 <strong>Automatico:</strong> il crawler segue i link
+                        interni fino a 3 livelli, filtra duplicati e contenuti
+                        di bassa qualità. Non serve configurare nulla.
                       </p>
                     </div>
                   )}
                 </div>
-              ) : uploadType === 'url' ? (
+              ) : uploadType === "url" ? (
                 <Input
                   label="URL"
                   placeholder="https://example.com/documentation"
@@ -593,12 +717,15 @@ export default function KnowledgePage() {
                   <input
                     type="file"
                     accept=".pdf"
-                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    onChange={(e) =>
+                      setSelectedFile(e.target.files?.[0] || null)
+                    }
                     className="input"
                   />
                   {selectedFile && (
                     <p className="text-sm text-gray-600 mt-2">
-                      Selezionato: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(0)} KB)
+                      Selezionato: {selectedFile.name} (
+                      {(selectedFile.size / 1024).toFixed(0)} KB)
                     </p>
                   )}
                 </div>
@@ -618,16 +745,38 @@ export default function KnowledgePage() {
                 onClick={handleUpload}
                 loading={uploading || crawling}
                 disabled={uploading || crawling}
-                icon={!uploading && !crawling && (
-                  uploadType === 'crawl' ? <Globe2 className="w-4 h-4" /> : <Upload className="w-4 h-4" />
-                )}
+                icon={
+                  !uploading &&
+                  !crawling &&
+                  (uploadType === "crawl" ? (
+                    <Globe2 className="w-4 h-4" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  ))
+                }
               >
-                {crawling ? 'Crawling...' : uploading ? 'Caricamento...' : uploadType === 'crawl' ? 'Avvia Crawl' : 'Carica'}
+                {crawling
+                  ? "Importazione..."
+                  : uploading
+                    ? "Caricamento..."
+                    : uploadType === "crawl"
+                      ? "Importa sito"
+                      : "Carica"}
               </Button>
             </div>
           </Card>
         </div>
       )}
     </DashboardLayout>
-  )
+  );
+}
+
+function readableSourceUrl(value: string | null) {
+  if (!value) return "Fonte senza nome";
+  try {
+    const parsed = new URL(value);
+    return `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+  } catch {
+    return value;
+  }
 }

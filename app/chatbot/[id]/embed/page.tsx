@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { Bot, Check, ChevronLeft, Clipboard, Code2, ExternalLink, MessageCircle, Monitor, Save, Smartphone, Tablet } from 'lucide-react'
+import { Bot, Check, Clipboard, Code2, ExternalLink, MessageCircle, Monitor, Save, Smartphone, Tablet } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
+import { BackToAccountHome } from '@/components/BackToAccountHome'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
@@ -116,7 +117,7 @@ export default function EmbedPage() {
   return <DashboardLayout>
     <div className="mx-auto max-w-[1500px] p-5 lg:p-7">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3"><Link href="/chatbots" className="rounded-lg border bg-white p-2 text-gray-500"><ChevronLeft className="h-4 w-4" /></Link><div><p className="eyebrow">Widget builder</p><h1 className="mt-1 text-2xl font-bold text-gray-950">Personalizza il widget</h1><p className="mt-1 text-sm text-gray-500">Logo, colori, invito iniziale e comportamento per il sito del cliente.</p></div></div>
+        <div className="flex items-center gap-3"><BackToAccountHome /><div><p className="eyebrow">Widget builder</p><h1 className="mt-1 text-2xl font-bold text-gray-950">Personalizza il widget</h1><p className="mt-1 text-sm text-gray-500">Logo, colori, invito iniziale e comportamento per il sito del cliente.</p></div></div>
         <div className="flex items-center gap-2"><label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-medium text-gray-600"><input type="checkbox" checked={settings.enabled} onChange={event => set('enabled', event.target.checked)} className="accent-brand-600" />Widget attivo</label><Button onClick={save} loading={saving} icon={<Save className="h-4 w-4" />}>Salva modifiche</Button></div>
       </div>
       {notice && <div className={`mt-4 rounded-lg px-4 py-3 text-xs ${notice.includes('correttamente') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{notice}</div>}

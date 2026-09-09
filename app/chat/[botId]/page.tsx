@@ -137,6 +137,7 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [userSessionId, setUserSessionId] = useState("");
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [clientMode, setClientMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [escalating, setEscalating] = useState(false);
@@ -149,13 +150,21 @@ export default function ChatPage() {
       setDiagnostics(null);
       setInput("");
       setMessages(current ? [welcomeMessage(current)] : []);
-      try { localStorage.removeItem(`litx-preview-conversation:${botId}`); } catch { /* unavailable */ }
+      try {
+        localStorage.removeItem(`litx-preview-conversation:${botId}`);
+      } catch {
+        /* unavailable */
+      }
     },
     [bot, botId],
   );
 
   useEffect(() => {
     setUserSessionId(`preview_${crypto.randomUUID()}`);
+    void fetch("/api/auth/me", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((result) => setClientMode(result.data?.mode === "client"))
+      .catch(() => setClientMode(false));
   }, []);
   useEffect(() => {
     fetch(`/api/chatbots/${botId}`)
@@ -172,14 +181,21 @@ export default function ChatPage() {
   useEffect(() => {
     if (!bot) return;
     let id = "";
-    try { id = localStorage.getItem(`litx-preview-conversation:${botId}`) || ""; } catch { return; }
+    try {
+      id = localStorage.getItem(`litx-preview-conversation:${botId}`) || "";
+    } catch {
+      return;
+    }
     if (!id) return;
     void fetch(`/api/conversations/${encodeURIComponent(id)}`)
       .then((response) => response.json())
       .then((result) => {
         if (!result.success || result.data?.botId !== botId) return;
         const restored = (result.data.messages || [])
-          .filter((message: Message) => message.role === "user" || message.role === "assistant")
+          .filter(
+            (message: Message) =>
+              message.role === "user" || message.role === "assistant",
+          )
           .map((message: Message) => ({
             ...message,
             quickReplies: message.quickReplies || [],
@@ -250,7 +266,14 @@ export default function ChatPage() {
       }
       const data = result.data;
       setConversationId(data.conversationId);
-      try { localStorage.setItem(`litx-preview-conversation:${botId}`, data.conversationId); } catch { /* unavailable */ }
+      try {
+        localStorage.setItem(
+          `litx-preview-conversation:${botId}`,
+          data.conversationId,
+        );
+      } catch {
+        /* unavailable */
+      }
       setMessages((current) => [
         ...current,
         {
@@ -335,23 +358,28 @@ export default function ChatPage() {
       <div className="mx-auto max-w-[1450px] p-5 lg:p-7">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="eyebrow">Agent preview</p>
+            <p className="eyebrow">
+              {clientMode ? "Anteprima privata" : "Agent preview"}
+            </p>
             <h1 className="mt-1 text-2xl font-bold text-gray-950">
               Testa {bot.companyName}
             </h1>
             <p className="mt-1 text-sm text-gray-500">
-              Conversazione reale con prompt, fonti e memoria attualmente
-              pubblicati.
+              {clientMode
+                ? "Prova le risposte del tuo chatbot. L’aspetto del widget sul sito può essere diverso da questa anteprima."
+                : "Conversazione reale con prompt, fonti e memoria attualmente pubblicati."}
             </p>
           </div>
           <div className="flex gap-2">
-            <Link
-              href={`/chatbot/${botId}/settings`}
-              className="btn btn-secondary btn-sm"
-            >
-              <Settings2 className="h-4 w-4" />
-              Configura
-            </Link>
+            {!clientMode ? (
+              <Link
+                href={`/chatbot/${botId}/settings`}
+                className="btn btn-secondary btn-sm"
+              >
+                <Settings2 className="h-4 w-4" />
+                Configura
+              </Link>
+            ) : null}
             <Button
               size="sm"
               variant="secondary"
@@ -362,7 +390,9 @@ export default function ChatPage() {
             </Button>
           </div>
         </div>
-        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+        <div
+          className={`mt-6 grid gap-5 ${clientMode ? "mx-auto max-w-3xl" : "xl:grid-cols-[minmax(0,1fr)_330px]"}`}
+        >
           <section className="card flex h-[720px] flex-col overflow-hidden">
             <div className="flex items-center justify-between bg-gradient-to-r from-brand-700 to-brand-500 px-5 py-4 text-white">
               <div className="flex items-center gap-3">
@@ -509,102 +539,104 @@ export default function ChatPage() {
               </div>
             </div>
           </section>
-          <aside className="space-y-4">
-            <div className="card p-4">
-              <h2 className="text-xs font-semibold text-gray-900">
-                Stato agente
-              </h2>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <Metric
-                  label="Knowledge"
-                  value={bot.kbStatus === "ready" ? "Pronta" : bot.kbStatus}
-                />
-                <Metric label="Chunks" value={String(bot.kbTotalChunks)} />
-                <Metric
-                  label="Sessione"
-                  value={conversationId ? "Attiva" : "Nuova"}
-                />
-                <Metric label="Messaggi" value={String(messages.length)} />
-              </div>
-            </div>
-            <div className="card p-4">
-              <h2 className="text-xs font-semibold text-gray-900">
-                Diagnostica ultima risposta
-              </h2>
-              {diagnostics ? (
-                <>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <Metric
-                      label="Confidenza"
-                      value={`${Math.round(diagnostics.confidence * 100)}%`}
-                    />
-                    <Metric
-                      label="Tempo"
-                      value={`${diagnostics.processingTime} ms`}
-                    />
-                    <Metric label="Intento" value={diagnostics.intent} />
-                    <Metric label="Strategia" value={diagnostics.strategy} />
-                    <Metric
-                      label="Chunks usati"
-                      value={String(diagnostics.chunks)}
-                    />
-                    <Metric
-                      label="Fatti estratti"
-                      value={String(diagnostics.facts)}
-                    />
-                  </div>
-                  <div
-                    className={`mt-3 flex items-center gap-2 rounded-lg p-3 text-[10px] ${diagnostics.coherent ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
-                  >
-                    {diagnostics.coherent ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      <ShieldAlert className="h-4 w-4" />
-                    )}
-                    {diagnostics.coherent
-                      ? "Risposta coerente"
-                      : "Controllo consigliato"}
-                  </div>
-                </>
-              ) : (
-                <p className="mt-3 rounded-lg bg-gray-50 p-4 text-[10px] leading-5 text-gray-400">
-                  Invia un messaggio per vedere la decisione del motore.
-                </p>
-              )}
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2">
-                <UserRoundCheck className="h-4 w-4 text-brand-600" />
+          {!clientMode ? (
+            <aside className="space-y-4">
+              <div className="card p-4">
                 <h2 className="text-xs font-semibold text-gray-900">
-                  Human handoff
+                  Stato agente
                 </h2>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <Metric
+                    label="Knowledge"
+                    value={bot.kbStatus === "ready" ? "Pronta" : bot.kbStatus}
+                  />
+                  <Metric label="Chunks" value={String(bot.kbTotalChunks)} />
+                  <Metric
+                    label="Sessione"
+                    value={conversationId ? "Attiva" : "Nuova"}
+                  />
+                  <Metric label="Messaggi" value={String(messages.length)} />
+                </div>
               </div>
-              <p className="mt-2 text-[10px] leading-5 text-gray-500">
-                Simula il passaggio della conversazione all’inbox operativa.
-              </p>
-              <Button
-                className="mt-3"
-                fullWidth
-                size="sm"
-                variant="secondary"
-                disabled={!conversationId || escalating}
-                loading={escalating}
-                onClick={escalate}
+              <div className="card p-4">
+                <h2 className="text-xs font-semibold text-gray-900">
+                  Diagnostica ultima risposta
+                </h2>
+                {diagnostics ? (
+                  <>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <Metric
+                        label="Confidenza"
+                        value={`${Math.round(diagnostics.confidence * 100)}%`}
+                      />
+                      <Metric
+                        label="Tempo"
+                        value={`${diagnostics.processingTime} ms`}
+                      />
+                      <Metric label="Intento" value={diagnostics.intent} />
+                      <Metric label="Strategia" value={diagnostics.strategy} />
+                      <Metric
+                        label="Chunks usati"
+                        value={String(diagnostics.chunks)}
+                      />
+                      <Metric
+                        label="Fatti estratti"
+                        value={String(diagnostics.facts)}
+                      />
+                    </div>
+                    <div
+                      className={`mt-3 flex items-center gap-2 rounded-lg p-3 text-[10px] ${diagnostics.coherent ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                    >
+                      {diagnostics.coherent ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        <ShieldAlert className="h-4 w-4" />
+                      )}
+                      {diagnostics.coherent
+                        ? "Risposta coerente"
+                        : "Controllo consigliato"}
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-3 rounded-lg bg-gray-50 p-4 text-[10px] leading-5 text-gray-400">
+                    Invia un messaggio per vedere la decisione del motore.
+                  </p>
+                )}
+              </div>
+              <div className="card p-4">
+                <div className="flex items-center gap-2">
+                  <UserRoundCheck className="h-4 w-4 text-brand-600" />
+                  <h2 className="text-xs font-semibold text-gray-900">
+                    Human handoff
+                  </h2>
+                </div>
+                <p className="mt-2 text-[10px] leading-5 text-gray-500">
+                  Simula il passaggio della conversazione all’inbox operativa.
+                </p>
+                <Button
+                  className="mt-3"
+                  fullWidth
+                  size="sm"
+                  variant="secondary"
+                  disabled={!conversationId || escalating}
+                  loading={escalating}
+                  onClick={escalate}
+                >
+                  Invia all’operatore
+                </Button>
+              </div>
+              <Link
+                href={`/chatbot/${botId}/knowledge`}
+                className="flex items-center gap-3 rounded-xl border border-brand-100 bg-brand-50 p-4 text-brand-700"
               >
-                Invia all’operatore
-              </Button>
-            </div>
-            <Link
-              href={`/chatbot/${botId}/knowledge`}
-              className="flex items-center gap-3 rounded-xl border border-brand-100 bg-brand-50 p-4 text-brand-700"
-            >
-              <Database className="h-4 w-4" />
-              <div>
-                <p className="text-xs font-semibold">Gestisci fonti</p>
-                <p className="text-[9px]">Aggiorna la knowledge base</p>
-              </div>
-            </Link>
-          </aside>
+                <Database className="h-4 w-4" />
+                <div>
+                  <p className="text-xs font-semibold">Gestisci fonti</p>
+                  <p className="text-[9px]">Aggiorna la knowledge base</p>
+                </div>
+              </Link>
+            </aside>
+          ) : null}
         </div>
       </div>
     </DashboardLayout>
