@@ -187,6 +187,10 @@ async function verifyWorkspaceIsolation() {
 
   const foreignAgent = await tenantRequest(`/api/chatbots/${botB.id}`, token);
   assert(foreignAgent.response.status === 404, "Foreign agent lookup did not return a tenant-safe 404");
+  const forbiddenAudit = await tenantRequest(`/api/chatbots/${botA.id}/knowledge-audit`, token);
+  assert(forbiddenAudit.response.status === 404, "Viewer accessed the configuration audit");
+  const foreignAudit = await tenantRequest(`/api/chatbots/${botB.id}/knowledge-audit`, token);
+  assert(foreignAudit.response.status === 404, "Foreign knowledge audit leaked across workspaces");
   const forbiddenPatch = await tenantRequest(`/api/chatbots/${botA.id}`, token, {
     method: "PATCH",
     body: JSON.stringify({ companyName: "Unauthorized update" }),
@@ -454,6 +458,8 @@ try {
     "Operational notifications are not deduplicated",
   );
   const initialReadiness = await request(`/api/chatbots/${botId}/readiness`);
+  const initialKnowledgeAudit = await request(`/api/chatbots/${botId}/knowledge-audit`);
+  assert(initialKnowledgeAudit.data.total === 0 && initialKnowledgeAudit.data.operationallyReady === false && initialKnowledgeAudit.data.semanticCoverage === 'not_assessed', 'Empty knowledge audit fabricated readiness');
   assert(
     initialReadiness.data.ready === false && initialReadiness.data.total === 5,
     "Agent readiness checklist failed",

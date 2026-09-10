@@ -142,8 +142,8 @@ export async function getAgentReadiness(botId: string) {
     },
     {
       key: 'knowledge',
-      label: 'Fonti verificate',
-      description: 'La knowledge base contiene almeno una fonte ed è pronta.',
+      label: 'Fonti indicizzate',
+      description: 'Almeno una fonte contiene dati indicizzati. Questo non verifica completezza, accuratezza o qualità delle risposte.',
       done: agent.kbStatus === 'ready' && agent.kbTotalChunks > 0 && agent.knowledgeSources.length > 0,
       href: `/chatbot/${botId}/knowledge`,
     },

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Bot, CheckCircle2, FlaskConical, Loader2, Play, Plus, ShieldAlert, Trash2, Trophy, XCircle } from 'lucide-react'
 import { DashboardLayout } from '@/components/DashboardLayout'
+import { KnowledgeAuditPanel } from '@/components/KnowledgeAuditPanel'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { evaluateResponse } from '@/lib/evaluation'
@@ -165,6 +166,7 @@ export default function EvaluationsPage() {
   return <DashboardLayout><div className="mx-auto max-w-[1500px] p-4 lg:p-7">
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Regression lab</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-950">Valutazioni automatiche</h1><p className="mt-1 text-sm text-gray-500">Controlla che ogni agente mantenga risposte, sicurezza e qualità dopo ogni modifica.</p></div><Button onClick={runAll} disabled={running || !cases.some(item => item.isActive)} icon={running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}>{running ? 'Test in corso...' : 'Esegui tutti'}</Button></header>
     {!agents.length ? <div className="mt-6 card flex min-h-80 flex-col items-center justify-center text-center"><Bot className="h-8 w-8 text-brand-600" /><h2 className="mt-3 font-semibold">Nessun agente disponibile</h2><p className="mt-1 text-sm text-gray-500">Crea un agente per definire i suoi controlli automatici.</p></div> : <>
+      {selectedId && <KnowledgeAuditPanel key={selectedId} botId={selectedId} />}
       <section className="mt-6 card p-5">
         <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Trophy className="h-4 w-4 text-brand-600" /><h2 className="text-sm font-semibold text-gray-900">Confronto A/B controllato</h2></div><p className="mt-1 text-[11px] text-gray-500">Stessi casi, sessioni isolate, qualità, latenza, token e costo. Il modello live non cambia senza la tua approvazione.</p></div><span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-semibold text-gray-600">Live: {currentModel}</span></div>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
