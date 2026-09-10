@@ -300,16 +300,23 @@ export default function AnalyticsPage() {
             </select>
           </div>
         </div>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="mt-6 grid grid-cols-2 gap-3 xl:grid-cols-3">
           <Metric
             icon={MessageSquare}
             label="Conversazioni"
             value={s.conversations}
+            description="Chat iniziate nel periodo selezionato."
           />
-          <Metric icon={TrendingUp} label="Messaggi" value={s.messages} />
+          <Metric
+            icon={TrendingUp}
+            label="Messaggi"
+            value={s.messages}
+            description="Messaggi delle chat iniziate nel periodo selezionato."
+          />
           <Metric
             icon={CheckCircle2}
             label={clientMode ? "Chat concluse" : "Risoluzione"}
+            description="Conversazioni contrassegnate come risolte, non semplicemente chiuse dal visitatore."
             value={
               clientMode
                 ? s.resolved
@@ -322,11 +329,17 @@ export default function AnalyticsPage() {
             icon={Star}
             label="Soddisfazione"
             value={s.satisfaction === null ? "—" : `${s.satisfaction}%`}
+            description={
+              s.positiveFeedback + s.negativeFeedback
+                ? `${s.positiveFeedback} valutazioni positive su ${s.positiveFeedback + s.negativeFeedback} ricevute. Non rappresenta tutte le chat.`
+                : "Nessuna valutazione ricevuta: la soddisfazione non è ancora misurabile."
+            }
           />
           <Metric
             icon={UserRoundCheck}
             label={clientMode ? "Richieste al team" : "Handoff"}
             value={s.handoffs}
+            description="Chat del periodo che richiedono assistenza umana."
           />
           <Metric
             icon={Users}
@@ -334,6 +347,7 @@ export default function AnalyticsPage() {
               clientMode ? "Contatti riconoscibili" : "Contatti identificati"
             }
             value={s.identifiedContacts}
+            description="Contatti con email o telefono e un’interazione nel periodo. Non indica il numero di acquisti."
           />
         </div>
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_1fr]">
@@ -461,47 +475,88 @@ function Metric({
   icon: Icon,
   label,
   value,
+  description,
 }: {
   icon: typeof BarChart3;
   label: string;
   value: string | number;
+  description: string;
 }) {
   return (
-    <div className="card p-4">
-      <div className="flex items-center justify-between">
-        <Icon className="h-4 w-4 text-brand-500" />
-        <span className="text-[9px] uppercase tracking-wider text-gray-400">
-          {label}
-        </span>
+    <div className="card min-w-0 p-4">
+      <div className="flex items-center gap-2">
+        <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-brand-500" />
+        <span className="text-xs font-medium text-gray-600">{label}</span>
       </div>
       <p className="mt-4 text-2xl font-bold text-gray-950">{value}</p>
+      <p className="mt-2 text-xs leading-relaxed text-gray-500">
+        {description}
+      </p>
     </div>
   );
 }
 function DailyChart({ points }: { points: { date: string; value: number }[] }) {
   const max = Math.max(1, ...points.map((p) => p.value));
   return (
-    <div className="mt-6 flex h-56 items-end gap-1.5 border-b border-gray-100 px-1">
-      {points.length ? (
-        points.map((point) => (
-          <div
-            key={point.date}
-            className="group relative flex flex-1 items-end"
-          >
+    <div>
+      <div
+        aria-hidden="true"
+        className="mt-6 flex h-56 items-end gap-1 border-b border-gray-100 px-1"
+      >
+        {points.some((point) => point.value > 0) ? (
+          points.map((point) => (
             <div
-              className="w-full rounded-t bg-brand-500/80 transition hover:bg-brand-600"
-              style={{ height: `${Math.max(5, (point.value / max) * 100)}%` }}
-            />
-            <div className="pointer-events-none absolute -top-10 left-1/2 hidden -translate-x-1/2 rounded bg-gray-950 px-2 py-1 text-[9px] text-white group-hover:block">
-              {point.date}: {point.value}
+              key={point.date}
+              className="group relative flex h-full min-w-0 flex-1 items-end"
+            >
+              <div
+                className="w-full rounded-t bg-brand-500/80 transition hover:bg-brand-600"
+                style={{ height: `${(point.value / max) * 100}%` }}
+              />
+              <div className="pointer-events-none absolute -top-10 left-1/2 hidden -translate-x-1/2 rounded bg-gray-950 px-2 py-1 text-[9px] text-white group-hover:block">
+                {point.date}: {point.value}
+              </div>
             </div>
-          </div>
-        ))
-      ) : (
-        <p className="m-auto text-xs text-gray-400">
-          Nessuna conversazione nel periodo.
-        </p>
-      )}
+          ))
+        ) : (
+          <p className="m-auto text-xs text-gray-400">
+            Nessuna conversazione nel periodo.
+          </p>
+        )}
+      </div>
+      <details className="mt-3 text-xs text-gray-600">
+        <summary className="cursor-pointer rounded py-2 font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500">
+          Vedi i valori giorno per giorno
+        </summary>
+        <div className="mt-2 max-h-60 overflow-auto">
+          <table className="w-full text-left">
+            <caption className="sr-only">
+              Conversazioni iniziate per giorno
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" className="py-2">
+                  Giorno
+                </th>
+                <th scope="col" className="py-2 text-right">
+                  Conversazioni
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {points.map((point) => (
+                <tr key={point.date} className="border-t border-gray-100">
+                  <th scope="row" className="py-2 font-normal">
+                    {point.date}
+                  </th>
+                  <td className="py-2 text-right">{point.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!points.length && <p>Nessuna conversazione nel periodo.</p>}
+        </div>
+      </details>
     </div>
   );
 }
@@ -1004,6 +1059,8 @@ function stageLabel(stage: string) {
     contacted: "Contattato",
     proposal: "Proposta",
     customer: "Cliente",
+    client: "Cliente",
+    appointment: "Appuntamento",
     lost: "Perso",
   };
   return labels[stage] || stage.replaceAll("_", " ");

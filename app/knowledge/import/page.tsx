@@ -49,7 +49,9 @@ export default function ImportKnowledgePage() {
       .then((result) => {
         const list = result.data || [];
         setAgents(list);
-        const requested = new URLSearchParams(window.location.search).get("botId");
+        const requested = new URLSearchParams(window.location.search).get(
+          "botId",
+        );
         const selected = list.find((agent: Agent) => agent.id === requested);
         if (selected || list[0]) setBotId(selected?.id || list[0].id);
       });
@@ -337,8 +339,8 @@ export default function ImportKnowledgePage() {
                 </div>
                 <div className="flex items-center justify-between border-t p-4">
                   <p className="max-w-md text-[9px] leading-4 text-gray-400">
-                    Confermando, il contenuto verrà suddiviso, trasformato in
-                    preparato e aggiunto alle informazioni del chatbot.
+                    Confermando, il contenuto verrà preparato e aggiunto alle
+                    informazioni del chatbot.
                   </p>
                   <Button
                     onClick={() => request(false)}
