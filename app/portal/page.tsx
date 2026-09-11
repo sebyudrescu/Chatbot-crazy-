@@ -381,8 +381,8 @@ export default function ClientPortalPage() {
               Il tuo chatbot, sotto controllo
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-              Provalo, leggi le conversazioni e controlla i risultati del tuo
-              negozio.
+              Leggi le conversazioni e controlla i risultati del chatbot della
+              tua azienda.
             </p>
           </div>
           <div className="flex w-fit items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
