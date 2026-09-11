@@ -188,9 +188,9 @@ async function verifyWorkspaceIsolation() {
   const foreignAgent = await tenantRequest(`/api/chatbots/${botB.id}`, token);
   assert(foreignAgent.response.status === 404, "Foreign agent lookup did not return a tenant-safe 404");
   const forbiddenAudit = await tenantRequest(`/api/chatbots/${botA.id}/knowledge-audit`, token);
-  assert(forbiddenAudit.response.status === 404, "Viewer accessed the configuration audit");
+  assert(forbiddenAudit.response.status === 401 && !forbiddenAudit.body.data, "Owner-only proxy must reject viewer audit access without data");
   const foreignAudit = await tenantRequest(`/api/chatbots/${botB.id}/knowledge-audit`, token);
-  assert(foreignAudit.response.status === 404, "Foreign knowledge audit leaked across workspaces");
+  assert(foreignAudit.response.status === 401 && !foreignAudit.body.data, "Owner-only proxy must reject foreign audit access without data");
   const forbiddenPatch = await tenantRequest(`/api/chatbots/${botA.id}`, token, {
     method: "PATCH",
     body: JSON.stringify({ companyName: "Unauthorized update" }),
@@ -483,6 +483,10 @@ try {
       afterPdfImport.data.kbTotalChunks >= pdfUpload.data.chunks,
     "Direct PDF import did not make the agent knowledge base ready",
   );
+  const auditedPdf = await prisma.knowledgeSource.findFirst({ where: { botId, sourceType: 'pdf' }, include: { chunks: true } });
+  assert(auditedPdf?.chunks.length > 0, 'Imported PDF has no persisted evidence');
+  const evidencePreview = await request(`/api/chatbots/${botId}/knowledge-audit?sourceId=${auditedPdf.id}`);
+  assert(evidencePreview.data.totalChunks === auditedPdf.chunks.length && evidencePreview.data.chunks.every(chunk => auditedPdf.chunks.some(stored => stored.id === chunk.id && stored.text.slice(0, 2500) === chunk.text)), 'Knowledge preview does not match persisted source text');
   const manualPreview = await request("/api/knowledge-sources/manual", {
     method: "POST",
     body: JSON.stringify({

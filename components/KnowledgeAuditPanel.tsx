@@ -9,6 +9,22 @@ export function KnowledgeAuditPanel({ botId }: { botId: string }) {
   const [data, setData] = useState<KnowledgeAudit | null>(null);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [sourceId, setSourceId] = useState('');
+  const [preview, setPreview] = useState<{ totalChunks: number; chunks: { id: string; text: string; truncated: boolean }[] } | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  useEffect(() => {
+    setPreview(null); setPreviewError('');
+    if (!sourceId) return;
+    const controller = new AbortController();
+    fetch(`/api/chatbots/${botId}/knowledge-audit?sourceId=${encodeURIComponent(sourceId)}`, { signal: controller.signal, cache: 'no-store' })
+      .then(async response => {
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error();
+        if (!controller.signal.aborted) setPreview(result.data);
+      })
+      .catch(() => { if (!controller.signal.aborted) setPreviewError('Anteprima non disponibile. Chiudi e riprova.'); });
+    return () => controller.abort();
+  }, [botId, sourceId, revision]);
   useEffect(() => {
     const controller = new AbortController();
     setData(null); setError('');
@@ -35,10 +51,17 @@ export function KnowledgeAuditPanel({ botId }: { botId: string }) {
       <details className="mt-4">
         <summary className="cursor-pointer py-2 text-sm font-medium">Esamina le singole fonti</summary>
         <ul className="max-h-72 overflow-auto divide-y">
-          {data.items.map(source => <li key={source.id} className="py-3 text-sm"><p className="break-words font-medium">{source.name}</p><p>{labels[source.state]} · {source.chunks} frammenti presenti</p></li>)}
+          {data.items.map(source => <li key={source.id} className="py-3 text-sm"><p className="break-words font-medium">{source.name}</p><p>{labels[source.state]} · {source.chunks} frammenti presenti</p>{source.chunks > 0 && <button className="mt-2 text-brand-600 underline" onClick={() => setSourceId(source.id)}>Leggi il testo indicizzato: {source.name}</button>}</li>)}
         </ul>
       </details>
     </>}
+    {sourceId && <div className="mt-4 rounded-lg border p-4" aria-label="Testo indicizzato">
+      <div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Testo realmente indicizzato</h3><button className="text-sm underline" onClick={() => setSourceId('')}>Chiudi anteprima</button></div>
+      {previewError ? <p role="alert" className="mt-2 text-sm text-red-700">{previewError}</p> : !preview ? <p role="status">Caricamento…</p> : <>
+        <p className="mt-2 text-sm text-gray-600">Anteprima dei primi {preview.chunks.length} frammenti su {preview.totalChunks}. Non è una verifica dell’intero documento né della qualità delle risposte.</p>
+        <div className="mt-3 max-h-80 overflow-auto space-y-3">{preview.chunks.map(chunk => <blockquote key={chunk.id} className="whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-sm">{chunk.text}{chunk.truncated && <p className="mt-2 font-medium">Estratto limitato a 2.500 caratteri.</p>}</blockquote>)}</div>
+      </>}
+    </div>}
     <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ancora verificati: informazioni mancanti per le domande dei clienti, contraddizioni e capacità di recuperare la fonte giusta. L’importazione non garantisce risposte corrette: servono prove con fonti di riferimento.</p>
     <Link className="mt-4 inline-block text-sm font-semibold text-brand-600 underline" href={`/knowledge?botId=${botId}`}>Apri e correggi le fonti</Link>
   </section>;
