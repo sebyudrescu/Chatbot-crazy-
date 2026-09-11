@@ -186,6 +186,7 @@ export default function ConversationsPage() {
 
   const openConversation = useCallback(
     async (conversation: Conversation, showOnMobile = true) => {
+      selectedRef.current = conversation;
       setSelected(conversation);
       setNoteDraft(conversation.internalNotes || "");
       setReplyError("");
@@ -194,7 +195,7 @@ export default function ConversationsPage() {
       try {
         const response = await fetch(`/api/conversations/${conversation.id}`);
         const result = await response.json();
-        if (result.success) {
+        if (response.ok && result.success && selectedRef.current?.id === conversation.id) {
           const full = {
             ...result.data,
             _count: conversation._count,
@@ -251,17 +252,31 @@ export default function ConversationsPage() {
       const conversations = result.success ? result.data : [];
       setItems(conversations);
       setNextCursor(result.pagination?.nextCursor || null);
-      if (conversations[0] && !selectedRef.current) {
+      if (!selectedRef.current) {
         const requestedId =
           typeof window !== "undefined"
             ? new URLSearchParams(window.location.search).get("conversation")
             : null;
-        await openConversation(
-          conversations.find((item: Conversation) => item.id === requestedId) ||
-            conversations[0],
-          Boolean(requestedId),
-        );
+        if (requestedId) {
+          let target = conversations.find((item: Conversation) => item.id === requestedId);
+          if (!target) {
+            const detailResponse = await fetch(`/api/conversations/${encodeURIComponent(requestedId)}`);
+            const detail = await detailResponse.json();
+            const requestedBot = new URLSearchParams(window.location.search).get('botId');
+            if (!detailResponse.ok || !detail.success || (requestedBot && detail.data.botId !== requestedBot)) {
+              setViewError('La conversazione richiesta non è disponibile per questo account o chatbot.');
+              return;
+            }
+            target = { ...detail.data, _count: { messages: detail.data.messages?.length || 0 } } as Conversation;
+            setItems(current => current.some(item => item.id === target.id) ? current : [target, ...current]);
+          }
+          await openConversation(target, true);
+        } else if (conversations[0]) {
+          await openConversation(conversations[0], false);
+        }
       }
+    } catch {
+      setViewError('Impossibile caricare le conversazioni. Riprova aggiornando la pagina.');
     } finally {
       setLoading(false);
     }
@@ -1125,7 +1140,8 @@ export default function ConversationsPage() {
                     </p>
                   </div>
                 </div>
-                <fieldset
+                {!canWriteSelected && <button type="button" onClick={() => setMobilePanel("details")} aria-label="Apri dettagli conversazione" className="rounded-lg border border-gray-200 p-2 xl:hidden"><Info className="h-4 w-4" /></button>}
+                {canWriteSelected && <fieldset
                   disabled={!canWriteSelected}
                   className="flex shrink-0 gap-1.5 disabled:opacity-60"
                 >
@@ -1204,7 +1220,7 @@ export default function ConversationsPage() {
                       {selected.isResolved ? "Riapri" : "Risolvi"}
                     </span>
                   </Button>
-                </fieldset>
+                </fieldset>}
               </div>
               <div className="flex-1 space-y-4 overflow-y-auto p-3 sm:p-6">
                 {detailLoading ? (
@@ -1273,11 +1289,10 @@ export default function ConversationsPage() {
               <div className="border-t bg-white p-3 sm:p-4">
                 {permissions.loaded && !canWriteSelected && (
                   <p className="mx-auto mb-3 max-w-3xl rounded-lg border border-blue-200 bg-blue-50 p-2 text-[10px] text-blue-800">
-                    Accesso in sola lettura: il ruolo Viewer non può prendere in
-                    carico o rispondere.
+                    Puoi consultare questa conversazione. L’assistenza e le modifiche sono gestite dall’agenzia.
                   </p>
                 )}
-                <fieldset
+                {canWriteSelected && <fieldset
                   disabled={!canWriteSelected}
                   className="disabled:opacity-70"
                 >
@@ -1436,7 +1451,7 @@ export default function ConversationsPage() {
                       {replyError}
                     </p>
                   )}
-                </fieldset>
+                </fieldset>}
               </div>
             </>
           ) : (
