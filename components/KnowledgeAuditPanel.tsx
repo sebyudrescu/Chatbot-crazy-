@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import type { KnowledgeAudit } from '@/lib/knowledge-audit';
+import { SourceTestDrafts } from '@/components/SourceTestDrafts';
 
-export function KnowledgeAuditPanel({ botId }: { botId: string }) {
+export function KnowledgeAuditPanel({ botId, onTestSaved }: { botId: string; onTestSaved: () => void }) {
   const [data, setData] = useState<KnowledgeAudit | null>(null);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -59,6 +60,7 @@ export function KnowledgeAuditPanel({ botId }: { botId: string }) {
       <div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Testo realmente indicizzato</h3><button className="text-sm underline" onClick={() => setSourceId('')}>Chiudi anteprima</button></div>
       {previewError ? <p role="alert" className="mt-2 text-sm text-red-700">{previewError}</p> : !preview ? <p role="status">Caricamento…</p> : <>
         <p className="mt-2 text-sm text-gray-600">Anteprima dei primi {preview.chunks.length} frammenti su {preview.totalChunks}. Non è una verifica dell’intero documento né della qualità delle risposte.</p>
+        <SourceTestDrafts key={`${botId}:${sourceId}:${revision}`} botId={botId} sourceId={sourceId} onSaved={onTestSaved} />
         <div className="mt-3 max-h-80 overflow-auto space-y-3">{preview.chunks.map(chunk => <blockquote key={chunk.id} className="whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-sm">{chunk.text}{chunk.truncated && <p className="mt-2 font-medium">Estratto limitato a 2.500 caratteri.</p>}</blockquote>)}</div>
       </>}
     </div>}

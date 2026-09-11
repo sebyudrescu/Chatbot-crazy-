@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { parseKeywords } from '@/lib/evaluation'
+import { matchesSourceEvidence, sourceEvidenceSchema } from '@/lib/evaluation-source-evidence'
 import { conversationQualityContractSchema } from '@/lib/conversation-quality-benchmark'
 import { accessibleBotIds, dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor } from '@/lib/workspace-auth'
 
@@ -18,9 +19,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireDashboardActor(request)
-    const input = Schema.parse(await request.json())
+    const { sourceEvidence, ...input } = Schema.extend({ sourceEvidence: sourceEvidenceSchema.optional() }).parse(await request.json())
     await requireBotPermission(actor, input.botId, 'chatbot.write')
-    const created = await prisma.evaluationCase.create({ data: { ...input, conversationTurns: JSON.stringify(input.conversationTurns), qualityContract: input.qualityContract ? JSON.stringify(input.qualityContract) : null, expectedKeywords: JSON.stringify(input.expectedKeywords), forbiddenKeywords: JSON.stringify(input.forbiddenKeywords) } })
+    if (sourceEvidence) {
+      const chunk = await prisma.knowledgeChunk.findFirst({ where: { id: sourceEvidence.chunkId, sourceId: sourceEvidence.sourceId, botId: input.botId, source: { status: 'completed' } }, select: { text: true } })
+      if (!chunk || !matchesSourceEvidence(chunk.text, sourceEvidence.quote, input.expectedKeywords)) {
+        return NextResponse.json({ success: false, error: 'La fonte è cambiata o non supporta i termini attesi. Prepara nuovamente la prova.' }, { status: 409 })
+      }
+    }
+    const created = await prisma.evaluationCase.create({ data: { ...input, sourceEvidence: sourceEvidence ? JSON.stringify({ ...sourceEvidence, approvedAt: new Date().toISOString() }) : null, conversationTurns: JSON.stringify(input.conversationTurns), qualityContract: input.qualityContract ? JSON.stringify(input.qualityContract) : null, expectedKeywords: JSON.stringify(input.expectedKeywords), forbiddenKeywords: JSON.stringify(input.forbiddenKeywords) } })
     return NextResponse.json({ success: true, data: serialize(created) }, { status: 201 })
   } catch (error) { const authResponse = dashboardAuthErrorResponse(error); if (authResponse) return authResponse; return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Dati non validi' }, { status: 400 }) }
 }

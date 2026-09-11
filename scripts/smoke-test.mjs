@@ -191,6 +191,8 @@ async function verifyWorkspaceIsolation() {
   assert(foreignAgent.response.status === 404, "Foreign agent lookup did not return a tenant-safe 404");
   const forbiddenAudit = await tenantRequest(`/api/chatbots/${botA.id}/knowledge-audit`, token);
   assert(forbiddenAudit.response.status === 401 && !forbiddenAudit.body.data, "Owner-only proxy must reject viewer audit access without data");
+  const forbiddenDraft = await tenantRequest('/api/evaluations/drafts', token, { method: 'POST', body: JSON.stringify({ botId: botA.id, sourceId: botB.id }) });
+  assert([401, 403, 404].includes(forbiddenDraft.response.status) && !forbiddenDraft.body.data, 'Client could prepare owner-only test drafts');
   const foreignAudit = await tenantRequest(`/api/chatbots/${botB.id}/knowledge-audit`, token);
   assert(foreignAudit.response.status === 401 && !foreignAudit.body.data, "Owner-only proxy must reject foreign audit access without data");
   const forbiddenPatch = await tenantRequest(`/api/chatbots/${botA.id}`, token, {
@@ -497,6 +499,16 @@ try {
   assert(auditedPdf?.chunks.length > 0, 'Imported PDF has no persisted evidence');
   const evidencePreview = await request(`/api/chatbots/${botId}/knowledge-audit?sourceId=${auditedPdf.id}`);
   assert(evidencePreview.data.totalChunks === auditedPdf.chunks.length && evidencePreview.data.chunks.every(chunk => auditedPdf.chunks.some(stored => stored.id === chunk.id && stored.text.slice(0, 2500) === chunk.text)), 'Knowledge preview does not match persisted source text');
+  const evidenceChunk = auditedPdf.chunks[0];
+  const quote = evidenceChunk.text.slice(0, 500).trim();
+  const expectedKeyword = quote.split(/\s+/).find(word => word.length >= 3);
+  const sourceEvidence = { sourceId: auditedPdf.id, chunkId: evidenceChunk.id, quote };
+  const evidenceCase = await request('/api/evaluations', { method: 'POST', body: JSON.stringify({ botId, name: 'Source evidence smoke', question: 'Quali informazioni contiene la fonte?', expectedKeywords: [expectedKeyword], sourceEvidence, isActive: false }) });
+  const persistedEvidence = await prisma.evaluationCase.findUnique({ where: { id: evidenceCase.data.id } });
+  assert(JSON.parse(persistedEvidence.sourceEvidence).quote === quote, 'Approved source quote was not persisted');
+  const staleEvidence = await fetch(`${baseUrl}/api/evaluations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: authCookie }, body: JSON.stringify({ botId, name: 'Invalid evidence', question: 'Quando?', expectedKeywords: ['inventato'], sourceEvidence: { ...sourceEvidence, quote: 'Questo contenuto inventato non esiste nella fonte indicizzata.' } }) });
+  assert(staleEvidence.status === 409, 'Fabricated source evidence was accepted');
+  await request(`/api/evaluations/${evidenceCase.data.id}`, { method: 'DELETE' });
   const manualPreview = await request("/api/knowledge-sources/manual", {
     method: "POST",
     body: JSON.stringify({

@@ -526,6 +526,7 @@ model EvaluationCase {
   forbiddenKeywords String   @default("[]")
   conversationTurns String   @default("[]")
   qualityContract   String?
+  sourceEvidence    String?
   minimumConfidence Float    @default(0.5)
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
