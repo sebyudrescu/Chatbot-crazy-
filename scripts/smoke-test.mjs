@@ -145,6 +145,8 @@ async function verifyWorkspaceIsolation() {
     body: JSON.stringify({ role: "operator" }),
   });
   assert(promotedMembership.data?.role === "operator", "Workspace member role was not updated");
+  const effectiveIdentity = await tenantRequest('/api/auth/me', token);
+  assert(effectiveIdentity.body.data.accessMode === 'read_only' && effectiveIdentity.body.data.memberships.every(member => member.role === 'viewer'), 'Stored operator privileges escaped the managed read-only policy');
   await request(`/api/workspaces/${workspaceA.id}/members/${viewerMembership.id}`, {
     method: "PATCH",
     body: JSON.stringify({ role: "viewer" }),
@@ -196,6 +198,10 @@ async function verifyWorkspaceIsolation() {
     body: JSON.stringify({ companyName: "Unauthorized update" }),
   });
   assert(forbiddenPatch.response.status === 404, "Viewer role modified an agent");
+  await request(`/api/workspaces/${workspaceA.id}/members/${viewerMembership.id}`, { method: 'PATCH', body: JSON.stringify({ role: 'admin' }) });
+  const forbiddenAdminPatch = await tenantRequest(`/api/chatbots/${botA.id}`, token, { method: 'PATCH', body: JSON.stringify({ companyName: 'Forbidden admin update' }) });
+  assert(forbiddenAdminPatch.response.status === 404, 'Stored client admin modified a managed chatbot');
+  await request(`/api/workspaces/${workspaceA.id}/members/${viewerMembership.id}`, { method: 'PATCH', body: JSON.stringify({ role: 'viewer' }) });
   const forbiddenCreate = await tenantRequest("/api/chatbots", token, {
     method: "POST",
     body: JSON.stringify({ companyName: "Unauthorized agent" }),

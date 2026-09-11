@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
     })
     if (!user) return NextResponse.json({ success: false, error: 'Account non disponibile' }, { status: 401 })
     const { mfaEnabledAt, ...safeUser } = user
-    return NextResponse.json({ success: true, data: { mode: 'client', ...safeUser, mfaEnabled: Boolean(mfaEnabledAt) } })
+    const memberships = safeUser.memberships
+      .filter(membership => actor.grants.some(grant => grant.workspaceId === membership.workspace.id))
+      .map(membership => ({ ...membership, role: actor.grants.find(grant => grant.workspaceId === membership.workspace.id)!.role }))
+    return NextResponse.json({ success: true, data: { mode: 'client', ...safeUser, memberships, accessMode: 'read_only', mfaEnabled: Boolean(mfaEnabledAt) } })
   } catch (error) {
     const authResponse = dashboardAuthErrorResponse(error)
     if (authResponse) return authResponse

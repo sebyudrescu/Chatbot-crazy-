@@ -418,7 +418,7 @@ export default function ClientPortalPage() {
                 <PrimaryAction
                   href={`/chat/${primaryAgent.id}`}
                   icon={<PlayCircle className="h-4 w-4" />}
-                  label="Prova chatbot"
+                  label="Anteprima chatbot"
                   primary
                 />
                 <PrimaryAction
@@ -496,9 +496,9 @@ export default function ClientPortalPage() {
         </section>
 
         <section className="mt-8">
-          <h2 className="text-lg font-bold text-gray-950">Gestione chatbot</h2>
+          <h2 className="text-lg font-bold text-gray-950">I tuoi chatbot</h2>
           <p className="mt-1 text-xs text-gray-500">
-            Le impostazioni disponibili dipendono dal tuo ruolo.
+            Accesso in sola lettura. Configurazione e aggiornamenti sono gestiti dall’agenzia.
           </p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {agents.map((agent) => {
@@ -530,13 +530,13 @@ export default function ClientPortalPage() {
                       href={`/analytics?botId=${agent.id}`}
                       icon={<BarChart3 />}
                       label="Risultati"
-                      description="Utilizzo e vendite"
+                      description="Utilizzo e risultati"
                     />
                     <PortalLink
                       href={`/conversations?botId=${agent.id}`}
                       icon={<MessageSquareText />}
                       label="Conversazioni"
-                      description="Leggi e rispondi"
+                      description="Consulta le chat"
                     />
                     {canConfigure ? (
                       <PortalLink

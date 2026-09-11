@@ -100,7 +100,9 @@ export async function authenticateDashboardRequest(request: NextRequest): Promis
     sessionId: session.id,
     grants: session.user.memberships
       .filter((membership): membership is { workspaceId: string; role: WorkspaceRole } => isWorkspaceRole(membership.role))
-      .map((membership) => ({ workspaceId: membership.workspaceId, role: membership.role })),
+      // Managed-service mode: client accounts consult data; the agency operates bots.
+      // Preserve stored membership roles for auditing, but never grant their writes here.
+      .map((membership) => ({ workspaceId: membership.workspaceId, role: 'viewer' as const })),
   };
 }
 
