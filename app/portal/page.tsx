@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { WeeklyReportPanel } from "@/components/WeeklyReportPanel";
 
 type WorkspaceRole = "owner" | "admin" | "operator" | "viewer";
 type Account = {
@@ -390,6 +391,7 @@ export default function ClientPortalPage() {
           </div>
         </div>
 
+        {primaryAgent && <WeeklyReportPanel key={primaryAgent.id} botId={primaryAgent.id} botName={primaryAgent.companyName} />}
         {primaryAgent ? (
           <section className="mt-6 rounded-2xl border border-brand-100 bg-white p-4 shadow-sm sm:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

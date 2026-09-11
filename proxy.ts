@@ -135,6 +135,7 @@ function isTenantReadyApi(request: NextRequest) {
   if (/^\/api\/suggestions\/[0-9a-f-]{36}\/apply$/i.test(path))
     return request.method === "POST";
   if (path === "/api/analytics") return request.method === "GET";
+  if (path === "/api/analytics/weekly") return request.method === "GET";
   if (path === "/api/billing/status") return request.method === "GET";
   if (path === "/api/billing/checkout" || path === "/api/billing/portal")
     return request.method === "POST";

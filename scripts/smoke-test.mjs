@@ -209,6 +209,10 @@ async function verifyWorkspaceIsolation() {
 
   const foreignAnalytics = await tenantRequest(`/api/analytics?botId=${botB.id}`, token);
   assert(foreignAnalytics.response.status === 404, "Foreign tenant analytics did not return 404");
+  const foreignWeekly = await tenantRequest(`/api/analytics/weekly?botId=${botB.id}`, token);
+  assert(foreignWeekly.response.status === 404 && !foreignWeekly.body.data, 'Weekly report leaked across workspaces');
+  const ownWeekly = await tenantRequest(`/api/analytics/weekly?botId=${botA.id}`, token);
+  assert(ownWeekly.response.status === 200 && ownWeekly.body.data.conversations === 1, 'Viewer weekly report does not reflect its own conversation');
   const analytics = await tenantRequest("/api/analytics?days=1", token);
   assert(analytics.response.status === 200, "Tenant analytics are unavailable");
   assert(analytics.body.data?.byAgent?.some((item) => item.id === botA.id), "Own tenant analytics are missing");
