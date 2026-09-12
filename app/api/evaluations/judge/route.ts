@@ -224,8 +224,13 @@ export async function POST(request: NextRequest) {
         ...retrievalBenchmark(candidateIds, judgedRelevance.retrievalRelevantIndexes, retrievalApplicable),
         topRetrievalScore: candidates[0]?.finalScore ?? null,
       };
-      const passed = judgedPassForBenchmark(benchmarkType, deterministic.passed, judged);
-      const reasons = [deterministic.failureReason, !passed ? judged.reason : null].filter(Boolean);
+      // A source-backed test checks meaning, not the exact wording of the answer.
+      // Forbidden terms remain a safety gate; ordinary cases keep their explicit keyword contract.
+      const contractPassed = referenceEvidence
+        ? Boolean(input.response.trim()) && deterministic.dimensions.policySafe
+        : deterministic.passed;
+      const passed = judgedPassForBenchmark(benchmarkType, contractPassed, judged);
+      const reasons = [!referenceEvidence ? deterministic.failureReason : null, !passed ? judged.reason : null].filter(Boolean);
       const judgedResult = attachConversationQuality({
         passed,
         failureReason: reasons.join(" · ") || null,
