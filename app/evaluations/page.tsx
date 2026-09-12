@@ -6,7 +6,6 @@ import { DashboardLayout } from '@/components/DashboardLayout'
 import { KnowledgeAuditPanel } from '@/components/KnowledgeAuditPanel'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { evaluateResponse } from '@/lib/evaluation'
 import { inferEvaluationBenchmarkType } from '@/lib/evaluation-benchmark-policy'
 import { AI_MODEL_CATALOG, DEFAULT_AGENTIC_MODEL } from '@/lib/ai-models'
 import type { ConversationQualityContract } from '@/lib/conversation-quality-benchmark'
@@ -25,7 +24,7 @@ function SavedSourceEvidence({ value, botId }: { value?: string | null; botId: s
   return <details className="mb-4 rounded-lg bg-gray-50 p-3 text-sm">
     <summary className="cursor-pointer font-medium">Evidenza approvata alla creazione del test</summary>
     <blockquote className="mt-2 whitespace-pre-wrap break-words">{evidence.quote}</blockquote>
-    <p className="mt-2 text-gray-600">Citazione conservata: non certifica che la fonte sia ancora aggiornata. Il risultato del test usa il valutatore esistente, non questa citazione come risposta modello.</p>
+    <p className="mt-2 text-gray-600">Il valutatore ricontrolla questa citazione nella fonte e la usa come riferimento semantico. Se è cambiata o il giudice AI non è disponibile, la prova non viene approvata automaticamente.</p>
     <a className="mt-2 inline-block underline" href={`/knowledge?botId=${botId}`}>Ricontrolla le fonti</a>
   </details>
 }
@@ -100,6 +99,7 @@ export default function EvaluationsPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               botId: item.botId,
+              caseId: item.id,
               question: item.question,
               response,
               confidence,
@@ -110,16 +110,15 @@ export default function EvaluationsPage() {
             }),
           })
           const judge = await judgeResponse.json()
-          const verdict = judgeResponse.ok && judge.success
-            ? judge.data
-            : evaluateResponse(response, confidence, item)
+          if (!judgeResponse.ok || !judge.success) throw new Error(judge.error || 'Valutatore non disponibile')
+          const verdict = judge.data
           passed = verdict.passed
           failureReason = verdict.failureReason
           metrics = verdict.dimensions
             ? { ...verdict.dimensions, evaluator: verdict.evaluator || 'unknown' }
             : null
         }
-      } catch { failureReason = 'Servizio non raggiungibile' }
+      } catch (error) { failureReason = error instanceof Error ? error.message : 'Servizio non raggiungibile' }
       await fetch('/api/evaluations/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caseId: item.id, passed, response, confidence, latencyMs: Math.round(performance.now() - started), failureReason, metrics }) })
       if (conversationId) await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' }).catch(() => {})
     }
@@ -152,15 +151,16 @@ export default function EvaluationsPage() {
               response = result.data.assistantMessage.content
               confidence = result.data.confidence?.score ?? null
               conversationId = result.data.conversationId
-              const judgeResponse = await fetch('/api/evaluations/judge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId: item.botId, question: item.question, response, confidence, expectedKeywords: item.expectedKeywords, forbiddenKeywords: item.forbiddenKeywords, minimumConfidence: item.minimumConfidence, ...(item.qualityContract ? { conversationQuality: qualityRequest(item, result.data) } : {}) }) })
+              const judgeResponse = await fetch('/api/evaluations/judge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caseId: item.id, botId: item.botId, question: item.question, response, confidence, expectedKeywords: item.expectedKeywords, forbiddenKeywords: item.forbiddenKeywords, minimumConfidence: item.minimumConfidence, ...(item.qualityContract ? { conversationQuality: qualityRequest(item, result.data) } : {}) }) })
               const judge = await judgeResponse.json()
-              const verdict = judgeResponse.ok && judge.success ? judge.data : evaluateResponse(response, confidence, item)
+              if (!judgeResponse.ok || !judge.success) throw new Error(judge.error || 'Valutatore non disponibile')
+          const verdict = judge.data
               passed = verdict.passed; failureReason = verdict.failureReason
               const usage = result.data.usage || {}
               totalCostUsd += Number(usage.estimatedCostUsd || 0); totalTokens += Number(usage.totalTokens || 0)
               metrics = { ...(verdict.dimensions || {}), evaluator: verdict.evaluator || 'unknown', model, experimentId, usage }
             }
-          } catch { failureReason = 'Servizio non raggiungibile' }
+          } catch (error) { failureReason = error instanceof Error ? error.message : 'Servizio non raggiungibile' }
           const latencyMs = Math.round(performance.now() - started); latencyTotal += latencyMs; if (passed) passedCount += 1
           await fetch('/api/evaluations/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caseId: item.id, passed, response, confidence, latencyMs, failureReason, metrics: metrics || { model, experimentId } }) })
           if (conversationId) await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' }).catch(() => {})

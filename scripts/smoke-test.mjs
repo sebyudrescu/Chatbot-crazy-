@@ -508,6 +508,14 @@ try {
   assert(JSON.parse(persistedEvidence.sourceEvidence).quote === quote, 'Approved source quote was not persisted');
   const staleEvidence = await fetch(`${baseUrl}/api/evaluations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: authCookie }, body: JSON.stringify({ botId, name: 'Invalid evidence', question: 'Quando?', expectedKeywords: ['inventato'], sourceEvidence: { ...sourceEvidence, quote: 'Questo contenuto inventato non esiste nella fonte indicizzata.' } }) });
   assert(staleEvidence.status === 409, 'Fabricated source evidence was accepted');
+  const referenceJudgeInput = { caseId: evidenceCase.data.id, botId, question: 'Quali informazioni contiene la fonte?', response: quote, expectedKeywords: [expectedKeyword] };
+  const referenceVerdict = await request('/api/evaluations/judge', { method: 'POST', body: JSON.stringify(referenceJudgeInput) });
+  assert(referenceVerdict.data.dimensions.sourceReference.status === 'current', 'Judge ignored approved source evidence');
+  if (process.env.CI_MOCK_AI === 'true') assert(!referenceVerdict.data.passed && referenceVerdict.data.dimensions.sourceReference.semanticAssessment === 'not_assessed', 'Mock judge silently passed source semantic evaluation');
+  await prisma.knowledgeChunk.update({ where: { id: evidenceChunk.id }, data: { text: 'Contenuto cambiato: richiede una nuova approvazione.' } });
+  const staleVerdict = await fetch(`${baseUrl}/api/evaluations/judge`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: authCookie }, body: JSON.stringify(referenceJudgeInput) });
+  assert(staleVerdict.status === 409, 'Judge accepted changed source evidence');
+  await prisma.knowledgeChunk.update({ where: { id: evidenceChunk.id }, data: { text: evidenceChunk.text } });
   await request(`/api/evaluations/${evidenceCase.data.id}`, { method: 'DELETE' });
   const manualPreview = await request("/api/knowledge-sources/manual", {
     method: "POST",

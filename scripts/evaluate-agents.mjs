@@ -78,6 +78,7 @@ for (const test of cases) {
       method: 'POST',
       body: JSON.stringify({
         botId: test.botId,
+        caseId: test.id,
         question: test.question,
         response,
         confidence,
