@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     const [sources, pendingJobs] = await Promise.all([
       prisma.knowledgeSource.findMany({
         where: { botId: id },
-        select: { id: true, status: true, sourceType: true, originalFilename: true, processedAt: true, _count: { select: { chunks: true } } },
+        select: { id: true, status: true, sourceType: true, originalFilename: true, sourceUrl: true, processedAt: true, _count: { select: { chunks: true } } },
         orderBy: { createdAt: 'desc' },
       }),
       prisma.ingestionJob.count({ where: { botId: id, status: { in: ['pending', 'running'] } } }),
