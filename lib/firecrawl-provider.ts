@@ -51,8 +51,9 @@ export class FirecrawlProvider implements CrawlerProvider {
         ],
         limit: maxPages,
         scrapeOptions: {
-          formats: ['markdown', 'html'],
-          onlyMainContent: false,
+          formats: ['markdown', 'html', 'rawHtml'],
+          onlyMainContent: true,
+          excludeTags: ['.chatbot-widget-container'],
           waitFor: 1000, // Wait for JS to load
         }
       }
@@ -82,7 +83,7 @@ export class FirecrawlProvider implements CrawlerProvider {
           excerpt: page.metadata?.description || textContent.substring(0, 200),
           quality: this.calculateQuality(textContent),
           markdown: page.markdown,
-          products: page.html ? extractProductsFromHtml(page.html, pageUrl) : [],
+          products: (page.rawHtml || page.html) ? extractProductsFromHtml(page.rawHtml || page.html, pageUrl) : [],
         }
       })
       

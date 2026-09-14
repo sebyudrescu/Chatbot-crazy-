@@ -19,6 +19,7 @@ interface FirecrawlCrawlJob {
     sourceURL?: string
     markdown?: string
     html?: string
+    rawHtml?: string
     metadata?: {
       title?: string
       description?: string
@@ -74,8 +75,9 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
             'checkout',
           ],
           scrapeOptions: {
-            formats: ['markdown', 'html'],
-            onlyMainContent: false,
+            formats: ['markdown', 'html', 'rawHtml'],
+            onlyMainContent: true,
+            excludeTags: ['.chatbot-widget-container'],
             waitFor: 1000
           }
         })
@@ -117,7 +119,7 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
           excerpt: page.metadata?.description || textContent.substring(0, 200),
           quality: this.calculateQuality(textContent),
           markdown: page.markdown,
-          products: page.html ? extractProductsFromHtml(page.html, pageUrl) : [],
+          products: (page.rawHtml || page.html) ? extractProductsFromHtml(page.rawHtml || page.html || '', pageUrl) : [],
         }
       })
       
@@ -201,8 +203,9 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
         },
         body: JSON.stringify({
           url,
-          formats: ['markdown', 'html'],
-          onlyMainContent: false
+          formats: ['markdown', 'html', 'rawHtml'],
+          onlyMainContent: true,
+          excludeTags: ['.chatbot-widget-container']
         })
       })
       
@@ -211,11 +214,12 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
         return null
       }
       
-      const data = await response.json()
+      const payload = await response.json()
       
-      if (!data.success) {
+      if (!payload.success) {
         return null
       }
+      const data = payload.data || payload
       
       const textContent = data.markdown || this.htmlToText(data.html || '')
       const pageUrl = resolveFirecrawlPageUrl(data, url)
@@ -227,7 +231,7 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
         excerpt: data.metadata?.description || textContent.substring(0, 200),
         quality: this.calculateQuality(textContent),
         markdown: data.markdown,
-        products: data.html ? extractProductsFromHtml(data.html, pageUrl) : [],
+        products: (data.rawHtml || data.html) ? extractProductsFromHtml(data.rawHtml || data.html, pageUrl) : [],
       }
       
     } catch (error) {
