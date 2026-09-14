@@ -20,4 +20,7 @@ assert.equal(buildKnowledgeAudit([web], 0).items[0].name, 'example.com/pages/shi
 assert.equal(buildKnowledgeAudit([{ ...web, sourceUrl: 'invalid' }], 0).items[0].name, 'url · source-o');
 assert.equal(buildKnowledgeAudit([{ ...web, sourceUrl: 'javascript:alert(1)' }], 0).items[0].name, 'url · source-o');
 assert.equal(buildKnowledgeAudit([{ ...web, originalFilename: 'Shipping.pdf' }], 0).items[0].name, 'Shipping.pdf');
+const duplicates = buildKnowledgeAudit([web, { ...web, id: 'second-source' }], 0).items;
+assert.equal(duplicates[0].name, 'example.com/pages/shipping · source-o');
+assert.equal(duplicates[1].name, 'example.com/pages/shipping · second-s');
 console.log('Knowledge audit: all checks passed');

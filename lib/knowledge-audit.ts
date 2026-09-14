@@ -34,6 +34,11 @@ export function buildKnowledgeAudit(sources: AuditedSource[], pendingJobs: numbe
       processedAt: source.processedAt,
     };
   });
+  const nameCounts = new Map<string, number>();
+  for (const item of items) nameCounts.set(item.name, (nameCounts.get(item.name) || 0) + 1);
+  for (const item of items) {
+    if ((nameCounts.get(item.name) || 0) > 1) item.name = `${item.name} · ${item.id.slice(0, 8)}`;
+  }
   const count = (state: string) => items.filter(item => item.state === state).length;
   return {
     total: items.length, indexed: count('indexed'), failed: count('failed'),
