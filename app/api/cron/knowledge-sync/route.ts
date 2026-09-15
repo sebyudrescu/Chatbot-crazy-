@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
     const scheduled = await scheduleKnowledgeSync({ limit: 3, activeOnly: true });
     const workflows = await Promise.all(
       scheduled.jobs
-        .filter((job) => job.status === "pending" || job.status === "running")
+        .filter(
+          (job) =>
+            job.created &&
+            (job.status === "pending" || job.status === "running"),
+        )
         .map(async (job) => ({
           jobId: job.id,
           ...(await enqueueIngestionWorkflow(job.id)),

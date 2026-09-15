@@ -406,20 +406,30 @@ async function processUrlJob(job: any, params: any) {
   
   await updateJobProgress(job.id, 20, 'Fetching page...')
   
-  // Fetch and extract (using crawler's fetch logic)
-  const { SimpleIntelligentCrawler } = await import('./simple-intelligent-crawler')
-  const crawler = new SimpleIntelligentCrawler(singleUrl, {
-    maxPages: 1,
-    maxDepth: 0
-  })
-  
-  const pages = await crawler.crawl()
-  
-  if (pages.length === 0) {
-    throw new Error('Failed to fetch URL')
+  let page: any = null
+  const useFirecrawl = process.env.USE_FIRECRAWL === 'true' && process.env.FIRECRAWL_API_KEY
+
+  if (useFirecrawl) {
+    await updateJobProgress(job.id, 25, 'Reading the main page content...')
+    const { FirecrawlHttpProvider } = await import('./firecrawl-http-provider')
+    const provider = new FirecrawlHttpProvider()
+    page = await provider.scrapeSinglePage(singleUrl)
+  }
+
+  if (!page) {
+    await updateJobProgress(job.id, 25, 'Using the internal page reader...')
+    const { SimpleIntelligentCrawler } = await import('./simple-intelligent-crawler')
+    const crawler = new SimpleIntelligentCrawler(singleUrl, {
+      maxPages: 1,
+      maxDepth: 0
+    })
+    const pages = await crawler.crawl()
+    page = pages[0] || null
   }
   
-  const page = pages[0]
+  if (!page) {
+    throw new Error('Failed to fetch URL')
+  }
 
   if (page.products?.length) {
     const { persistExtractedProducts } = await import('./commerce-importer')

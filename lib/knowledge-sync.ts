@@ -95,9 +95,29 @@ export async function scheduleKnowledgeSync(options: {
     })),
   ).slice(0, limit);
   const jobs = [];
+  let scheduled = 0;
+  let alreadyQueued = 0;
+  let requiresRetry = 0;
 
   for (const candidate of candidates) {
     const dedupeKey = `knowledge-sync:${candidate.sourceId}:${candidate.processedAt}`;
+    const existing = await prisma.ingestionJob.findUnique({
+      where: { dedupeKey },
+      select: { id: true, botId: true, status: true },
+    });
+    if (existing) {
+      jobs.push({
+        ...existing,
+        companyName: candidate.companyName,
+        sourceId: candidate.sourceId,
+        url: candidate.url,
+        dedupeKey,
+        created: false,
+      });
+      if (existing.status === "failed") requiresRetry++;
+      else alreadyQueued++;
+      continue;
+    }
     const job = await createIngestionJob(
       candidate.botId,
       JobType.URL,
@@ -116,13 +136,17 @@ export async function scheduleKnowledgeSync(options: {
       url: candidate.url,
       status: job.status,
       dedupeKey,
+      created: true,
     });
+    scheduled++;
   }
 
   return {
     scheduledAt: new Date().toISOString(),
     staleSources: previews.reduce((sum, item) => sum + item.staleSources, 0),
-    scheduled: jobs.length,
+    scheduled,
+    alreadyQueued,
+    requiresRetry,
     jobs,
   };
 }

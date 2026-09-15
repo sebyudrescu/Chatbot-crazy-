@@ -105,10 +105,18 @@ export function KnowledgeSyncManager() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
+      const scheduled = Number(payload.data.scheduled || 0);
+      const alreadyQueued = Number(payload.data.alreadyQueued || 0);
+      const requiresRetry = Number(payload.data.requiresRetry || 0);
+      const parts = [
+        scheduled ? `${scheduled} nuove fonti accodate` : "",
+        alreadyQueued ? `${alreadyQueued} già in lavorazione` : "",
+        requiresRetry ? `${requiresRetry} da riavviare nel Monitor operativo` : "",
+      ].filter(Boolean);
       setNotice({
-        type: "success",
-        text: payload.data.scheduled
-          ? `${payload.data.scheduled} fonti accodate senza duplicare lavori esistenti.`
+        type: requiresRetry ? "error" : "success",
+        text: parts.length
+          ? `${parts.join(" · ")}.`
           : "Nessuna fonte scaduta da accodare.",
       });
       await load();
