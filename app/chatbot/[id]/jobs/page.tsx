@@ -19,6 +19,8 @@ interface Job {
   error?: string
   attempts: number
   maxAttempts: number
+  nextRetryAt?: string
+  target?: string
 }
 
 export default function JobsMonitoringPage() {
@@ -88,6 +90,16 @@ export default function JobsMonitoringPage() {
     }
   }
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'completed': return 'COMPLETATA'
+      case 'running': return 'IN CORSO'
+      case 'pending': return 'IN ATTESA'
+      case 'failed': return 'NON RIUSCITA'
+      default: return status.toUpperCase()
+    }
+  }
+
   const getKbStatusDisplay = () => {
     if (!kbStatus) return null
     
@@ -98,10 +110,10 @@ export default function JobsMonitoringPage() {
             <div className="flex items-center gap-3">
               <CheckCircle className="w-6 h-6 text-green-600" />
               <div>
-                <h3 className="font-semibold text-green-900">Knowledge Base Ready</h3>
+                <h3 className="font-semibold text-green-900">Informazioni pronte</h3>
                 <p className="text-sm text-green-700">
-                  {kbStatus.totalChunks} chunks indexed
-                  {kbStatus.lastIndexed && ` • Last indexed: ${new Date(kbStatus.lastIndexed).toLocaleString('it-IT')}`}
+                  {kbStatus.totalChunks} sezioni disponibili
+                  {kbStatus.lastIndexed && ` · Ultimo aggiornamento: ${new Date(kbStatus.lastIndexed).toLocaleString('it-IT')}`}
                 </p>
               </div>
             </div>
@@ -114,9 +126,9 @@ export default function JobsMonitoringPage() {
             <div className="flex items-center gap-3">
               <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
               <div>
-                <h3 className="font-semibold text-blue-900">Indexing in Progress</h3>
+                <h3 className="font-semibold text-blue-900">Aggiornamento in corso</h3>
                 <p className="text-sm text-blue-700">
-                  Processing documents... Please wait.
+                  Le informazioni già pubblicate restano disponibili mentre controlliamo le nuove versioni.
                 </p>
               </div>
             </div>
@@ -129,8 +141,8 @@ export default function JobsMonitoringPage() {
             <div className="flex items-center gap-3">
               <XCircle className="w-6 h-6 text-red-600" />
               <div className="flex-1">
-                <h3 className="font-semibold text-red-900">Indexing Failed</h3>
-                <p className="text-sm text-red-700">{kbStatus.error || 'Unknown error'}</p>
+                <h3 className="font-semibold text-red-900">Aggiornamento non riuscito</h3>
+                <p className="text-sm text-red-700">{kbStatus.error || 'Non è stato possibile aggiornare le informazioni.'}</p>
               </div>
             </div>
           </div>
@@ -143,9 +155,9 @@ export default function JobsMonitoringPage() {
             <div className="flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-gray-600" />
               <div>
-                <h3 className="font-semibold text-gray-900">No Knowledge Base</h3>
+                <h3 className="font-semibold text-gray-900">Nessuna informazione importata</h3>
                 <p className="text-sm text-gray-700">
-                  Add documents to get started.
+                  Aggiungi una pagina web o un documento per iniziare.
                 </p>
               </div>
             </div>
@@ -169,8 +181,8 @@ export default function JobsMonitoringPage() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Job Queue Monitor</h1>
-              <p className="text-sm text-gray-600 mt-1">Real-time ingestion job tracking</p>
+              <h1 className="text-2xl font-bold text-gray-900">Aggiornamento informazioni</h1>
+              <p className="text-sm text-gray-600 mt-1">Stato reale delle pagine e dei documenti elaborati dal chatbot.</p>
             </div>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-sm">
@@ -180,20 +192,20 @@ export default function JobsMonitoringPage() {
                   onChange={(e) => setAutoRefresh(e.target.checked)}
                   className="rounded"
                 />
-                Auto-refresh
+                Aggiornamento automatico
               </label>
               <button
                 onClick={loadJobs}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
-                Refresh
+                Aggiorna
               </button>
               <Link
                 href={`/chatbot/${botId}/setup`}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
               >
-                Back to Setup
+                Torna alla configurazione
               </Link>
             </div>
           </div>
@@ -209,14 +221,14 @@ export default function JobsMonitoringPage() {
         {/* Jobs List */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold">Ingestion Jobs ({jobs.length})</h2>
+            <h2 className="text-lg font-semibold">Importazioni ({jobs.length})</h2>
           </div>
           
           {jobs.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
               <Play className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-              <p className="text-lg font-medium">No jobs yet</p>
-              <p className="text-sm mt-2">Jobs will appear here when you add documents</p>
+              <p className="text-lg font-medium">Nessuna importazione</p>
+              <p className="text-sm mt-2">Le attività compariranno qui quando aggiungi nuove informazioni.</p>
             </div>
           ) : (
             <div className="divide-y">
@@ -227,15 +239,19 @@ export default function JobsMonitoringPage() {
                       <div className="flex items-center gap-3 mb-2">
                         <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${getStatusColor(job.status)}`}>
                           {getStatusIcon(job.status)}
-                          {job.status.toUpperCase()}
+                          {getStatusLabel(job.status)}
                         </span>
                         <span className="text-sm font-medium text-gray-700">
-                          {job.type === 'crawl' && '🕸️ Site Crawl'}
-                          {job.type === 'pdf' && '📄 PDF Upload'}
-                          {job.type === 'url' && '🔗 Single URL'}
-                          {job.type === 'reindex' && '🔄 Reindex'}
+                          {job.type === 'crawl' && 'Scansione sito'}
+                          {job.type === 'pdf' && 'Documento PDF'}
+                          {job.type === 'url' && 'Pagina web'}
+                          {job.type === 'reindex' && 'Reindicizzazione'}
                         </span>
                       </div>
+
+                      {job.target && (
+                        <p className="mb-3 break-all text-sm font-medium text-gray-800">{job.target}</p>
+                      )}
                       
                       {/* Progress Bar */}
                       {job.status === 'running' && (
@@ -256,8 +272,19 @@ export default function JobsMonitoringPage() {
                       {/* Results */}
                       {job.status === 'completed' && (
                         <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                          <span>✅ {job.sourcesCreated} sources</span>
-                          <span>📦 {job.chunksCreated} chunks</span>
+                          <span>{job.sourcesCreated} fonti aggiornate</span>
+                          <span>{job.chunksCreated} sezioni disponibili</span>
+                        </div>
+                      )}
+
+                      {job.status === 'pending' && job.error && (
+                        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          <p className="font-medium">L’ultimo tentativo non è riuscito</p>
+                          <p className="mt-1 text-amber-800">{job.error}</p>
+                          <p className="mt-2 text-xs text-amber-700">
+                            Tentativo {job.attempts} di {job.maxAttempts}
+                            {job.nextRetryAt && ` · Nuovo tentativo: ${new Date(job.nextRetryAt).toLocaleString('it-IT')}`}
+                          </p>
                         </div>
                       )}
                       
@@ -267,20 +294,23 @@ export default function JobsMonitoringPage() {
                           <p className="text-sm text-red-700">{job.error}</p>
                           {job.attempts < job.maxAttempts && (
                             <p className="text-xs text-red-600 mt-1">
-                              Will retry (attempt {job.attempts}/{job.maxAttempts})
+                              Tentativo {job.attempts} di {job.maxAttempts}
                             </p>
                           )}
+                          <Link href="/settings#operations-title" className="mt-2 inline-block text-xs font-semibold text-red-700 underline underline-offset-2">
+                            Apri il monitor operativo
+                          </Link>
                         </div>
                       )}
                       
                       {/* Timestamps */}
                       <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span>Created: {new Date(job.createdAt).toLocaleString('it-IT')}</span>
+                        <span>Creato: {new Date(job.createdAt).toLocaleString('it-IT')}</span>
                         {job.startedAt && (
-                          <span>Started: {new Date(job.startedAt).toLocaleString('it-IT')}</span>
+                          <span>Avviato: {new Date(job.startedAt).toLocaleString('it-IT')}</span>
                         )}
                         {job.completedAt && (
-                          <span>Completed: {new Date(job.completedAt).toLocaleString('it-IT')}</span>
+                          <span>Concluso: {new Date(job.completedAt).toLocaleString('it-IT')}</span>
                         )}
                       </div>
                     </div>

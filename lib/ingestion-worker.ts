@@ -404,20 +404,20 @@ async function processUrlJob(job: any, params: any) {
   const { singleUrl, replaceSourceId } = params
   const botId = job.botId
   
-  await updateJobProgress(job.id, 20, 'Fetching page...')
+  await updateJobProgress(job.id, 20, 'Lettura della pagina...')
   
   let page: any = null
   const useFirecrawl = process.env.USE_FIRECRAWL === 'true' && process.env.FIRECRAWL_API_KEY
 
   if (useFirecrawl) {
-    await updateJobProgress(job.id, 25, 'Reading the main page content...')
+    await updateJobProgress(job.id, 25, 'Lettura del contenuto principale...')
     const { FirecrawlHttpProvider } = await import('./firecrawl-http-provider')
     const provider = new FirecrawlHttpProvider()
     page = await provider.scrapeSinglePage(singleUrl)
   }
 
   if (!page) {
-    await updateJobProgress(job.id, 25, 'Using the internal page reader...')
+    await updateJobProgress(job.id, 25, 'Uso del lettore interno...')
     const { SimpleIntelligentCrawler } = await import('./simple-intelligent-crawler')
     const crawler = new SimpleIntelligentCrawler(singleUrl, {
       maxPages: 1,
@@ -443,7 +443,7 @@ async function processUrlJob(job: any, params: any) {
   
   console.log(`[Worker] Extracted ${page.textContent.length} characters`)
   
-  await updateJobProgress(job.id, 50, 'Processing content...')
+  await updateJobProgress(job.id, 50, 'Elaborazione del contenuto...')
   
   // Create knowledge source
   const source = await prisma.knowledgeSource.create({

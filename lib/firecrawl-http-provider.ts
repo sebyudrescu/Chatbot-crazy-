@@ -223,6 +223,14 @@ export class FirecrawlHttpProvider implements CrawlerProvider {
       
       const textContent = data.markdown || this.htmlToText(data.html || '')
       const pageUrl = resolveFirecrawlPageUrl(data, url)
+
+      // A successful Firecrawl response can still contain no usable main
+      // content. Treat it as unavailable so the ingestion worker can fall
+      // back to the internal reader instead of indexing an empty page.
+      if (!textContent.trim()) {
+        console.warn(`[Firecrawl HTTP] Scrape returned no main content for ${pageUrl}`)
+        return null
+      }
       
       return {
         url: pageUrl,

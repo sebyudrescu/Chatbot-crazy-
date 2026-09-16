@@ -10,6 +10,23 @@ import { dashboardAuthErrorResponse, requireBotPermission, requireDashboardActor
 
 export const dynamic = 'force-dynamic'
 
+function getSafeJobTarget(paramsJson: string) {
+  try {
+    const params = JSON.parse(paramsJson) as { singleUrl?: unknown; url?: unknown }
+    const raw = typeof params.singleUrl === 'string'
+      ? params.singleUrl
+      : typeof params.url === 'string'
+        ? params.url
+        : ''
+    if (!raw) return null
+    const url = new URL(raw)
+    if (!['http:', 'https:'].includes(url.protocol)) return null
+    return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`
+  } catch {
+    return null
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireDashboardActor(request)
@@ -45,6 +62,8 @@ export async function GET(request: NextRequest) {
           error: job.errorMessage,
           attempts: job.attempts,
           maxAttempts: job.maxAttempts,
+          nextRetryAt: job.nextRetryAt,
+          target: getSafeJobTarget(job.params),
           bot: job.chatbot
         }
       })
@@ -71,6 +90,7 @@ export async function GET(request: NextRequest) {
           attempts: job.attempts,
           maxAttempts: job.maxAttempts,
           nextRetryAt: job.nextRetryAt,
+          target: getSafeJobTarget(job.params),
         }))
       })
 

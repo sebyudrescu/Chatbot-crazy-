@@ -37,6 +37,21 @@ async function main() {
       assert.deepEqual(request.excludeTags, ['.chatbot-widget-container']);
     }
     assert.equal(requests.length, 2);
+
+    globalThis.fetch = (async () => Response.json({
+      success: true,
+      data: {
+        markdown: '',
+        html: '',
+        rawHtml: '<nav>Solo navigazione</nav>',
+        metadata: { sourceURL: 'https://shop.example.com/vuota' },
+      },
+    })) as typeof fetch;
+    assert.equal(
+      await provider.scrapeSinglePage('https://shop.example.com/vuota'),
+      null,
+      'An empty main-content response must trigger the ingestion fallback',
+    );
     console.log('Firecrawl clean content and raw product evidence checks passed');
   } finally {
     globalThis.fetch = originalFetch;
