@@ -26,7 +26,7 @@
         "test:interactive-widgets": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-interactive-widgets.ts",
         "test:woocommerce-sync": "node scripts/test-woocommerce-sync.cjs",
         "test:crawler": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler.ts",
-        "test:crawler-pages": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler-pages.ts && ts-node --prefer-ts-exts --transpile-only --project scripts/tsconfig.crawler.json scripts/test-firecrawl-content.ts",
+        "test:crawler-pages": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-crawler-pages.ts && ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-firecrawl-content.ts",
         "test:conversation-guidance": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-conversation-guidance.ts",
         "test:grounding-policy": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-grounding-policy.ts",
         "test:rag-retrieval": "ts-node --transpile-only --project scripts/tsconfig.crawler.json scripts/test-rag-retrieval.ts",

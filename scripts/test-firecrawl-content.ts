@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { FirecrawlHttpProvider } from '../lib/firecrawl-http-provider';
 
 async function main() {
+  assert.equal(
+    existsSync(resolve(__dirname, '../lib/firecrawl-http-provider.js')),
+    false,
+    'Do not commit a compiled provider beside the TypeScript source: extensionless production imports may load the stale JavaScript copy',
+  );
+
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.FIRECRAWL_API_KEY;
   process.env.FIRECRAWL_API_KEY = 'test-only';
