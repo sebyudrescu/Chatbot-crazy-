@@ -107,9 +107,9 @@ export default function JobsMonitoringPage() {
       case 'ready':
         return (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-              <div>
+            <div className="flex items-start gap-3">
+              <CheckCircle className="h-6 w-6 shrink-0 text-green-600" />
+              <div className="min-w-0">
                 <h3 className="font-semibold text-green-900">Informazioni pronte</h3>
                 <p className="text-sm text-green-700">
                   {kbStatus.totalChunks} sezioni disponibili
@@ -123,9 +123,9 @@ export default function JobsMonitoringPage() {
       case 'indexing':
         return (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
-              <div>
+            <div className="flex items-start gap-3">
+              <Loader2 className="h-6 w-6 shrink-0 animate-spin text-blue-600" />
+              <div className="min-w-0">
                 <h3 className="font-semibold text-blue-900">Aggiornamento in corso</h3>
                 <p className="text-sm text-blue-700">
                   Le informazioni già pubblicate restano disponibili mentre controlliamo le nuove versioni.
@@ -138,9 +138,9 @@ export default function JobsMonitoringPage() {
       case 'failed':
         return (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <XCircle className="w-6 h-6 text-red-600" />
-              <div className="flex-1">
+            <div className="flex items-start gap-3">
+              <XCircle className="h-6 w-6 shrink-0 text-red-600" />
+              <div className="min-w-0 flex-1">
                 <h3 className="font-semibold text-red-900">Aggiornamento non riuscito</h3>
                 <p className="text-sm text-red-700">{kbStatus.error || 'Non è stato possibile aggiornare le informazioni.'}</p>
               </div>
@@ -152,9 +152,9 @@ export default function JobsMonitoringPage() {
       default:
         return (
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-6 h-6 text-gray-600" />
-              <div>
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-6 w-6 shrink-0 text-gray-600" />
+              <div className="min-w-0">
                 <h3 className="font-semibold text-gray-900">Nessuna informazione importata</h3>
                 <p className="text-sm text-gray-700">
                   Aggiungi una pagina web o un documento per iniziare.
@@ -179,13 +179,13 @@ export default function JobsMonitoringPage() {
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold text-gray-900">Aggiornamento informazioni</h1>
               <p className="text-sm text-gray-600 mt-1">Stato reale delle pagine e dei documenti elaborati dal chatbot.</p>
             </div>
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <label className="flex min-h-10 items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={autoRefresh}
@@ -196,14 +196,14 @@ export default function JobsMonitoringPage() {
               </label>
               <button
                 onClick={loadJobs}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                className="flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
               >
                 <RefreshCw className="w-4 h-4" />
                 Aggiorna
               </button>
               <Link
                 href={`/chatbot/${botId}/setup`}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                className="inline-flex min-h-10 items-center whitespace-nowrap rounded-lg bg-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-300"
               >
                 Torna alla configurazione
               </Link>
@@ -233,11 +233,11 @@ export default function JobsMonitoringPage() {
           ) : (
             <div className="divide-y">
               {jobs.map((job) => (
-                <div key={job.id} className="p-6 hover:bg-gray-50 transition-colors">
+                <div key={job.id} className="p-4 transition-colors hover:bg-gray-50 sm:p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${getStatusColor(job.status)}`}>
+                      <div className="mb-2 flex flex-wrap items-center gap-2 sm:gap-3">
+                        <span className={`flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1 text-sm font-medium ${getStatusColor(job.status)}`}>
                           {getStatusIcon(job.status)}
                           {getStatusLabel(job.status)}
                         </span>
@@ -271,7 +271,7 @@ export default function JobsMonitoringPage() {
                       
                       {/* Results */}
                       {job.status === 'completed' && (
-                        <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
+                        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
                           <span>{job.sourcesCreated} fonti aggiornate</span>
                           <span>{job.chunksCreated} sezioni disponibili</span>
                         </div>
@@ -304,7 +304,7 @@ export default function JobsMonitoringPage() {
                       )}
                       
                       {/* Timestamps */}
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                      <div className="flex flex-col gap-1 text-xs text-gray-500 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
                         <span>Creato: {new Date(job.createdAt).toLocaleString('it-IT')}</span>
                         {job.startedAt && (
                           <span>Avviato: {new Date(job.startedAt).toLocaleString('it-IT')}</span>
